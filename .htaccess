@@ -1,0 +1,152 @@
+RewriteEngine On
+# Se o projeto estiver em subdiretório (ex.: public_html/gatewaypro/), use:
+# ------- voltar RewriteBase /gatewaypro1/  ---- comentar aqui 
+
+# ============================================================
+# PROTEÇÃO DE ARQUIVOS SENSÍVEIS
+# ============================================================
+
+# Bloqueia pastas sensíveis inteiras
+RewriteRule ^docker(/.*)?$ - [F,L,NC]
+RewriteRule ^migrations(/.*)?$ - [F,L,NC]
+RewriteRule ^\.kiro(/.*)?$ - [F,L,NC]
+RewriteRule ^logs_backup(/.*)?$ - [F,L,NC]
+RewriteRule ^PHPMailer(/.*)?$ - [F,L,NC]
+RewriteRule ^helpers(/.*)?$ - [F,L,NC]
+RewriteRule ^gateways(/.*)?$ - [F,L,NC]
+RewriteRule ^config(/.*)?$ - [F,L,NC]
+# Permite arquivos HTML em /legal/, bloqueia o resto
+RewriteCond %{REQUEST_URI} !^/legal/.*\.html$ [NC]
+RewriteRule ^legal(/.*)?$ - [F,L,NC]
+
+# Bloqueia arquivos sensíveis por extensão (EXCETO em /uploads/)
+RewriteCond %{REQUEST_URI} !^/uploads/ [NC]
+RewriteRule \.(sql|sqlite|db|mdb)$ - [F,L,NC]
+
+RewriteCond %{REQUEST_URI} !^/uploads/ [NC]
+RewriteRule \.(md|markdown)$ - [F,L,NC]
+
+RewriteCond %{REQUEST_URI} !^/uploads/ [NC]
+RewriteRule \.(log)$ - [F,L,NC]
+
+RewriteCond %{REQUEST_URI} !^/uploads/ [NC]
+RewriteRule \.(sh|bash|bat|cmd|ps1)$ - [F,L,NC]
+
+RewriteCond %{REQUEST_URI} !^/uploads/ [NC]
+RewriteRule \.(bak|backup|old|orig|swp|swo)$ - [F,L,NC]
+
+# Bloqueia arquivos compactados na raiz (EXCETO em /uploads/)
+RewriteCond %{REQUEST_URI} !^/uploads/ [NC]
+RewriteRule \.(zip|rar|tar|gz|7z)$ - [F,L,NC]
+
+# Bloqueia arquivos Docker e config na raiz
+RewriteRule ^Dockerfile$ - [F,L]
+RewriteRule ^docker-compose\.ya?ml$ - [F,L]
+RewriteRule ^\.dockerignore$ - [F,L]
+RewriteRule ^\.env - [F,L]
+RewriteRule ^\.git - [F,L]
+RewriteRule ^\.htpasswd$ - [F,L]
+RewriteRule ^composer\.(json|lock)$ - [F,L]
+RewriteRule ^package(-lock)?\.json$ - [F,L]
+RewriteRule ^yarn\.lock$ - [F,L]
+RewriteRule ^phpunit\.xml$ - [F,L]
+
+# Bloqueia arquivos de documentação na raiz
+RewriteRule ^LICENSE$ - [F,L]
+RewriteRule ^SECURITY - [F,L]
+RewriteRule ^README - [F,L]
+RewriteRule ^CHANGELOG - [F,L]
+RewriteRule ^VERSION$ - [F,L]
+RewriteRule ^COMMITMENT$ - [F,L]
+
+# Bloqueia arquivos .txt na raiz (logs)
+RewriteCond %{REQUEST_URI} ^/[^/]+\.txt$ [NC]
+RewriteRule .* - [F,L]
+
+# Bloqueia acesso DIRETO a views/*.php
+RewriteCond %{THE_REQUEST} \s/views/ [NC]
+RewriteRule ^views/.*\.php$ - [F,L]
+
+# Bloqueia execução de PHP em uploads (CRÍTICO!)
+RewriteCond %{REQUEST_URI} ^/uploads/.*\.php$ [NC]
+RewriteRule .* - [F,L]
+
+# ============================================================
+# FIM DA PROTEÇÃO - INÍCIO DAS REGRAS DE ROTEAMENTO
+# ============================================================
+
+# Regra explícita para página obrigado (evita 404)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^obrigado/?$ obrigado.php [L,QSA]
+
+# Passa o Authorization header
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Permite acesso direto a arquivos em uploads/
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteCond %{REQUEST_URI} ^/uploads/
+RewriteRule ^uploads/(.*)$ uploads/$1 [L]
+
+# Permite acesso direto a arquivos JSON em plugins/
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteCond %{REQUEST_URI} ^/plugins/.*\.json$
+RewriteRule ^plugins/(.*\.json)$ plugins/$1 [L,QSA]
+
+# Permite manifest.json para PWA
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteCond %{REQUEST_URI} ^/manifest\.json$
+RewriteRule ^manifest\.json$ manifest.json [L]
+
+# Exceção para páginas admin dos plugins
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteCond %{REQUEST_URI} ^/plugins/[^/]+/admin/.*\.php$
+RewriteRule ^ - [L]
+
+# Exceção para checkout_editor.php
+RewriteCond %{REQUEST_URI} ^/checkout_editor\.php
+RewriteRule ^ - [L]
+
+# Exceção para arquivos da API
+RewriteCond %{REQUEST_URI} ^/api/.*\.php
+RewriteRule ^ - [L]
+
+# Redireciona .php para URL limpa (somente GET)
+RewriteCond %{REQUEST_METHOD} GET
+RewriteCond %{THE_REQUEST} \s/+(.*)\.php[\s?]
+RewriteRule ^ %1 [R=301,L]
+
+# URLs específicas para views
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^curso_preview/?$ views/curso_preview.php [L]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^cloned_site_viewer/?$ views/cloned_site_viewer.php [L]
+
+# URLs limpas → arquivos .php
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.php -f
+RewriteRule ^(.+?)/?$ $1.php [L]
+
+# APIs em /api/
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^api/(.+?)/?$ api/$1.php [L]
+
+# Permite acesso direto a arquivos HTML em /legal/
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteCond %{REQUEST_URI} ^/legal/.*\.html$ [NC]
+RewriteRule ^legal/(.*)$ legal/$1 [L]
+
+# Roteador central
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?url=$1 [QSA,L]
+
+# Proteção extra para config.php
+<Files "config.php">
+    Require all denied
+</Files>

@@ -1,0 +1,11 @@
+# Permitir acesso aos arquivos HTML
+<Files ~ "\.html$">
+    Order allow,deny
+    Allow from all
+</Files>
+
+# Desabilitar listagem de diretório
+Options -Indexes
+
+# Forçar tipo MIME correto para HTML
+AddType text/html .html

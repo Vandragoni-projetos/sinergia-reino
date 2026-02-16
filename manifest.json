@@ -1,0 +1,23 @@
+{
+  "name": "GatewayPro",
+  "short_name": "GatewayPro",
+  "start_url": "/index.php",
+  "display": "standalone",
+  "background_color": "#fff7ed",
+  "theme_color": "#2DD05E",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png",
+      "type": "image/jpeg",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png",
+      "type": "image/jpeg",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ]
+}

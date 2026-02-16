@@ -1,0 +1,45 @@
+# SinergIA Core - App + MariaDB
+# Build e subida: docker compose up -d
+# Requer: contexto na raiz do projeto (dockerfile em docker/Dockerfile e docker/Dockerfile.db)
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8080:80"
+    environment:
+      DB_HOST: db
+      DB_USER: gatewaypro
+      DB_PASS: gatewaypro_secret_2024
+      DB_NAME: checkout
+      APP_TIMEZONE: America/Sao_Paulo
+      TOKEN_AUTH_SECRET: ""
+      GATEWAYPRO_MASTER_SECRET: ""
+    volumes:
+      - uploads_data:/var/www/html/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.db
+    environment:
+      MYSQL_ROOT_PASSWORD: root_secret_change_me
+      MYSQL_DATABASE: checkout
+      MYSQL_USER: gatewaypro
+      MYSQL_PASSWORD: gatewaypro_secret_2024
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  uploads_data:
+  db_data:

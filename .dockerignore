@@ -1,0 +1,18 @@
+# Não incluir no build da imagem
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+*.md
+!INSTALL.md
+.agent
+docker-start.bat
+docker-stop.bat
+*.log
+.DS_Store
+desktop.ini
+node_modules
+
+# Manter pasta uploads vazia na imagem (conteúdo via volume em produção)
+# uploads/*

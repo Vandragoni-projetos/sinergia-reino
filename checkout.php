@@ -1,0 +1,2952 @@
+<?php
+require __DIR__ . '/config/config.php';
+include __DIR__ . '/config/load_settings.php';
+
+// Se vier payment_id, redireciona para obrigado
+$payment_id = $_GET['payment_id'] ?? null;
+if ($payment_id) {
+    header('Location: /obrigado?payment_id=' . urlencode($payment_id));
+    exit;
+}
+
+$checkout_hash = $_GET['p'] ?? null;
+$oferta_hash = $_GET['oferta'] ?? null;
+
+if (!$checkout_hash) {
+    die("Produto não encontrado.");
+}
+
+try {
+    $community_id = function_exists('getCommunityId') ? getCommunityId() : 1;
+    // Checkout é acessado por hash único: não filtrar por comunidade para o link funcionar em qualquer subdomínio (core/club)
+    $stmt_prod = $pdo->prepare("SELECT * FROM produtos WHERE checkout_hash = ?");
+    $stmt_prod->execute([$checkout_hash]);
+    $produto = $stmt_prod->fetch(PDO::FETCH_ASSOC);
+
+    if (!$produto) {
+        die("Produto inválido ou não existe mais.");
+    }
+    
+    // Verifica se o produto é gratuito
+    $is_free_product = !empty($produto['is_free']) && $produto['is_free'] == 1;
+    
+    // Verificar se há uma oferta específica
+    $oferta_ativa = null;
+    $preco_original = $produto['preco'];
+    $tipo_acesso = 'vitalicio'; // Padrão é vitalício
+    
+    if ($oferta_hash) {
+        try {
+            $stmt_oferta = $pdo->prepare("SELECT * FROM produto_ofertas WHERE hash = ? AND produto_id = ? AND ativo = 1");
+            $stmt_oferta->execute([$oferta_hash, $produto['id']]);
+            $oferta_ativa = $stmt_oferta->fetch(PDO::FETCH_ASSOC);
+            
+            if ($oferta_ativa) {
+                // Usar o preço da oferta
+                $produto['preco'] = $oferta_ativa['preco'];
+                $produto['oferta_id'] = $oferta_ativa['id'];
+                $produto['oferta_nome'] = $oferta_ativa['nome'];
+                $tipo_acesso = $oferta_ativa['tipo_acesso'] ?? 'vitalicio';
+            }
+        } catch (PDOException $e) {
+            // Tabela pode não existir ainda, ignorar
+        }
+    }
+    
+    // Labels e cores para o tipo de acesso
+    $tipo_acesso_labels = [
+        'vitalicio' => ['label' => 'Acesso Vitalício', 'color' => 'bg-green-100 text-green-700'],
+        'mensal' => ['label' => 'Acesso Mensal', 'color' => 'bg-blue-100 text-blue-700'],
+        'semestral' => ['label' => 'Acesso Semestral', 'color' => 'bg-purple-100 text-purple-700'],
+        'anual' => ['label' => 'Acesso Anual', 'color' => 'bg-yellow-100 text-yellow-700']
+    ];
+    $tipo_acesso_info = $tipo_acesso_labels[$tipo_acesso] ?? $tipo_acesso_labels['vitalicio'];
+    
+    // Define o gateway (padrão mercadopago se estiver vazio)
+    $gateway = $produto['gateway'] ?? 'mercadopago';
+
+    // 2. Busca os order bumps
+    $stmt_ob = $pdo->prepare("
+        SELECT 
+            ob.*, 
+            p.id as ob_id,
+            p.nome as ob_nome, 
+            p.preco as ob_preco, 
+            p.preco_anterior as ob_preco_anterior,
+            p.foto as ob_foto 
+        FROM order_bumps as ob
+        JOIN produtos as p ON ob.offer_product_id = p.id
+        WHERE ob.main_product_id = ? AND ob.is_active = 1
+        ORDER BY ob.ordem ASC
+    ");
+    $stmt_ob->execute([$produto['id']]);
+    $order_bumps = $stmt_ob->fetchAll(PDO::FETCH_ASSOC);
+
+    $checkout_config = json_decode($produto['checkout_config'] ?? '{}', true);
+    if (!is_array($checkout_config)) { $checkout_config = []; }
+
+    // Verifica se o link principal está desativado
+    $disable_main_link = $checkout_config['disable_main_link'] ?? false;
+    if ($disable_main_link && !$oferta_hash) {
+        die("<div style='font-family: sans-serif; text-align: center; padding: 50px;'><h1 style='color: #ef4444;'>Link Expirado ou Inativo</h1><p style='color: #6b7280;'>Este link de checkout principal foi desativado pelo vendedor. Utilize um link de oferta específico.</p></div>");
+    }
+
+    // LÓGICA DE RASTREAMENTO
+    $tracking_config = $checkout_config['tracking'] ?? [];
+    if (empty($tracking_config['facebookPixelId']) && !empty($checkout_config['facebookPixelId'])) {
+        $tracking_config['facebookPixelId'] = $checkout_config['facebookPixelId'];
+    }
+    $fbPixelId = $tracking_config['facebookPixelId'] ?? '';
+    $gaId = $tracking_config['googleAnalyticsId'] ?? '';
+    $gAdsId = $tracking_config['googleAdsId'] ?? '';
+    $tracking_events = $tracking_config['events'] ?? [];
+    $fb_events_enabled = $tracking_events['facebook'] ?? [];
+    $gg_events_enabled = $tracking_events['google'] ?? [];
+
+    $infoprodutor_id = $produto['usuario_id'];
+    
+    // Busca o nome do vendedor e as public keys (MP, Beehive, Hypercash e Efí)
+    $stmt_vendedor = $pdo->prepare("SELECT nome, mp_public_key, beehive_public_key, hypercash_public_key, efi_payee_code FROM usuarios WHERE id = ?");
+    $stmt_vendedor->execute([$infoprodutor_id]);
+    $vendedor_data = $stmt_vendedor->fetch(PDO::FETCH_ASSOC);
+    $public_key = $vendedor_data['mp_public_key'] ?? '';
+    $beehive_public_key = $vendedor_data['beehive_public_key'] ?? '';
+    $hypercash_public_key = $vendedor_data['hypercash_public_key'] ?? '';
+    $efi_payee_code = $vendedor_data['efi_payee_code'] ?? '';
+    $vendedor_nome = $vendedor_data['nome'] ?? 'Vendedor';
+
+} catch (PDOException $e) {
+    die("Erro de banco de dados: " . $e->getMessage());
+}
+
+$orderbump_active = !empty($order_bumps) && !$is_free_product; // Desabilita order bumps para produtos grátis
+
+// Configurações de Estilo e Funcionalidade
+$backgroundColor = $checkout_config['backgroundColor'] ?? '#E3E3E3';
+$accentColor = $checkout_config['accentColor'] ?? '#7427F1';
+$banners = $checkout_config['banners'] ?? [];
+if (empty($banners) && !empty($checkout_config['bannerUrl'])) { $banners = [$checkout_config['bannerUrl']]; }
+$sideBanners = $checkout_config['sideBanners'] ?? [];
+if (empty($sideBanners) && !empty($checkout_config['sideBannerUrl'])) { $sideBanners = [$checkout_config['sideBannerUrl']]; }
+$youtubeUrl = $checkout_config['youtubeUrl'] ?? null;
+$timerConfig = $checkout_config['timer'] ?? ['enabled' => false, 'minutes' => 15, 'text' => 'Esta oferta expira em:', 'bgcolor' => '#000000', 'textcolor' => '#FFFFFF', 'sticky' => true];
+$salesNotificationConfig = $checkout_config['salesNotification'] ?? ['enabled' => false, 'names' => '', 'product' => '', 'tempo_exibicao' => 5, 'intervalo_notificacao' => 10];
+$backRedirectConfig = $checkout_config['backRedirect'] ?? ['enabled' => false, 'url' => ''];
+$redirectUrlConfig = $checkout_config['redirectUrl'] ?? '';
+// Ler paymentMethods com retrocompatibilidade
+$payment_methods_config = $checkout_config['paymentMethods'] ?? [];
+if (empty($payment_methods_config) || !isset($payment_methods_config['pix']['gateway'])) {
+    // Estrutura antiga - migrar para nova estrutura
+    $old_payment_methods = $checkout_config['paymentMethods'] ?? ['credit_card' => true, 'pix' => true, 'ticket' => true];
+    $payment_methods_config = [
+        'pix' => [
+            'gateway' => ($gateway === 'pushinpay') ? 'pushinpay' : 'mercadopago',
+            'enabled' => $old_payment_methods['pix'] ?? true
+        ],
+        'credit_card' => [
+            'gateway' => 'mercadopago',
+            'enabled' => $old_payment_methods['credit_card'] ?? true
+        ],
+        'ticket' => [
+            'gateway' => 'mercadopago',
+            'enabled' => $old_payment_methods['ticket'] ?? true
+        ]
+    ];
+}
+
+$customer_fields_config = $checkout_config['customer_fields'] ?? ['enable_cpf' => true, 'enable_phone' => true];
+
+// Calcular variáveis de métodos de pagamento habilitados no escopo global
+// (necessário para inicialização do JavaScript do Mercado Pago, Beehive e Hypercash)
+$pix_pushinpay_enabled = false;
+$pix_mercadopago_enabled = false;
+$pix_efi_enabled = false;
+$credit_card_enabled = false;
+$credit_card_beehive_enabled = false;
+$credit_card_hypercash_enabled = false;
+$credit_card_mercadopago_enabled = false;
+$credit_card_efi_enabled = false;
+$ticket_enabled = false;
+
+// Ler nova estrutura com gateway por método
+if (isset($payment_methods_config['pix']['gateway'])) {
+    if ($payment_methods_config['pix']['gateway'] === 'pushinpay' && ($payment_methods_config['pix']['enabled'] ?? false)) {
+        $pix_pushinpay_enabled = true;
+    } elseif ($payment_methods_config['pix']['gateway'] === 'mercadopago' && ($payment_methods_config['pix']['enabled'] ?? false)) {
+        $pix_mercadopago_enabled = true;
+    } elseif ($payment_methods_config['pix']['gateway'] === 'efi' && ($payment_methods_config['pix']['enabled'] ?? false)) {
+        $pix_efi_enabled = true;
+    }
+}
+
+if (isset($payment_methods_config['credit_card']['enabled']) && $payment_methods_config['credit_card']['enabled']) {
+    $credit_card_enabled = true;
+    // Verificar qual gateway está configurado para cartão
+    $credit_card_gateway = $payment_methods_config['credit_card']['gateway'] ?? 'mercadopago';
+    if ($credit_card_gateway === 'hypercash') {
+        $credit_card_hypercash_enabled = true;
+    } elseif ($credit_card_gateway === 'beehive') {
+        $credit_card_beehive_enabled = true;
+    } elseif ($credit_card_gateway === 'efi') {
+        $credit_card_efi_enabled = true;
+    } else {
+        $credit_card_mercadopago_enabled = true;
+    }
+}
+
+if (isset($payment_methods_config['ticket']['enabled']) && $payment_methods_config['ticket']['enabled']) {
+    $ticket_enabled = true;
+}
+
+// Variáveis de Resumo
+$main_price = floatval($produto['preco']);
+$main_name = !empty($checkout_config['summary']['product_name']) ? $checkout_config['summary']['product_name'] : $produto['nome'];
+$main_image = 'uploads/' . htmlspecialchars($produto['foto'] ?: 'placeholder.png');
+$formattedMainPrice = $is_free_product ? 'Grátis' : 'R$ ' . number_format($main_price, 2, ',', '.');
+$preco_anterior_raw = !empty($produto['preco_anterior']) ? floatval($produto['preco_anterior']) : null;
+$formattedPrecoAnterior = ($preco_anterior_raw && !$is_free_product) ? 'R$ ' . number_format($preco_anterior_raw, 2, ',', '.') : null;
+$discount_text = $checkout_config['summary']['discount_text'] ?? '';
+
+// Desconto Pix
+$pix_discount_config = $payment_methods_config['pix_discount'] ?? ['enabled' => false, 'type' => 'percentage', 'value' => 0];
+$pix_discount_enabled = $pix_discount_config['enabled'] ?? false;
+$pix_discount_type = $pix_discount_config['type'] ?? 'percentage';
+$pix_discount_value = floatval($pix_discount_config['value'] ?? 0);
+
+// --- Funções de Renderização ---
+
+function render_timer($timerConfig) {
+    if (!($timerConfig['enabled'] ?? false)) return '';
+    $text = htmlspecialchars($timerConfig['text'] ?? 'Esta oferta expira em:');
+    $minutes = intval($timerConfig['minutes'] ?? 15);
+    $bgcolor = htmlspecialchars($timerConfig['bgcolor'] ?? '#000000');
+    $textcolor = htmlspecialchars($timerConfig['textcolor'] ?? '#FFFFFF');
+    $is_sticky = $timerConfig['sticky'] ?? true;
+    $transparent_bgcolor = $bgcolor . '99'; 
+    $sticky_style = $is_sticky ? 'position: sticky; top: 0; z-index: 1000; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: background-color 0.3s ease, backdrop-filter 0.3s ease;' : 'position: relative;';
+    $storage_key = 'checkoutTimer_' . htmlspecialchars($_GET['p'] ?? 'default');
+    
+    $js_script = "<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const timerData = { minutes: {$minutes}, storageKey: '{$storage_key}' };
+            const timerElement = document.getElementById('timer-countdown-display');
+            if (!timerElement) return;
+            let endTime = localStorage.getItem(timerData.storageKey);
+            if (!endTime || isNaN(endTime)) {
+                endTime = new Date().getTime() + (timerData.minutes * 60 * 1000);
+                localStorage.setItem(timerData.storageKey, endTime);
+            }
+            const interval = setInterval(() => {
+                const now = new Date().getTime();
+                const distance = endTime - now;
+                if (distance < 0) {
+                    clearInterval(interval);
+                    timerElement.innerHTML = '00:00';
+                    localStorage.removeItem(timerData.storageKey);
+                    return;
+                }
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                timerElement.innerHTML = (minutes < 10 ? '0' + minutes : minutes) + ':' + (seconds < 10 ? '0' + seconds : seconds);
+            }, 1000);
+            const timerBar = document.getElementById('timer-bar');
+            if (timerBar && {$is_sticky}) {
+                const solidColor = '{$bgcolor}';
+                const transparentColor = '{$transparent_bgcolor}';
+                window.addEventListener('scroll', () => {
+                    if (window.scrollY > 0) {
+                        timerBar.style.backgroundColor = transparentColor;
+                        timerBar.style.backdropFilter = 'blur(8px)';
+                        timerBar.style.webkitBackdropFilter = 'blur(8px)';
+                    } else {
+                        timerBar.style.backgroundColor = solidColor;
+                        timerBar.style.backdropFilter = 'none';
+                        timerBar.style.webkitBackdropFilter = 'none';
+                    }
+                });
+            }
+        });
+        </script>";
+    return "<div id='timer-bar' style='background-color: {$bgcolor}; color: {$textcolor}; {$sticky_style}'><div class='flex items-center justify-center p-3 text-center w-full'><i data-lucide='clock' class='w-5 h-5 mr-3 flex-shrink-0'></i><p class='font-semibold'>{$text}</p><span id='timer-countdown-display' class='font-bold text-lg ml-2 font-mono w-14'>{$minutes}:00</span></div></div>{$js_script}";
+}
+
+function render_youtube_video($youtubeUrl) {
+    if (!$youtubeUrl) return '';
+    preg_match('%(?:youtube(?:-nocookie)?\.com/(?:[^/]+/.+/|(?:v|e(?:mbed)?)/|.*[?&]v=)|youtu\.be/)([^"&?/ ]{11})%i', $youtubeUrl, $match);
+    $youtube_id = $match[1] ?? null;
+    if(!$youtube_id) return '';
+    return "<div data-id='youtube_video' class='mb-6'><div class='aspect-video rounded-lg overflow-hidden shadow-md'><iframe src='https://www.youtube.com/embed/{$youtube_id}' frameborder='0' allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture' allowfullscreen class='w-full h-full'></iframe></div></div>";
+}
+
+function render_order_bumps_section($order_bumps_array) {
+    if (empty($order_bumps_array)) return '';
+    $html = "<div data-id='order_bump' class='space-y-6'>";
+    foreach($order_bumps_array as $index => $bump) {
+        $ob_image = 'uploads/' . htmlspecialchars($bump['ob_foto'] ?: 'placeholder.png');
+        $ob_headline = htmlspecialchars($bump['headline']);
+        $ob_description = htmlspecialchars($bump['description']);
+        $ob_name = htmlspecialchars($bump['ob_nome']);
+        $ob_price_formatted = 'R$ ' . number_format($bump['ob_preco'], 2, ',', '.');
+        $ob_price_raw = floatval($bump['ob_preco']);
+        $ob_id = intval($bump['ob_id']);
+
+        $html .= "<div class='order-bump-wrapper'>";
+        $html .= "<input type='checkbox' id='orderbump-checkbox-{$ob_id}' data-product-id='{$ob_id}' data-price='{$ob_price_raw}' data-name='{$ob_name}' class='orderbump-checkbox sr-only'>";
+        $html .= "<label for='orderbump-checkbox-{$ob_id}' class='order-bump-block'>"; 
+        $html .= "<div class='offer-badge'>Oferta Especial</div>";
+        $html .= "<div class='flex items-start gap-4'><img src='{$ob_image}' class='w-16 h-16 rounded-md object-cover border shadow-sm flex-shrink-0' onerror=\"this.src='https://placehold.co/64x64/e2e8f0/334155?text=Produto'\"/><div class='flex-1'><h4 class='text-lg font-bold text-gray-800'>{$ob_headline}</h4><p class='text-sm text-gray-600 mt-1'>{$ob_description}</p></div></div>";
+        $html .= "<hr class='my-3 border-dashed border-gray-300'>";
+        $html .= "<div class='flex justify-between items-center'><div class='flex items-center gap-2'><div class='custom-checkbox flex-shrink-0'><i data-lucide='check' class='checkmark'></i></div><span class='font-semibold text-gray-800 text-sm sm:text-base'>Sim, quero esta oferta!</span></div><p class='font-bold text-green-600 text-lg'>+{$ob_price_formatted}</p></div>";
+        $html .= "</label></div>";
+    }
+    $html .= "</div>";
+    return $html;
+}
+
+function render_payment_methods_selector($pix_pushinpay_enabled, $pix_mercadopago_enabled, $pix_efi_enabled, $credit_card_enabled, $ticket_enabled, $accentColor, $credit_card_beehive_enabled = false, $credit_card_mercadopago_enabled = false, $credit_card_hypercash_enabled = false, $credit_card_efi_enabled = false, $pix_pagarme_enabled = false, $pix_stripe_enabled = false, $credit_card_pagarme_enabled = false, $credit_card_paypal_enabled = false, $credit_card_stripe_enabled = false, $ticket_pagarme_enabled = false) {
+    $available_methods = [];
+    
+    // Pix - prioridade PushinPay > Efí > Pagar.me > Stripe > Mercado Pago
+    if ($pix_pushinpay_enabled) {
+        $available_methods[] = ['type' => 'pix_pushinpay', 'name' => 'Pix', 'icon' => 'qr-code', 'gateway' => 'pushinpay'];
+    } elseif ($pix_efi_enabled) {
+        $available_methods[] = ['type' => 'pix_efi', 'name' => 'Pix', 'icon' => 'qr-code', 'gateway' => 'efi'];
+    } elseif ($pix_pagarme_enabled) {
+        $available_methods[] = ['type' => 'pix_pagarme', 'name' => 'Pix', 'icon' => 'qr-code', 'gateway' => 'pagarme'];
+    } elseif ($pix_stripe_enabled) {
+        $available_methods[] = ['type' => 'pix_stripe', 'name' => 'Pix', 'icon' => 'qr-code', 'gateway' => 'stripe'];
+    } elseif ($pix_mercadopago_enabled) {
+        $available_methods[] = ['type' => 'pix_mercadopago', 'name' => 'Pix', 'icon' => 'qr-code', 'gateway' => 'mercadopago'];
+    }
+    
+    // Cartão de Crédito - prioridade Stripe > PayPal > Pagar.me > Hypercash > Beehive > Efí > Mercado Pago
+    if ($credit_card_stripe_enabled) {
+        $available_methods[] = ['type' => 'credit_card_stripe', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'stripe'];
+    } elseif ($credit_card_paypal_enabled) {
+        $available_methods[] = ['type' => 'credit_card_paypal', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'paypal'];
+    } elseif ($credit_card_pagarme_enabled) {
+        $available_methods[] = ['type' => 'credit_card_pagarme', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'pagarme'];
+    } elseif ($credit_card_hypercash_enabled) {
+        $available_methods[] = ['type' => 'credit_card_hypercash', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'hypercash'];
+    } elseif ($credit_card_beehive_enabled) {
+        $available_methods[] = ['type' => 'credit_card_beehive', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'beehive'];
+    } elseif ($credit_card_efi_enabled) {
+        $available_methods[] = ['type' => 'credit_card_efi', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'efi'];
+    } elseif ($credit_card_mercadopago_enabled) {
+        $available_methods[] = ['type' => 'credit_card', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'mercadopago'];
+    } elseif ($credit_card_enabled) {
+        $available_methods[] = ['type' => 'credit_card', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'mercadopago'];
+    }
+    
+    if ($ticket_enabled) {
+        $available_methods[] = ['type' => $ticket_pagarme_enabled ? 'ticket_pagarme' : 'ticket', 'name' => 'Boleto', 'icon' => 'file-text', 'gateway' => $ticket_pagarme_enabled ? 'pagarme' : 'mercadopago'];
+    }
+    
+    if (empty($available_methods)) {
+        return '';
+    }
+    
+    $accentColorEscaped = htmlspecialchars($accentColor, ENT_QUOTES, 'UTF-8');
+    
+    $html = "<div class='mb-6'>";
+    $html .= "<h3 class='text-lg font-semibold mb-4 text-gray-800 flex items-center'><i data-lucide='wallet' class='w-5 h-5 mr-2'></i>Escolha a forma de pagamento</h3>";
+    $html .= "<div class='grid grid-cols-2 lg:grid-cols-3 gap-4' id='payment-methods-selector'>";
+    
+    foreach ($available_methods as $method) {
+        $methodType = htmlspecialchars($method['type'], ENT_QUOTES, 'UTF-8');
+        $methodName = htmlspecialchars($method['name'], ENT_QUOTES, 'UTF-8');
+        $methodIcon = htmlspecialchars($method['icon'], ENT_QUOTES, 'UTF-8');
+        
+        $html .= "<div class='payment-method-card bg-white rounded-lg border-2 border-gray-200 p-4 cursor-pointer transition-all hover:shadow-lg flex flex-col items-center justify-center text-center min-h-[120px]' data-payment-method='{$methodType}' style='border-color: #e5e7eb;'>";
+        
+        // Se for Pix, usar logo oficial ao invés de ícone
+        if ($methodType === 'pix_pushinpay' || $methodType === 'pix_mercadopago' || $methodType === 'pix_efi' || $methodType === 'pix_pagarme' || $methodType === 'pix_stripe') {
+            $html .= "<svg width='32' height='32' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg' class='mb-2' style='color: {$accentColorEscaped};' fill='currentColor'><path d='M11.917 11.71a2.046 2.046 0 0 1-1.454-.602l-2.1-2.1a.4.4 0 0 0-.551 0l-2.108 2.108a2.044 2.044 0 0 1-1.454.602h-.414l2.66 2.66c.83.83 2.177.83 3.007 0l2.667-2.668h-.253zM4.25 4.282c.55 0 1.066.214 1.454.602l2.108 2.108a.39.39 0 0 0 .552 0l2.1-2.1a2.044 2.044 0 0 1 1.453-.602h.253L9.503 1.623a2.127 2.127 0 0 0-3.007 0l-2.66 2.66h.414z'/><path d='m14.377 6.496-1.612-1.612a.307.307 0 0 1-.114.023h-.733c-.379 0-.75.154-1.017.422l-2.1 2.1a1.005 1.005 0 0 1-1.425 0L5.268 5.32a1.448 1.448 0 0 0-1.018-.422h-.9a.306.306 0 0 1-.109-.021L1.623 6.496c-.83.83-.83 2.177 0 3.008l1.618 1.618a.305.305 0 0 1 .108-.022h.901c.38 0 .75-.153 1.018-.421L7.375 8.57a1.034 1.034 0 0 1 1.426 0l2.1 2.1c.267.268.638.421 1.017.421h.733c.04 0 .079.01.114.024l1.612-1.612c.83-.83.83-2.178 0-3.008z'/></svg>";
+        } else {
+            $html .= "<i data-lucide='{$methodIcon}' class='w-8 h-8 mb-2' style='color: {$accentColorEscaped};'></i>";
+        }
+        
+        $html .= "<span class='font-semibold text-gray-800 text-sm'>{$methodName}</span>";
+        $html .= "</div>";
+    }
+    
+    $html .= "</div>";
+    $html .= "</div>";
+    
+    return $html;
+}
+
+function render_free_product_section($accentColor) {
+    $html = "<div data-id='payment'>";
+    $html .= "<div id='payment_section_wrapper'>";
+    $html .= "<div class='mb-6'>";
+    $html .= "<h3 class='text-lg font-semibold mb-4 text-gray-800 flex items-center'><i data-lucide='gift' class='w-5 h-5 mr-2' style='color: {$accentColor};'></i>Produto Gratuito</h3>";
+    $html .= "<div class='bg-green-50 border border-green-200 rounded-lg p-4 mb-4'>";
+    $html .= "<div class='flex items-center gap-3'>";
+    $html .= "<div class='w-10 h-10 bg-green-100 rounded-full flex items-center justify-center'><i data-lucide='check-circle' class='w-6 h-6 text-green-600'></i></div>";
+    $html .= "<div>";
+    $html .= "<p class='font-semibold text-green-800'>Este produto é 100% gratuito!</p>";
+    $html .= "<p class='text-sm text-green-600'>Preencha seus dados acima e clique no botão para receber seu acesso.</p>";
+    $html .= "</div>";
+    $html .= "</div>";
+    $html .= "</div>";
+    $html .= "<button id='btn-get-free-product' class='w-full text-white font-bold py-4 rounded-lg transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95' style='background-color: {$accentColor};' onmouseover=\"this.style.opacity='0.9'\" onmouseout=\"this.style.opacity='1'\">";
+    $html .= "<i data-lucide='download' class='w-6 h-6'></i> QUERO MEU ACESSO GRÁTIS";
+    $html .= "</button>";
+    $html .= "</div>";
+    $html .= "</div>";
+    $html .= "</div>";
+    return $html;
+}
+
+function render_payment_section($gateway, $accentColor, $payment_methods_config, $pix_pushinpay_enabled = null, $pix_mercadopago_enabled = null, $pix_efi_enabled = null, $credit_card_enabled = null, $ticket_enabled = null, $credit_card_beehive_enabled = null, $credit_card_mercadopago_enabled = null, $credit_card_hypercash_enabled = null, $credit_card_efi_enabled = null) {
+    $html = "<div data-id='payment'>";
+    $html .= "<div id='payment_section_wrapper'>";
+    
+    // Se as variáveis não foram passadas, calcular (retrocompatibilidade)
+    if ($pix_pushinpay_enabled === null || $pix_mercadopago_enabled === null || $pix_efi_enabled === null || $credit_card_enabled === null || $ticket_enabled === null) {
+        $pix_pushinpay_enabled = false;
+        $pix_mercadopago_enabled = false;
+        $pix_efi_enabled = false;
+        $credit_card_enabled = false;
+        $credit_card_beehive_enabled = false;
+        $credit_card_hypercash_enabled = false;
+        $credit_card_mercadopago_enabled = false;
+        $credit_card_efi_enabled = false;
+        $credit_card_pagarme_enabled = false;
+        $credit_card_paypal_enabled = false;
+        $credit_card_stripe_enabled = false;
+        $pix_pagarme_enabled = false;
+        $pix_stripe_enabled = false;
+        $ticket_enabled = false;
+        $ticket_pagarme_enabled = false;
+        
+        // Ler nova estrutura com gateway por método
+        if (isset($payment_methods_config['pix']['gateway'])) {
+            if ($payment_methods_config['pix']['gateway'] === 'pushinpay' && ($payment_methods_config['pix']['enabled'] ?? false)) {
+                $pix_pushinpay_enabled = true;
+            } elseif ($payment_methods_config['pix']['gateway'] === 'mercadopago' && ($payment_methods_config['pix']['enabled'] ?? false)) {
+                $pix_mercadopago_enabled = true;
+            } elseif ($payment_methods_config['pix']['gateway'] === 'efi' && ($payment_methods_config['pix']['enabled'] ?? false)) {
+                $pix_efi_enabled = true;
+            } elseif ($payment_methods_config['pix']['gateway'] === 'pagarme' && ($payment_methods_config['pix']['enabled'] ?? false)) {
+                $pix_pagarme_enabled = true;
+            } elseif ($payment_methods_config['pix']['gateway'] === 'stripe' && ($payment_methods_config['pix']['enabled'] ?? false)) {
+                $pix_stripe_enabled = true;
+            }
+        }
+        
+        if (isset($payment_methods_config['credit_card']['enabled']) && $payment_methods_config['credit_card']['enabled']) {
+            $credit_card_enabled = true;
+            $credit_card_gateway = $payment_methods_config['credit_card']['gateway'] ?? 'mercadopago';
+            if ($credit_card_gateway === 'beehive') {
+                $credit_card_beehive_enabled = true;
+            } elseif ($credit_card_gateway === 'hypercash') {
+                $credit_card_hypercash_enabled = true;
+            } elseif ($credit_card_gateway === 'efi') {
+                $credit_card_efi_enabled = true;
+            } elseif ($credit_card_gateway === 'pagarme') {
+                $credit_card_pagarme_enabled = true;
+            } elseif ($credit_card_gateway === 'paypal') {
+                $credit_card_paypal_enabled = true;
+            } elseif ($credit_card_gateway === 'stripe') {
+                $credit_card_stripe_enabled = true;
+            } else {
+                $credit_card_mercadopago_enabled = true;
+            }
+        }
+        
+        if (isset($payment_methods_config['ticket']['enabled']) && $payment_methods_config['ticket']['enabled']) {
+            $ticket_enabled = true;
+            $ticket_gateway = $payment_methods_config['ticket']['gateway'] ?? 'mercadopago';
+            $ticket_pagarme_enabled = ($ticket_gateway === 'pagarme');
+        }
+    }
+    
+    // Renderizar seletor de métodos de pagamento
+    $html .= render_payment_methods_selector($pix_pushinpay_enabled, $pix_mercadopago_enabled, $pix_efi_enabled, $credit_card_enabled, $ticket_enabled, $accentColor, $credit_card_beehive_enabled, $credit_card_mercadopago_enabled, $credit_card_hypercash_enabled, $credit_card_efi_enabled ?? false, $pix_pagarme_enabled ?? false, $pix_stripe_enabled ?? false, $credit_card_pagarme_enabled ?? false, $credit_card_paypal_enabled ?? false, $credit_card_stripe_enabled ?? false, $ticket_pagarme_enabled ?? false);
+    
+    // Container PushinPay Pix
+    if ($pix_pushinpay_enabled) {
+        $html .= "<div class='payment-method-container hidden' data-method-type='pix_pushinpay'>";
+        $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
+        $html .= "<div class='border-2 border-green-500 bg-green-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'>";
+            $html .= "<div class='flex items-center gap-3'>";
+                $html .= "<img src='/assets/pix.svg' class='h-6 w-auto' alt='Pix' style='filter: brightness(0) saturate(100%) invert(60%) sepia(95%) saturate(1200%) hue-rotate(140deg) brightness(0.9) contrast(0.9);'>";
+                $html .= "<span class='font-bold text-gray-800'>Pix</span>";
+            $html .= "</div>";
+            $html .= "<div class='w-5 h-5 rounded-full border-4 border-green-500'></div>";
+        $html .= "</div>";
+        
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'>";
+            $html .= "<p>• Liberação imediata do acesso</p>";
+            $html .= "<p>• É simples, só usar o aplicativo de seu banco para pagar Pix</p>";
+        $html .= "</div>";
+        
+        $html .= "<button id='btn-pagar-pushinpay' class='w-full bg-green-600 text-white font-bold py-4 rounded-lg hover:bg-green-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95'>";
+            $html .= "<i data-lucide='qr-code' class='w-6 h-6'></i> GERAR PIX AGORA";
+        $html .= "</button>";
+        
+        $html .= "</div>";
+        $html .= "</div>";
+    }
+    
+    // Container Mercado Pago Pix
+    if ($pix_mercadopago_enabled) {
+        $enabled_payment_methods = ['bankTransfer' => 'all'];
+        $json_config = htmlspecialchars(json_encode($enabled_payment_methods), ENT_QUOTES, 'UTF-8');
+        
+        $html .= "<div class='payment-method-container hidden' data-method-type='pix_mercadopago'>";
+        $html .= "<div id='payment_container_wrapper_pix_mp' class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm' data-mp-config='{$json_config}'>";
+        $html .= "<div id='loading_spinner_pix_mp' class='flex flex-col items-center justify-center py-12 text-gray-500'><svg class='animate-spin h-8 w-8' style='color: {$accentColor};' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z'></path></svg><p class='mt-4 font-medium'>Carregando pagamento seguro...</p></div>";
+        $html .= "<div id='paymentBrick_container_pix_mp'></div>";
+        $html .= "</div>";
+        $html .= "</div>";
+    }
+    
+    // Container Efí Pix
+    if ($pix_efi_enabled) {
+        $html .= "<div class='payment-method-container hidden' data-method-type='pix_efi'>";
+        $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
+        $html .= "<div class='border-2 border-green-500 bg-green-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'>";
+            $html .= "<div class='flex items-center gap-3'>";
+                $html .= "<img src='/assets/pix.svg' class='h-6 w-auto' alt='Pix' style='filter: brightness(0) saturate(100%) invert(60%) sepia(95%) saturate(1200%) hue-rotate(140deg) brightness(0.9) contrast(0.9);'>";
+                $html .= "<span class='font-bold text-gray-800'>Pix</span>";
+            $html .= "</div>";
+            $html .= "<div class='w-5 h-5 rounded-full border-4 border-green-500'></div>";
+        $html .= "</div>";
+        
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'>";
+            $html .= "<p>• Liberação imediata do acesso</p>";
+            $html .= "<p>• É simples, só usar o aplicativo de seu banco para pagar Pix</p>";
+        $html .= "</div>";
+        
+        $html .= "<button id='btn-pagar-efi' class='w-full bg-green-600 text-white font-bold py-4 rounded-lg hover:bg-green-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95'>";
+            $html .= "<i data-lucide='qr-code' class='w-6 h-6'></i> GERAR PIX AGORA";
+        $html .= "</button>";
+        
+        $html .= "</div>";
+        $html .= "</div>";
+    }
+    
+    // Container Pix Pagar.me
+    if (isset($pix_pagarme_enabled) && $pix_pagarme_enabled) {
+        $html .= "<div class='payment-method-container hidden' data-method-type='pix_pagarme'>";
+        $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
+        $html .= "<div class='border-2 border-teal-500 bg-teal-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><img src='/assets/pix.svg' class='h-6 w-auto' alt='Pix'><span class='font-bold text-gray-800'>Pix (Pagar.me)</span></div><div class='w-5 h-5 rounded-full border-4 border-teal-500'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Liberação imediata do acesso</p><p>• Pague via Pix usando o aplicativo do seu banco</p></div>";
+        $html .= "<button id='btn-pagar-pagarme-pix' class='w-full bg-teal-600 text-white font-bold py-4 rounded-lg hover:bg-teal-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='qr-code' class='w-6 h-6'></i> GERAR PIX AGORA</button>";
+        $html .= "</div></div>";
+    }
+    
+    // Container Pix Stripe
+    if (isset($pix_stripe_enabled) && $pix_stripe_enabled) {
+        $html .= "<div class='payment-method-container hidden' data-method-type='pix_stripe'>";
+        $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
+        $html .= "<div class='border-2 border-indigo-500 bg-indigo-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><img src='/assets/pix.svg' class='h-6 w-auto' alt='Pix'><span class='font-bold text-gray-800'>Pix (Stripe)</span></div><div class='w-5 h-5 rounded-full border-4 border-indigo-500'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Liberação imediata do acesso</p><p>• Pague via Pix usando o aplicativo do seu banco</p></div>";
+        $html .= "<button id='btn-pagar-stripe-pix' class='w-full bg-indigo-600 text-white font-bold py-4 rounded-lg hover:bg-indigo-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='qr-code' class='w-6 h-6'></i> GERAR PIX AGORA</button>";
+        $html .= "</div></div>";
+    }
+    
+    // Container Cartão de Crédito Mercado Pago
+    $has_other_card_gateway = (isset($credit_card_beehive_enabled) && $credit_card_beehive_enabled) || 
+                              (isset($credit_card_hypercash_enabled) && $credit_card_hypercash_enabled) || 
+                              (isset($credit_card_efi_enabled) && $credit_card_efi_enabled) ||
+                              (isset($credit_card_pagarme_enabled) && $credit_card_pagarme_enabled) ||
+                              (isset($credit_card_paypal_enabled) && $credit_card_paypal_enabled) ||
+                              (isset($credit_card_stripe_enabled) && $credit_card_stripe_enabled);
+    if ($credit_card_mercadopago_enabled || ($credit_card_enabled && !$has_other_card_gateway)) {
+        $enabled_payment_methods = ['creditCard' => 'all'];
+        $json_config = htmlspecialchars(json_encode($enabled_payment_methods), ENT_QUOTES, 'UTF-8');
+        
+        $html .= "<div class='payment-method-container hidden' data-method-type='credit_card'>";
+        $html .= "<div id='payment_container_wrapper_credit' class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm' data-mp-config='{$json_config}'>";
+        $html .= "<div id='loading_spinner_credit' class='flex flex-col items-center justify-center py-12 text-gray-500'><svg class='animate-spin h-8 w-8' style='color: {$accentColor};' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z'></path></svg><p class='mt-4 font-medium'>Carregando pagamento seguro...</p></div>";
+        $html .= "<div id='paymentBrick_container_credit'></div>";
+        $html .= "</div>";
+        $html .= "</div>";
+    }
+    
+    // Container Cartão de Crédito Beehive
+    if ($credit_card_beehive_enabled) {
+        $html .= "<div class='payment-method-container hidden' data-method-type='credit_card_beehive'>";
+        $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
+        $html .= "<div class='border-2 border-yellow-500 bg-yellow-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'>";
+            $html .= "<div class='flex items-center gap-3'>";
+                $html .= "<i data-lucide='credit-card' class='w-6 h-6 text-yellow-600'></i>";
+                $html .= "<span class='font-bold text-gray-800'>Cartão de Crédito</span>";
+            $html .= "</div>";
+            $html .= "<div class='w-5 h-5 rounded-full border-4 border-yellow-500'></div>";
+        $html .= "</div>";
+        
+        $html .= "<form id='beehive-card-form' class='space-y-4'>";
+        $html .= "<div><label class='block text-sm font-medium text-gray-700 mb-2'>Número do Cartão</label><input type='text' id='beehive-card-number' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500' placeholder='0000 0000 0000 0000' maxlength='19'></div>";
+        $html .= "<div><label class='block text-sm font-medium text-gray-700 mb-2'>Nome no Cartão</label><input type='text' id='beehive-card-holder' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500' placeholder='NOME COMPLETO'></div>";
+        $html .= "<div class='grid grid-cols-2 gap-4'><div><label class='block text-sm font-medium text-gray-700 mb-2'>Validade</label><input type='text' id='beehive-card-expiry' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500' placeholder='MM/AA' maxlength='5'></div><div><label class='block text-sm font-medium text-gray-700 mb-2'>CVV</label><input type='text' id='beehive-card-cvv' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500' placeholder='123' maxlength='4'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Aprovação imediata do acesso.</p><p>• 100% Seguro e criptografado.</p></div>";
+        $html .= "<button type='button' id='btn-pagar-beehive' class='w-full bg-yellow-600 text-white font-bold py-4 rounded-lg hover:bg-yellow-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
+        $html .= "</form></div></div>";
+    }
+    
+    // Container Cartão de Crédito Hypercash
+    if ($credit_card_hypercash_enabled) {
+        $html .= "<div class='payment-method-container hidden' data-method-type='credit_card_hypercash'>";
+        $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
+        $html .= "<div class='border-2 border-indigo-500 bg-indigo-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'>";
+            $html .= "<div class='flex items-center gap-3'>";
+                $html .= "<i data-lucide='credit-card' class='w-6 h-6 text-indigo-600'></i>";
+                $html .= "<span class='font-bold text-gray-800'>Cartão de Crédito</span>";
+            $html .= "</div>";
+            $html .= "<div class='w-5 h-5 rounded-full border-4 border-indigo-500'></div>";
+        $html .= "</div>";
+        
+        $html .= "<form id='hypercash-card-form' class='space-y-4'>";
+        $html .= "<div><label class='block text-sm font-medium text-gray-700 mb-2'>Número do Cartão</label><input type='text' id='hypercash-card-number' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500' placeholder='0000 0000 0000 0000' maxlength='19'></div>";
+        $html .= "<div><label class='block text-sm font-medium text-gray-700 mb-2'>Nome no Cartão</label><input type='text' id='hypercash-card-holder' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500' placeholder='NOME COMPLETO'></div>";
+        $html .= "<div class='grid grid-cols-2 gap-4'><div><label class='block text-sm font-medium text-gray-700 mb-2'>Validade</label><input type='text' id='hypercash-card-expiry' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500' placeholder='MM/AA' maxlength='5'></div><div><label class='block text-sm font-medium text-gray-700 mb-2'>CVV</label><input type='text' id='hypercash-card-cvv' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500' placeholder='123' maxlength='4'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Aprovação imediata do acesso.</p><p>• 100% Seguro e criptografado.</p></div>";
+        $html .= "<button type='button' id='btn-pagar-hypercash' class='w-full bg-indigo-600 text-white font-bold py-4 rounded-lg hover:bg-indigo-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
+        $html .= "</form></div></div>";
+    }
+    
+    // Container Cartão de Crédito Efí
+    if (isset($credit_card_efi_enabled) && $credit_card_efi_enabled) {
+        $html .= "<div class='payment-method-container hidden' data-method-type='credit_card_efi'>";
+        $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
+        $html .= "<div class='border-2 border-green-500 bg-green-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'>";
+            $html .= "<div class='flex items-center gap-3'>";
+                $html .= "<i data-lucide='credit-card' class='w-6 h-6 text-green-600'></i>";
+                $html .= "<span class='font-bold text-gray-800'>Cartão de Crédito</span>";
+            $html .= "</div>";
+            $html .= "<div class='w-5 h-5 rounded-full border-4 border-green-500'></div>";
+        $html .= "</div>";
+        
+        $html .= "<form id='efi-card-form' class='space-y-4'>";
+        $html .= "<div><label class='block text-sm font-medium text-gray-700 mb-2'>Número do Cartão</label><input type='text' id='efi-card-number' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500' placeholder='0000 0000 0000 0000' maxlength='19'></div>";
+        $html .= "<div><label class='block text-sm font-medium text-gray-700 mb-2'>Nome no Cartão</label><input type='text' id='efi-card-holder' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500' placeholder='NOME COMPLETO'></div>";
+        $html .= "<div class='grid grid-cols-2 gap-4'><div><label class='block text-sm font-medium text-gray-700 mb-2'>Validade</label><input type='text' id='efi-card-expiry' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500' placeholder='MM/AA' maxlength='5'></div><div><label class='block text-sm font-medium text-gray-700 mb-2'>CVV</label><input type='text' id='efi-card-cvv' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500' placeholder='123' maxlength='4'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Aprovação imediata do acesso.</p><p>• 100% Seguro e criptografado.</p></div>";
+        $html .= "<button type='button' id='btn-pagar-efi-card' class='w-full bg-green-600 text-white font-bold py-4 rounded-lg hover:bg-green-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
+        $html .= "</form></div></div>";
+    }
+    
+    // Container Cartão Pagar.me
+    if (isset($credit_card_pagarme_enabled) && $credit_card_pagarme_enabled) {
+        $html .= "<div class='payment-method-container hidden' data-method-type='credit_card_pagarme'>";
+        $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
+        $html .= "<div class='border-2 border-teal-500 bg-teal-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='credit-card' class='w-6 h-6 text-teal-600'></i><span class='font-bold text-gray-800'>Cartão de Crédito (Pagar.me)</span></div><div class='w-5 h-5 rounded-full border-4 border-teal-500'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Aprovação imediata</p><p>• 100% Seguro e criptografado</p></div>";
+        $html .= "<button type='button' id='btn-pagar-pagarme-card' class='w-full bg-teal-600 text-white font-bold py-4 rounded-lg hover:bg-teal-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
+        $html .= "</div></div>";
+    }
+    
+    // Container Cartão PayPal
+    if (isset($credit_card_paypal_enabled) && $credit_card_paypal_enabled) {
+        $html .= "<div class='payment-method-container hidden' data-method-type='credit_card_paypal'>";
+        $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
+        $html .= "<div class='border-2 border-blue-500 bg-blue-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='credit-card' class='w-6 h-6 text-blue-600'></i><span class='font-bold text-gray-800'>Cartão / Conta PayPal</span></div><div class='w-5 h-5 rounded-full border-4 border-blue-500'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Pague com PayPal ou cartão</p><p>• 100% Seguro</p></div>";
+        $html .= "<button type='button' id='btn-pagar-paypal' class='w-full bg-blue-600 text-white font-bold py-4 rounded-lg hover:bg-blue-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
+        $html .= "</div></div>";
+    }
+    
+    // Container Cartão Stripe
+    if (isset($credit_card_stripe_enabled) && $credit_card_stripe_enabled) {
+        $html .= "<div class='payment-method-container hidden' data-method-type='credit_card_stripe'>";
+        $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
+        $html .= "<div class='border-2 border-indigo-500 bg-indigo-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='credit-card' class='w-6 h-6 text-indigo-600'></i><span class='font-bold text-gray-800'>Cartão de Crédito (Stripe)</span></div><div class='w-5 h-5 rounded-full border-4 border-indigo-500'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Aprovação imediata</p><p>• 100% Seguro e criptografado</p></div>";
+        $html .= "<button type='button' id='btn-pagar-stripe-card' class='w-full bg-indigo-600 text-white font-bold py-4 rounded-lg hover:bg-indigo-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
+        $html .= "</div></div>";
+    }
+    
+    // Container Boleto Pagar.me
+    if (isset($ticket_pagarme_enabled) && $ticket_pagarme_enabled) {
+        $html .= "<div class='payment-method-container hidden' data-method-type='ticket_pagarme'>";
+        $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
+        $html .= "<div class='border-2 border-teal-500 bg-teal-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='file-text' class='w-6 h-6 text-teal-600'></i><span class='font-bold text-gray-800'>Boleto (Pagar.me)</span></div><div class='w-5 h-5 rounded-full border-4 border-teal-500'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Liberação em até 3 dias úteis</p><p>• Pague em qualquer banco ou lotérica</p></div>";
+        $html .= "<button id='btn-pagar-pagarme-ticket' class='w-full bg-teal-600 text-white font-bold py-4 rounded-lg hover:bg-teal-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='file-text' class='w-6 h-6'></i> GERAR BOLETO</button>";
+        $html .= "</div></div>";
+    }
+    
+    // Container Boleto Mercado Pago
+    if ($ticket_enabled && !(isset($ticket_pagarme_enabled) && $ticket_pagarme_enabled)) {
+        $enabled_payment_methods = ['ticket' => 'all'];
+        $json_config = htmlspecialchars(json_encode($enabled_payment_methods), ENT_QUOTES, 'UTF-8');
+        
+        $html .= "<div class='payment-method-container hidden' data-method-type='ticket'>";
+        $html .= "<div id='payment_container_wrapper_ticket' class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm' data-mp-config='{$json_config}'>";
+        $html .= "<div id='loading_spinner_ticket' class='flex flex-col items-center justify-center py-12 text-gray-500'><svg class='animate-spin h-8 w-8' style='color: {$accentColor};' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z'></path></svg><p class='mt-4 font-medium'>Carregando pagamento seguro...</p></div>";
+        $html .= "<div id='paymentBrick_container_ticket'></div>";
+        $html .= "</div>";
+        $html .= "</div>";
+    }
+    
+    $html .= "</div></div>";
+    return $html;
+}
+
+function render_security_info($vendedor_nome, $privacy_url = '', $terms_url = '') {
+    global $logo_checkout_url, $nome_plataforma;
+    
+    // Buscar selo de segurança
+    $security_seal_url = getSystemSetting('security_seal_url', '');
+    if (!empty($security_seal_url) && strpos($security_seal_url, 'http') !== 0) {
+        $security_seal_url = '/' . ltrim($security_seal_url, '/');
+    }
+    
+    $vendedor_nome_html = htmlspecialchars($vendedor_nome);
+    $logo_html = htmlspecialchars($logo_checkout_url);
+    $nome_plataforma_html = htmlspecialchars($nome_plataforma);
+    $html = "<div data-id='security_info' class='text-center text-xs text-gray-500 space-y-4'>"; 
+    $html .= "<img src='{$logo_html}' alt='Logo {$nome_plataforma_html}' class='h-10 mx-auto mb-4'>";
+    $html .= "<p><strong>{$nome_plataforma_html}</strong> está processando este pagamento para o vendedor <strong>{$vendedor_nome_html}</strong>.</p>";
+    
+    // Se tiver selo de segurança, exibe a imagem; senão, exibe o texto padrão
+    if (!empty($security_seal_url)) {
+        $html .= "<div class='flex items-center justify-center'><img src='" . htmlspecialchars($security_seal_url) . "' alt='Selo de Segurança' class='max-h-16 mx-auto'></div>";
+    } else {
+        $html .= "<div class='flex items-center justify-center space-x-4'><div class='flex items-center space-x-1.5'><i data-lucide='shield-check' class='w-4 h-4 text-gray-400'></i><span>Compra 100% segura</span></div></div>";
+    }
+    
+    // Links de Política e Termos
+    $privacy_link = !empty($privacy_url) ? "<a href='" . htmlspecialchars($privacy_url) . "' target='_blank' class='underline hover:text-gray-700'>Política de privacidade</a>" : "<a href='#' class='underline hover:text-gray-700'>Política de privacidade</a>";
+    $terms_link = !empty($terms_url) ? "<a href='" . htmlspecialchars($terms_url) . "' target='_blank' class='underline hover:text-gray-700'>Termos de serviço</a>" : "<a href='#' class='underline hover:text-gray-700'>Termos de serviço</a>";
+    
+    $html .= "<p>Este site é protegido pelo reCAPTCHA do Google<br>{$privacy_link} e {$terms_link}.</p>";
+    $html .= "<p class='pt-4 text-gray-400'>Copyright &copy; " . date("Y") . ". Todos os direitos reservados.</p>";
+    $html .= "</div>";
+    return $html;
+}
+
+function render_sales_notification($config, $produto_nome_fallback) {
+    if (!($config['enabled'] ?? false) || empty($config['names'])) return '';
+    $notification_product_display = !empty($config['product']) ? $config['product'] : $produto_nome_fallback;
+    return "<div id='sales-notification' class='fixed lg:bottom-4 left-4 w-80 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-lg p-4 flex items-center space-x-4 transform translate-y-full opacity-0 transition-all duration-500 z-[9999]'><div class='bg-blue-100 text-blue-600 p-2 rounded-full'><i data-lucide='shopping-cart'></i></div><div><p class='text-sm font-semibold text-gray-900'><span id='notification-name'></span> acabou de comprar!</p><p class='text-xs text-gray-600' id='notification-product' data-fallback-product-name='".htmlspecialchars($notification_product_display)."'></p></div></div>";
+}
+?>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkout — <?php echo htmlspecialchars($produto['nome']); ?></title>
+    <?php
+    // Adiciona favicon se configurado
+    require_once __DIR__ . '/config/config.php';
+    $favicon_url_raw = getSystemSetting('favicon_url', '');
+    if (!empty($favicon_url_raw)) {
+        $favicon_url = ltrim($favicon_url_raw, '/');
+        if (strpos($favicon_url, 'http') !== 0) {
+            if (strpos($favicon_url, 'uploads/') === 0) {
+                $favicon_url = '/' . $favicon_url;
+            } else {
+                $favicon_url = '/' . $favicon_url;
+            }
+        }
+        $favicon_ext = strtolower(pathinfo($favicon_url, PATHINFO_EXTENSION));
+        $favicon_type = 'image/x-icon';
+        if ($favicon_ext === 'png') {
+            $favicon_type = 'image/png';
+        } elseif ($favicon_ext === 'svg') {
+            $favicon_type = 'image/svg+xml';
+        }
+        echo '<link rel="icon" type="' . htmlspecialchars($favicon_type) . '" href="' . htmlspecialchars($favicon_url) . '">' . "\n";
+    }
+    ?>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { fontFamily: { 'mono': ['"Roboto Mono"', 'monospace'], }, aspectRatio: { '1/1': '1 / 1', '16/9': '16 / 9' } } },
+            plugins: [],
+        }
+    </script>
+    
+    <?php 
+    // Carregar Mercado Pago SDK APENAS se houver métodos do MP habilitados E tiver public_key
+    $has_mp_methods_for_script = ($pix_mercadopago_enabled || $credit_card_mercadopago_enabled || $ticket_enabled);
+    $should_load_mp_script = $has_mp_methods_for_script && !empty($public_key) && !isset($_GET['preview']);
+    if ($should_load_mp_script): ?>
+    <script src="https://sdk.mercadopago.com/js/v2"></script>
+    <?php endif; ?>
+    
+    <?php 
+    // Carregar Beehive SDK APENAS se houver método Beehive habilitado E tiver public_key
+    $should_load_beehive_script = $credit_card_beehive_enabled && !empty($beehive_public_key) && !isset($_GET['preview']);
+    if ($should_load_beehive_script): ?>
+    <script src="https://api.conta.paybeehive.com.br/v1/js"></script>
+    <?php endif; ?>
+    
+    <?php 
+    // Carregar FastSoft SDK (Hypercash) APENAS se houver método Hypercash habilitado E tiver public_key
+    $should_load_hypercash_script = (isset($credit_card_hypercash_enabled) && $credit_card_hypercash_enabled) && !empty($hypercash_public_key) && !isset($_GET['preview']);
+    if ($should_load_hypercash_script): ?>
+    <script src="https://js.fastsoftbrasil.com/security.js"></script>
+    <?php endif; ?>
+    
+    <?php 
+    // Carregar Efí Payment Token SDK APENAS se houver método Efí Cartão habilitado E tiver payee_code
+    $should_load_efi_script = (isset($credit_card_efi_enabled) && $credit_card_efi_enabled) && !empty($efi_payee_code) && !isset($_GET['preview']);
+    if ($should_load_efi_script): ?>
+    <script src="https://cdn.jsdelivr.net/gh/efipay/js-payment-token-efi/dist/payment-token-efi-umd.min.js"></script>
+    <?php endif; ?>
+
+    <!-- Rastreamento (Pixel, Analytics) -->
+    <?php if (!empty($fbPixelId) && !isset($_GET['preview'])): ?>
+    <script>
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window, document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', '<?php echo htmlspecialchars($fbPixelId); ?>');
+    fbq('track', 'PageView');
+    <?php if (!empty($fb_events_enabled['initiate_checkout'])) { echo "fbq('track', 'InitiateCheckout');"; } ?>
+    </script>
+    <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=<?php echo htmlspecialchars($fbPixelId); ?>&ev=PageView&noscript=1"/></noscript>
+    <?php endif; ?>
+    <!-- Fim Rastreamento -->
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: <?php echo htmlspecialchars($backgroundColor); ?>; }
+        .custom-alert { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background-color: #ef4444; color: white; padding: 12px 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 1000; opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s; }
+        .custom-alert.show { opacity: 1; visibility: visible; }
+        #pix-modal-overlay { transition: opacity 0.3s ease-in-out; }
+        #pix-modal-content { transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out; }
+        .order-bump-block { display: block; cursor: pointer; background-color: #f3f4f6; border: 2px dashed #d1d5db; border-radius: 12px; padding: 1rem; position: relative; transition: all 0.3s ease-in-out; }
+        .custom-checkbox { width: 24px; height: 24px; border: 2px solid #9ca3af; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease-in-out; }
+        .custom-checkbox .checkmark { opacity: 0; transform: scale(0.5); color: white; transition: all 0.2s ease-in-out; width: 16px; height: 16px; }
+        .offer-badge { position: absolute; top: -12px; right: 16px; background-color: #ef4444; color: white; font-size: 0.75rem; font-weight: 700; padding: 4px 10px; border-radius: 9999px; text-transform: uppercase; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border: 2px solid white; }
+        .order-bump-wrapper input:checked + .order-bump-block { background-color: #f0fdf4; border-color: #22c55e; border-style: dashed; }
+        .order-bump-wrapper input:checked + .order-bump-block .custom-checkbox { background-color: #22c55e; border-color: #22c55e; }
+        .order-bump-wrapper input:checked + .order-bump-block .custom-checkbox .checkmark { opacity: 1; transform: scale(1); }
+        #sales-notification { visibility: hidden; }
+        #sales-notification.show { visibility: visible; transform: translateY(0); opacity: 1; }
+        #sales-notification.hide { visibility: hidden; transform: translateY(100%); opacity: 0; }
+        .checkout-input { transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out; }
+        .checkout-input:focus { border-color: <?php echo htmlspecialchars($accentColor); ?>; box-shadow: 0 0 0 2px <?php echo htmlspecialchars($accentColor); ?>40; outline: none; }
+        .payment-method-card { transition: all 0.3s ease-in-out; }
+        .payment-method-card:hover { transform: translateY(-2px); }
+        
+        /* Ajustes para Payment Brick no mobile */
+        @media (max-width: 1023px) {
+            #payment_container_wrapper_credit,
+            #payment_container_wrapper_ticket,
+            #payment_container_wrapper_pix_mp {
+                padding: 0.75rem !important;
+                margin-left: -1.5rem;
+                margin-right: -1.5rem;
+                width: calc(100% + 3rem);
+                max-width: calc(100% + 3rem);
+                box-sizing: border-box;
+            }
+            
+            #paymentBrick_container_credit,
+            #paymentBrick_container_ticket,
+            #paymentBrick_container_pix_mp {
+                width: 100% !important;
+                max-width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            
+            #paymentBrick_container_credit iframe,
+            #paymentBrick_container_ticket iframe,
+            #paymentBrick_container_pix_mp iframe {
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 100% !important;
+            }
+            
+            /* Garantir que inputs dentro do Payment Brick tenham largura completa */
+            #payment_container_wrapper_credit *,
+            #payment_container_wrapper_ticket *,
+            #payment_container_wrapper_pix_mp * {
+                max-width: 100% !important;
+                box-sizing: border-box !important;
+            }
+            
+            /* Ajustar o container pai para dar mais espaço */
+            .payment-method-container {
+                margin-left: -1rem;
+                margin-right: -1rem;
+                width: calc(100% + 2rem);
+                max-width: calc(100% + 2rem);
+            }
+        }
+    </style>
+</head>
+<body>
+    
+    <?php echo render_timer($timerConfig); ?>
+    <div id="custom-alert-box" class="custom-alert"></div>
+    
+    <div class="mx-auto max-w-6xl p-4">
+        <?php if (!empty($banners)): ?>
+        <div data-id="banner" class="mb-4 space-y-4">
+            <?php foreach ($banners as $banner_url): ?>
+            <img src="<?php echo htmlspecialchars($banner_url); ?>" alt="Banner do Produto" class="w-full h-auto md:h-[300px] object-cover rounded-lg shadow-md">
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+        <?php echo render_youtube_video($youtubeUrl); ?>
+
+        <div class="flex flex-col lg:flex-row gap-6">
+            <!-- Coluna Principal -->
+            <div class="w-full lg:w-2/3">
+                <div class="bg-white rounded-lg shadow-lg p-6 md:p-8 space-y-6">
+                    <section data-id="summary" class="flex flex-row items-start gap-4">
+                        <img src="<?php echo htmlspecialchars($main_image); ?>" alt="Imagem de <?php echo htmlspecialchars($main_name); ?>" class="w-24 h-24 object-cover rounded-lg shadow-md border border-gray-200 flex-shrink-0" onerror="this.src='https://placehold.co/96x96/e2e8f0/334155?text=Produto'">
+                        <div class="flex-1">
+                            <h1 class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($main_name); ?></h1>
+                            <div class="flex items-baseline flex-wrap gap-x-3 gap-y-1 mt-2">
+                                <span class="text-2xl font-bold" style="color: <?php echo htmlspecialchars($accentColor); ?>;"><?php echo $formattedMainPrice; ?></span>
+                                <?php if ($formattedPrecoAnterior): ?><span class="text-lg text-gray-400 line-through"><?php echo $formattedPrecoAnterior; ?></span><?php endif; ?>
+                            </div>
+                            <div class="flex flex-wrap gap-2 mt-2">
+                                <?php if ($is_free_product): ?>
+                                <span class="bg-green-100 text-green-700 text-xs font-bold uppercase px-3 py-1 rounded-full inline-flex items-center gap-1">
+                                    <i data-lucide="gift" class="w-3 h-3"></i>
+                                    Produto Grátis
+                                </span>
+                                <?php else: ?>
+                                <span class="<?php echo $tipo_acesso_info['color']; ?> text-xs font-bold uppercase px-3 py-1 rounded-full inline-flex items-center gap-1">
+                                    <i data-lucide="<?php echo $tipo_acesso === 'vitalicio' ? 'infinity' : 'calendar'; ?>" class="w-3 h-3"></i>
+                                    <?php echo $tipo_acesso_info['label']; ?>
+                                </span>
+                                <?php endif; ?>
+                                <?php if (!empty($discount_text)): ?><span class="bg-red-100 text-red-700 text-xs font-bold uppercase px-3 py-1 rounded-full inline-block"><?php echo htmlspecialchars($discount_text); ?></span><?php endif; ?>
+                            </div>
+                        </div>
+                    </section>
+                    <hr class="border-gray-200">
+                    <section data-id="customer_info">
+                        <div class="flex items-center gap-2.5 mb-4"><i data-lucide="clipboard-list" class="w-6 h-6 text-gray-700"></i><h2 class="text-xl font-semibold text-gray-800">Seus dados</h2></div>
+                        <div class="space-y-4">
+                            <div><label for="name" class="block text-sm font-medium text-gray-700">Qual é o seu nome completo?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="user" class="w-5 h-5 text-gray-400"></i></div><input type="text" id="name" name="name" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="Nome da Silva"></div></div>
+                            <div><label for="email" class="block text-sm font-medium text-gray-700">Qual é o seu e-mail?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="mail" class="w-5 h-5 text-gray-400"></i></div><input type="email" id="email" name="email" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="Digite o e-mail que receberá o produto"></div></div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <?php if (($customer_fields_config['enable_phone'] ?? true)): ?>
+                                <div><label for="phone" class="block text-sm font-medium text-gray-700">Qual é o número do seu celular?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="smartphone" class="w-5 h-5 text-gray-400"></i></div><input type="tel" id="phone" name="phone" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="(11) 99999-9999"></div></div>
+                                <?php else: ?><input type="hidden" id="phone" name="phone" value="(00) 00000-0000"><?php endif; ?>
+                                <?php if (($customer_fields_config['enable_cpf'] ?? true)): ?>
+                                <div><label for="cpf" class="block text-sm font-medium text-gray-700">Qual é o seu CPF/CNPJ?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="file-text" class="w-5 h-5 text-gray-400"></i></div><input type="text" id="cpf" name="cpf" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="Preencha seu CPF/CNPJ"></div></div>
+                                <?php else: ?><input type="hidden" id="cpf" name="cpf" value="000.000.000-00"><?php endif; ?>
+                            </div>
+                            <div class="text-left">
+                                <button type="button" onclick="openWhyDataModal()" class="text-sm text-gray-500 hover:text-gray-700 transition-colors">
+                                    Porque pedimos esse dado?
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                    <?php if ($orderbump_active): ?>
+                        <hr class="border-gray-200">
+                        <section data-id="order_bump"><?php echo render_order_bumps_section($order_bumps); ?></section>
+                    <?php endif; ?>
+                    <hr class="border-gray-200">
+                    <!-- Renderiza Pagamento ou Produto Grátis -->
+                    <section data-id="payment">
+                        <?php if ($is_free_product): ?>
+                            <?php echo render_free_product_section($accentColor); ?>
+                        <?php else: ?>
+                            <?php echo render_payment_section($gateway, $accentColor, $payment_methods_config, $pix_pushinpay_enabled, $pix_mercadopago_enabled, $pix_efi_enabled, $credit_card_enabled, $ticket_enabled, $credit_card_beehive_enabled, $credit_card_mercadopago_enabled, $credit_card_hypercash_enabled, $credit_card_efi_enabled); ?>
+                        <?php endif; ?>
+                    </section>
+                    <hr class="border-gray-200">
+                    <section data-id="security_info"><?php echo render_security_info($vendedor_nome, $checkout_config['legalLinks']['privacyUrl'] ?? '', $checkout_config['legalLinks']['termsUrl'] ?? ''); ?></section>
+                </div>
+            </div>
+
+            <!-- Coluna Lateral: Resumo -->
+            <aside class="w-full lg:w-1/3 hidden lg:block">
+                <div class="sticky top-6 space-y-6">
+                    <div class="bg-white rounded-lg shadow-lg p-6 space-y-4" data-id="final_summary">
+                        <h2 class="text-xl font-semibold text-gray-800">Resumo da compra</h2>
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-gray-700">
+                                <span><?php echo htmlspecialchars($main_name); ?></span>
+                                <div class="flex items-baseline gap-2">
+                                    <?php if ($formattedPrecoAnterior): ?><span class="text-sm text-gray-400 line-through"><?php echo $formattedPrecoAnterior; ?></span><?php endif; ?>
+                                    <span class="font-medium"><?php echo $formattedMainPrice; ?></span>
+                                </div>
+                            </div>
+                            <div class="flex justify-start">
+                                <?php if ($is_free_product): ?>
+                                <span class="bg-green-100 text-green-700 text-xs font-bold uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                    <i data-lucide="gift" class="w-3 h-3"></i>
+                                    Produto Grátis
+                                </span>
+                                <?php else: ?>
+                                <span class="<?php echo $tipo_acesso_info['color']; ?> text-xs font-bold uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                    <i data-lucide="<?php echo $tipo_acesso === 'vitalicio' ? 'infinity' : 'calendar'; ?>" class="w-3 h-3"></i>
+                                    <?php echo $tipo_acesso_info['label']; ?>
+                                </span>
+                                <?php endif; ?>
+                            </div>
+                            <?php foreach ($order_bumps as $bump) {
+                                $ob_id = intval($bump['ob_id']); $ob_name = htmlspecialchars($bump['ob_nome']); $ob_price = floatval($bump['ob_preco']);
+                                echo "<div id='orderbump-summary-{$ob_id}' class='orderbump-summary-item flex justify-between text-gray-700' style='display: none;'><span>".htmlspecialchars($ob_name)."</span><span>R$ ".number_format($ob_price, 2, ',', '.')."</span></div>";
+                            } ?>
+                        </div>
+                        <?php if ($pix_discount_enabled && $pix_discount_value > 0 && !$is_free_product): ?>
+                        <div id="pix-discount-row" class="flex justify-between items-center" style="display: none;">
+                            <span class="bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                                <i data-lucide="percent" class="w-3 h-3"></i>
+                                Desconto Pix
+                            </span>
+                            <span class="pix-discount-value font-medium text-green-600">- R$ 0,00</span>
+                        </div>
+                        <?php endif; ?>
+                        <hr class="border-gray-200">
+                        <div class="flex justify-between items-center"><span class="text-lg font-bold text-gray-800">Total a pagar</span><span id="final-total-price" class="text-2xl font-bold text-[#348535]"><?php echo $formattedMainPrice; ?></span></div>
+                        <div class="text-center text-gray-500 text-sm mt-4"><i data-lucide="lock" class="w-4 h-4 inline-block -mt-1"></i> Compra segura</div>
+                    </div>
+                    <?php if (!empty($sideBanners)): ?>
+                    <div class="space-y-4"><?php foreach ($sideBanners as $side_banner_url): ?><img src="<?php echo htmlspecialchars($side_banner_url); ?>" alt="Banner Lateral" class="w-full h-auto object-cover rounded-lg shadow-md"><?php endforeach; ?></div>
+                    <?php endif; ?>
+                </div>
+            </aside>
+        </div>
+        <?php if (!empty($sideBanners)): ?><div class="mt-6 lg:hidden space-y-4"><?php foreach ($sideBanners as $side_banner_url): ?><img src="<?php echo htmlspecialchars($side_banner_url); ?>" alt="Banner Lateral" class="w-full h-auto object-cover rounded-lg shadow-md"><?php endforeach; ?></div><?php endif; ?>
+    </div>
+
+    <!-- Footer Mobile -->
+    <footer id="mobile-footer" class="lg:hidden fixed bottom-0 left-0 right-0 bg-white shadow-lg p-4 border-t border-gray-200">
+        <div id="mobile-summary-items" class="mb-2 text-sm text-gray-700 space-y-1 max-h-20 overflow-y-auto pr-2"></div>
+        <?php if ($pix_discount_enabled && $pix_discount_value > 0): ?>
+        <div id="pix-discount-row-mobile" class="flex justify-between items-center mb-2" style="display: none;">
+            <span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                <i data-lucide="percent" class="w-3 h-3"></i>
+                Desconto Pix
+            </span>
+            <span class="pix-discount-value font-medium text-green-600 text-sm">- R$ 0,00</span>
+        </div>
+        <?php endif; ?>
+        <div class="flex justify-between items-center mb-3 pt-2 border-t"><span class="text-lg font-bold text-gray-800">Total a pagar</span><span id="final-total-price-mobile" class="text-2xl font-bold text-[#348535]"><?php echo $formattedMainPrice; ?></span></div>
+        <p class="text-center text-xs text-gray-500 flex items-center justify-center space-x-1"><i data-lucide="lock" class="w-3 h-3"></i><span>Compra segura processada pela <?php echo strtoupper(htmlspecialchars($nome_plataforma)); ?></span></p>
+    </footer>
+    <div id="mobile-footer-spacer" class="lg:hidden" style="height: 128px;"></div>
+
+    <?php echo render_sales_notification($salesNotificationConfig, $produto['nome']); ?>
+
+    <!-- Modal Sobre CPF/CNPJ -->
+    <div id="why-data-modal-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center p-4 hidden opacity-0 transition-opacity duration-300">
+        <div id="why-data-modal-content" class="bg-white rounded-xl shadow-2xl w-full max-w-sm transform scale-95 opacity-0 transition-all duration-300">
+            <div class="p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Sobre CPF/CNPJ</h2>
+                <p class="text-gray-600 text-sm leading-relaxed">
+                    Esse dado é necessário para garantir a segurança da sua compra e cadastro em nossa plataforma, essa informação também pode ser usada para emissão de Nota Fiscal.
+                </p>
+            </div>
+            <div class="px-6 pb-6">
+                <button type="button" onclick="closeWhyDataModal()" class="w-full text-white font-semibold py-3 rounded-lg transition-colors" style="background-color: #2DD05E;">
+                    OK
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal do PIX -->
+    <div id="pix-modal-overlay" class="fixed inset-0 bg-black bg-opacity-70 z-[10000] flex items-center justify-center p-4 hidden opacity-0 overflow-y-auto">
+        <div id="pix-modal-content" class="bg-white rounded-xl shadow-2xl w-full max-w-md transform scale-95 opacity-0 my-4 max-h-[90vh] overflow-y-auto">
+            <div id="pix-waiting-state" class="p-4 sm:p-6 text-center">
+                <img src="<?php echo htmlspecialchars($logo_checkout_url); ?>" alt="Logo" class="h-8 sm:h-10 mx-auto mb-4">
+                <h2 class="text-lg sm:text-xl font-bold text-gray-800 mb-2">Escaneie para pagar com PIX</h2>
+                <p class="text-xs sm:text-sm text-gray-600 mb-4">Abra o app do seu banco e aponte a câmera para o QR Code.</p>
+                <div class="w-full max-w-[220px] sm:max-w-[260px] mx-auto mb-4">
+                    <div class="aspect-square p-1.5 sm:p-2 bg-white border-4 rounded-lg shadow-lg" style="border-color: <?php echo htmlspecialchars($accentColor); ?>;">
+                        <img id="pix-qr-code-img" src="" alt="PIX QR Code" class="w-full h-full object-contain rounded-sm" style="image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges; filter: none;">
+                    </div>
+                </div>
+                <p class="text-center text-xs sm:text-sm text-gray-600 mb-2">Ou use o PIX Copia e Cola:</p>
+                <div class="relative max-w-sm mx-auto mb-4">
+                    <input type="text" id="pix-code-input" readonly class="w-full bg-gray-100 p-2.5 sm:p-3 rounded-lg text-xs sm:text-sm text-gray-800 pr-16 sm:pr-20 border border-gray-300">
+                    <button id="copy-pix-code-btn" class="absolute right-1 top-1/2 -translate-y-1/2 text-white px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-md text-xs sm:text-sm font-semibold transition-colors" style="background-color: <?php echo htmlspecialchars($accentColor); ?>;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">Copiar</button>
+                </div>
+                <div class="mt-4 flex items-center justify-center gap-2 sm:gap-3 text-gray-500">
+                    <svg class="animate-spin h-5 w-5 sm:h-6 sm:w-6" style="color: <?php echo htmlspecialchars($accentColor); ?>;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z"></path></svg>
+                    <span class="font-semibold text-sm sm:text-base">Aguardando pagamento...</span>
+                </div>
+            </div>
+            <div id="pix-approved-state" class="hidden p-4 sm:p-6 text-center">
+                 <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center mx-auto mb-4" style="background-color: <?php echo htmlspecialchars($accentColor); ?>20;"><i data-lucide="check" class="w-10 h-10 sm:w-12 sm:h-12" style="color: <?php echo htmlspecialchars($accentColor); ?>;"></i></div>
+                 <h2 class="text-xl sm:text-2xl font-bold text-gray-800 mb-2">Pagamento Aprovado!</h2>
+                 <p class="text-sm sm:text-base text-gray-600">Tudo certo! Você será redirecionado em instantes.</p>
+            </div>
+            <div class="bg-gray-50 p-3 sm:p-4 border-t border-gray-200 rounded-b-xl text-center">
+                <p class="text-xs text-gray-600">Este pagamento será processado para <strong class="font-semibold"><?php echo htmlspecialchars($vendedor_nome); ?></strong>.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Sucesso do Cartão -->
+    <div id="card-success-modal-overlay" class="fixed inset-0 bg-black bg-opacity-70 z-[10000] flex items-center justify-center p-4 hidden opacity-0 overflow-y-auto">
+        <div id="card-success-modal-content" class="bg-white rounded-xl shadow-2xl w-full max-w-md transform scale-95 opacity-0 my-4">
+            <div class="p-6 sm:p-8 text-center">
+                <!-- Animação de Sucesso -->
+                <div class="relative w-24 h-24 sm:w-28 sm:h-28 mx-auto mb-6">
+                    <div class="absolute inset-0 rounded-full animate-ping opacity-25" style="background-color: <?php echo htmlspecialchars($accentColor); ?>;"></div>
+                    <div class="relative w-full h-full rounded-full flex items-center justify-center" style="background-color: <?php echo htmlspecialchars($accentColor); ?>20;">
+                        <svg class="w-12 h-12 sm:w-14 sm:h-14 text-green-500 checkmark-animation" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" class="checkmark-path"></path>
+                        </svg>
+                    </div>
+                </div>
+                
+                <!-- Título -->
+                <h2 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-3">Pagamento Aprovado!</h2>
+                
+                <!-- Subtítulo -->
+                <p class="text-base sm:text-lg text-gray-600 mb-6">Sua compra foi processada com sucesso.</p>
+                
+                <!-- Informações do Produto -->
+                <div class="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0" style="background-color: <?php echo htmlspecialchars($accentColor); ?>20;">
+                            <i data-lucide="package" class="w-5 h-5" style="color: <?php echo htmlspecialchars($accentColor); ?>;"></i>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-gray-800"><?php echo htmlspecialchars($main_name); ?></p>
+                            <p class="text-sm text-gray-500">Produto adquirido</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Aviso sobre E-mail -->
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                    <div class="flex items-start gap-3">
+                        <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <i data-lucide="mail" class="w-4 h-4 text-blue-600"></i>
+                        </div>
+                        <div class="text-left">
+                            <p class="font-semibold text-blue-800 text-sm">Verifique seu e-mail</p>
+                            <p class="text-xs sm:text-sm text-blue-700 mt-1">Enviamos os detalhes da sua compra para o e-mail cadastrado. <strong>Não esqueça de verificar a caixa de spam!</strong></p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Contador de Redirecionamento -->
+                <div class="flex items-center justify-center gap-2 text-gray-500 mb-4">
+                    <svg class="animate-spin h-5 w-5" style="color: <?php echo htmlspecialchars($accentColor); ?>;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z"></path>
+                    </svg>
+                    <span class="text-sm">Redirecionando em <span id="card-redirect-countdown" class="font-bold">5</span> segundos...</span>
+                </div>
+                
+                <!-- Botão de Acesso Imediato -->
+                <button id="card-success-redirect-btn" class="w-full text-white font-bold py-3 px-6 rounded-lg transition-all duration-300 transform hover:scale-[1.02] shadow-lg hover:shadow-xl flex items-center justify-center gap-2" style="background-color: <?php echo htmlspecialchars($accentColor); ?>;">
+                    <i data-lucide="arrow-right" class="w-5 h-5"></i>
+                    Acessar Agora
+                </button>
+            </div>
+            
+            <!-- Footer -->
+            <div class="bg-gray-50 p-4 border-t border-gray-200 rounded-b-xl">
+                <div class="flex items-center justify-center gap-4 text-xs text-gray-500">
+                    <div class="flex items-center gap-1">
+                        <i data-lucide="shield-check" class="w-4 h-4 text-green-500"></i>
+                        <span>Compra segura</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <i data-lucide="credit-card" class="w-4 h-4 text-gray-400"></i>
+                        <span>Cartão de crédito</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal de Pagamento Pendente -->
+    <div id="pending-modal-overlay" class="fixed inset-0 bg-black bg-opacity-70 z-[10000] flex items-center justify-center p-4 hidden opacity-0 overflow-y-auto">
+        <div id="pending-modal-content" class="bg-white rounded-xl shadow-2xl w-full max-w-md transform scale-95 opacity-0 my-4">
+            <div class="p-6 sm:p-8 text-center">
+                <!-- Ícone de Pendente -->
+                <div class="relative w-24 h-24 sm:w-28 sm:h-28 mx-auto mb-6">
+                    <div class="absolute inset-0 rounded-full animate-pulse opacity-25 bg-yellow-500"></div>
+                    <div class="relative w-full h-full rounded-full bg-yellow-100 flex items-center justify-center">
+                        <i data-lucide="clock" class="w-12 h-12 sm:w-14 sm:h-14 text-yellow-600"></i>
+                    </div>
+                </div>
+                
+                <h2 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-3">Pagamento em Análise</h2>
+                <p class="text-base sm:text-lg text-gray-600 mb-6">Seu pagamento está sendo processado e será confirmado em breve.</p>
+                
+                <!-- Informações -->
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                    <div class="flex items-start gap-3">
+                        <div class="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <i data-lucide="info" class="w-4 h-4 text-yellow-600"></i>
+                        </div>
+                        <div class="text-left">
+                            <p class="font-semibold text-yellow-800 text-sm">O que acontece agora?</p>
+                            <p class="text-xs sm:text-sm text-yellow-700 mt-1">A operadora do cartão está analisando sua compra. Você receberá um e-mail assim que o pagamento for confirmado. <strong>Verifique também a caixa de spam!</strong></p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tempo estimado -->
+                <div id="pending-checking-status" class="flex items-center justify-center gap-2 text-gray-500 mb-4">
+                    <i data-lucide="loader-2" class="w-5 h-5 text-yellow-600 animate-spin"></i>
+                    <span class="text-sm">Verificando status do pagamento, aguarde...</span>
+                </div>
+                
+                <button id="pending-modal-close-btn" class="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 px-6 rounded-lg transition-all duration-300 flex items-center justify-center gap-2 hidden">
+                    <i data-lucide="check" class="w-5 h-5"></i>
+                    Entendi
+                </button>
+            </div>
+            
+            <div class="bg-gray-50 p-4 border-t border-gray-200 rounded-b-xl">
+                <div class="flex items-center justify-center gap-4 text-xs text-gray-500">
+                    <div class="flex items-center gap-1">
+                        <i data-lucide="shield-check" class="w-4 h-4 text-green-500"></i>
+                        <span>Compra segura</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <i data-lucide="mail" class="w-4 h-4 text-gray-400"></i>
+                        <span>Notificação por e-mail</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Pagamento Recusado -->
+    <div id="rejected-modal-overlay" class="fixed inset-0 bg-black bg-opacity-70 z-[10000] flex items-center justify-center p-4 hidden opacity-0 overflow-y-auto">
+        <div id="rejected-modal-content" class="bg-white rounded-xl shadow-2xl w-full max-w-md transform scale-95 opacity-0 my-4">
+            <div class="p-6 sm:p-8 text-center">
+                <!-- Ícone de Erro -->
+                <div class="relative w-24 h-24 sm:w-28 sm:h-28 mx-auto mb-6">
+                    <div class="absolute inset-0 rounded-full animate-pulse opacity-25 bg-red-500"></div>
+                    <div class="relative w-full h-full rounded-full bg-red-100 flex items-center justify-center">
+                        <i data-lucide="x-circle" class="w-12 h-12 sm:w-14 sm:h-14 text-red-600"></i>
+                    </div>
+                </div>
+                
+                <h2 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-3">Pagamento Recusado</h2>
+                <p id="rejected-modal-message" class="text-base sm:text-lg text-gray-600 mb-6">Não foi possível processar seu pagamento.</p>
+                
+                <!-- Sugestões -->
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                    <div class="text-left">
+                        <p class="font-semibold text-red-800 text-sm mb-2 flex items-center gap-2">
+                            <i data-lucide="lightbulb" class="w-4 h-4"></i>
+                            O que você pode fazer:
+                        </p>
+                        <ul class="text-xs sm:text-sm text-red-700 space-y-1.5 ml-6">
+                            <li class="flex items-start gap-2">
+                                <span class="text-red-400">•</span>
+                                <span>Verifique se os dados do cartão estão corretos</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-red-400">•</span>
+                                <span>Confirme se há limite disponível</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-red-400">•</span>
+                                <span>Tente outro cartão ou método de pagamento</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-red-400">•</span>
+                                <span>Entre em contato com seu banco</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <button id="rejected-modal-close-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-lg transition-all duration-300 flex items-center justify-center gap-2">
+                    <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+                    Tentar Novamente
+                </button>
+            </div>
+            
+            <div class="bg-gray-50 p-4 border-t border-gray-200 rounded-b-xl">
+                <div class="flex items-center justify-center gap-4 text-xs text-gray-500">
+                    <div class="flex items-center gap-1">
+                        <i data-lucide="shield-check" class="w-4 h-4 text-green-500"></i>
+                        <span>Seus dados estão seguros</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <i data-lucide="credit-card" class="w-4 h-4 text-gray-400"></i>
+                        <span>Tente outro cartão</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <style>
+        /* Animação do checkmark */
+        .checkmark-path {
+            stroke-dasharray: 100;
+            stroke-dashoffset: 100;
+            animation: checkmark-draw 0.6s ease-out 0.3s forwards;
+        }
+        
+        @keyframes checkmark-draw {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+        
+        /* Animação de entrada do modal */
+        #card-success-modal-content,
+        #pending-modal-content,
+        #rejected-modal-content {
+            animation: modal-bounce-in 0.5s ease-out forwards;
+        }
+        
+        @keyframes modal-bounce-in {
+            0% {
+                transform: scale(0.8);
+                opacity: 0;
+            }
+            50% {
+                transform: scale(1.02);
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+    </style>
+
+    <script>
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+        let checkoutSessionUUID = generateUUID();
+        localStorage.setItem('GatewayPro_checkout_session_uuid', checkoutSessionUUID);
+
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            
+            // Funções do Modal "Porque pedimos esse dado?"
+            window.openWhyDataModal = function() {
+                const modalOverlay = document.getElementById('why-data-modal-overlay');
+                const modalContent = document.getElementById('why-data-modal-content');
+                if (modalOverlay && modalContent) {
+                    modalOverlay.classList.remove('hidden');
+                    setTimeout(() => {
+                        modalOverlay.classList.remove('opacity-0');
+                        modalContent.classList.remove('scale-95', 'opacity-0');
+                    }, 10);
+                }
+            };
+            
+            window.closeWhyDataModal = function() {
+                const modalOverlay = document.getElementById('why-data-modal-overlay');
+                const modalContent = document.getElementById('why-data-modal-content');
+                if (modalOverlay && modalContent) {
+                    modalOverlay.classList.add('opacity-0');
+                    modalContent.classList.add('scale-95', 'opacity-0');
+                    setTimeout(() => {
+                        modalOverlay.classList.add('hidden');
+                    }, 300);
+                }
+            };
+            
+            // Fechar modal ao clicar fora
+            document.getElementById('why-data-modal-overlay')?.addEventListener('click', function(e) {
+                if (e.target === this) {
+                    closeWhyDataModal();
+                }
+            });
+            
+            let paymentCheckInterval;
+            let notificationTimer;
+            let customRedirectUrl = '<?php echo htmlspecialchars($redirectUrlConfig ?? '', ENT_QUOTES, 'UTF-8'); ?>'; // URL de redirecionamento personalizada
+            
+            const pixModalOverlay = document.getElementById('pix-modal-overlay');
+            const pixModalContent = document.getElementById('pix-modal-content');
+            const mainProductPrice = <?php echo (float)$produto['preco']; ?>;
+            const infoprodutorId = <?php echo (int)$infoprodutor_id; ?>;
+            const mainProductId = <?php echo (int)$produto['id']; ?>;
+            const ofertaId = <?php echo isset($produto['oferta_id']) ? (int)$produto['oferta_id'] : 'null'; ?>;
+            const activeGateway = '<?php echo $gateway; ?>';
+            let currentAmount = mainProductPrice;
+            let acceptedOrderBumps = [];
+            let selectedPaymentMethod = null; // Declarado aqui para evitar erro de referência
+            
+            // Configuração de desconto Pix
+            const pixDiscountConfig = {
+                enabled: <?php echo $pix_discount_enabled ? 'true' : 'false'; ?>,
+                type: '<?php echo $pix_discount_type; ?>',
+                value: <?php echo $pix_discount_value; ?>
+            };
+            
+            const finalTotalElement = document.getElementById('final-total-price');
+            const finalTotalMobileElement = document.getElementById('final-total-price-mobile');
+            const mobileSummaryItemsContainer = document.getElementById('mobile-summary-items');
+            const orderbumpCheckboxes = document.querySelectorAll('.orderbump-checkbox');
+            const nameInput = document.getElementById('name');
+            const emailInput = document.getElementById('email');
+            const phoneInput = document.getElementById('phone');
+            const cpfInput = document.getElementById('cpf');
+            const customerFieldsConfig = <?php echo json_encode($customer_fields_config); ?>;
+            let emailAlreadyExists = false; // Flag para indicar se o e-mail já existe no sistema
+
+            // Função para aplicar máscara dinâmica de CPF/CNPJ
+            function formatCpfCnpj(value) {
+                // Remove tudo que não é número
+                const numbers = value.replace(/\D/g, '');
+                
+                if (numbers.length <= 11) {
+                    // Formato CPF: 000.000.000-00
+                    return numbers
+                        .replace(/(\d{3})(\d)/, '$1.$2')
+                        .replace(/(\d{3})(\d)/, '$1.$2')
+                        .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+                } else {
+                    // Formato CNPJ: 00.000.000/0000-00
+                    return numbers
+                        .substring(0, 14)
+                        .replace(/(\d{2})(\d)/, '$1.$2')
+                        .replace(/(\d{3})(\d)/, '$1.$2')
+                        .replace(/(\d{3})(\d)/, '$1/$2')
+                        .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
+                }
+            }
+
+            // Aplica máscara no campo CPF/CNPJ
+            if (cpfInput) {
+                cpfInput.addEventListener('input', function(e) {
+                    const cursorPos = e.target.selectionStart;
+                    const oldLength = e.target.value.length;
+                    e.target.value = formatCpfCnpj(e.target.value);
+                    const newLength = e.target.value.length;
+                    // Ajusta posição do cursor
+                    const newCursorPos = cursorPos + (newLength - oldLength);
+                    e.target.setSelectionRange(newCursorPos, newCursorPos);
+                });
+            }
+
+            // Função para verificar se o e-mail já está cadastrado
+            async function checkEmailExists(email) {
+                if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+                
+                try {
+                    const response = await fetch('/api/check_email.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: email })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success && result.exists) {
+                        emailAlreadyExists = true;
+                        showEmailExistsAlert();
+                    } else {
+                        emailAlreadyExists = false;
+                        hideEmailExistsAlert();
+                    }
+                } catch (e) {
+                    console.error('Erro ao verificar e-mail:', e);
+                }
+            }
+            
+            // Função para mostrar alerta de e-mail existente
+            function showEmailExistsAlert() {
+                // Remove alerta anterior se existir
+                hideEmailExistsAlert();
+                
+                const emailField = document.getElementById('email');
+                if (!emailField) return;
+                
+                const alertDiv = document.createElement('div');
+                alertDiv.id = 'email-exists-alert';
+                alertDiv.className = 'mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2';
+                alertDiv.innerHTML = `
+                    <i data-lucide="info" class="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5"></i>
+                    <div>
+                        <p class="text-sm text-blue-800 font-medium">E-mail já cadastrado!</p>
+                        <p class="text-xs text-blue-600 mt-1">Sua senha de acesso à área de membros será a mesma utilizada anteriormente. Caso não lembre, utilize a opção "Esqueci minha senha" na tela de login.</p>
+                    </div>
+                `;
+                
+                // Insere após o campo de e-mail
+                emailField.parentElement.parentElement.appendChild(alertDiv);
+                lucide.createIcons();
+            }
+            
+            // Função para esconder alerta de e-mail existente
+            function hideEmailExistsAlert() {
+                const existingAlert = document.getElementById('email-exists-alert');
+                if (existingAlert) {
+                    existingAlert.remove();
+                }
+            }
+            
+            // Listener para verificar e-mail quando o usuário sair do campo
+            let emailCheckTimeout;
+            emailInput.addEventListener('blur', () => {
+                const email = emailInput.value.trim();
+                if (email) {
+                    checkEmailExists(email);
+                }
+            });
+            
+            // Também verifica enquanto digita (com debounce)
+            emailInput.addEventListener('input', () => {
+                clearTimeout(emailCheckTimeout);
+                emailCheckTimeout = setTimeout(() => {
+                    const email = emailInput.value.trim();
+                    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                        checkEmailExists(email);
+                    } else {
+                        hideEmailExistsAlert();
+                    }
+                }, 800); // Aguarda 800ms após parar de digitar
+            });
+
+            function updateMobileLayout() {
+                const footer = document.getElementById('mobile-footer');
+                const spacer = document.getElementById('mobile-footer-spacer');
+                const notification = document.getElementById('sales-notification');
+                if (footer && spacer && window.innerWidth < 1024) {
+                    const footerHeight = footer.offsetHeight;
+                    spacer.style.height = footerHeight + 'px';
+                    if (notification) notification.style.bottom = (footerHeight + 16) + 'px';
+                } else if (spacer) {
+                    spacer.style.height = '0px';
+                    if (notification) notification.style.bottom = '';
+                }
+            }
+            window.addEventListener('resize', updateMobileLayout);
+            
+            function getUrlUtmParameters() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const utmParams = {};
+                ['utm_source', 'utm_campaign', 'utm_medium', 'utm_content', 'utm_term', 'src', 'sck'].forEach(key => { utmParams[key] = urlParams.get(key); });
+                return utmParams;
+            }
+            const utmParameters = getUrlUtmParameters();
+            
+            // Função para calcular desconto Pix
+            function calculatePixDiscount(amount) {
+                if (!pixDiscountConfig.enabled || pixDiscountConfig.value <= 0) return 0;
+                if (pixDiscountConfig.type === 'percentage') {
+                    return amount * (pixDiscountConfig.value / 100);
+                } else {
+                    return Math.min(pixDiscountConfig.value, amount); // Não pode ser maior que o valor
+                }
+            }
+
+            const updateSummaryAndTotal = () => {
+                currentAmount = mainProductPrice;
+                acceptedOrderBumps = [];
+                document.querySelectorAll('.orderbump-summary-item').forEach(item => item.style.display = 'none');
+                if (mobileSummaryItemsContainer) {
+                    mobileSummaryItemsContainer.innerHTML = '';
+                    const mainItemEl = document.createElement('div');
+                    mainItemEl.className = 'flex justify-between';
+                    mainItemEl.innerHTML = `<span><?php echo htmlspecialchars(addslashes($main_name)); ?></span><div class="flex items-baseline gap-2"><?php if ($formattedPrecoAnterior): ?><span class="text-sm text-gray-400 line-through"><?php echo $formattedPrecoAnterior; ?></span><?php endif; ?><span class="font-medium"><?php echo $formattedMainPrice; ?></span></div>`;
+                    mobileSummaryItemsContainer.appendChild(mainItemEl);
+                }
+                orderbumpCheckboxes.forEach(checkbox => {
+                    const productId = parseInt(checkbox.dataset.productId);
+                    const summaryItem = document.getElementById(`orderbump-summary-${productId}`);
+                    if (checkbox.checked) {
+                        const price = parseFloat(checkbox.dataset.price);
+                        const name = checkbox.dataset.name;
+                        currentAmount += price;
+                        acceptedOrderBumps.push(productId);
+                        if(summaryItem) summaryItem.style.display = 'flex';
+                        if (mobileSummaryItemsContainer && name) {
+                            const itemEl = document.createElement('div');
+                            itemEl.className = 'flex justify-between';
+                            itemEl.innerHTML = `<span>${name}</span><span class="font-medium">R$ ${price.toFixed(2).replace('.', ',')}</span>`;
+                            mobileSummaryItemsContainer.appendChild(itemEl);
+                        }
+                    }
+                });
+                
+                // Aplicar desconto Pix se método Pix estiver selecionado
+                let displayAmount = currentAmount;
+                let pixDiscountAmount = 0;
+                const isPixSelected = selectedPaymentMethod === 'pix' || selectedPaymentMethod === 'pix_mercadopago' || selectedPaymentMethod === 'pix_pushinpay' || selectedPaymentMethod === 'pix_efi' || selectedPaymentMethod === 'pix_pagarme' || selectedPaymentMethod === 'pix_stripe';
+                
+                if (isPixSelected && pixDiscountConfig.enabled) {
+                    pixDiscountAmount = calculatePixDiscount(currentAmount);
+                    displayAmount = currentAmount - pixDiscountAmount;
+                }
+                
+                // Mostrar/ocultar linha de desconto Pix
+                const pixDiscountRow = document.getElementById('pix-discount-row');
+                const pixDiscountRowMobile = document.getElementById('pix-discount-row-mobile');
+                if (pixDiscountRow) {
+                    if (isPixSelected && pixDiscountAmount > 0) {
+                        pixDiscountRow.style.display = 'flex';
+                        pixDiscountRow.querySelector('.pix-discount-value').textContent = `- R$ ${pixDiscountAmount.toFixed(2).replace('.', ',')}`;
+                    } else {
+                        pixDiscountRow.style.display = 'none';
+                    }
+                }
+                if (pixDiscountRowMobile) {
+                    if (isPixSelected && pixDiscountAmount > 0) {
+                        pixDiscountRowMobile.style.display = 'flex';
+                        pixDiscountRowMobile.querySelector('.pix-discount-value').textContent = `- R$ ${pixDiscountAmount.toFixed(2).replace('.', ',')}`;
+                    } else {
+                        pixDiscountRowMobile.style.display = 'none';
+                    }
+                }
+                
+                const totalText = `R$ ${displayAmount.toFixed(2).replace('.', ',')}`;
+                if (finalTotalElement) finalTotalElement.textContent = totalText;
+                if (finalTotalMobileElement) finalTotalMobileElement.textContent = totalText;
+                
+                // Atualizar currentAmount para o valor com desconto (para envio ao backend)
+                if (isPixSelected && pixDiscountAmount > 0) {
+                    currentAmount = displayAmount;
+                }
+                
+                updateMobileLayout();
+            };
+            
+            orderbumpCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', () => {
+                    updateSummaryAndTotal();
+                    // Atualizar Payment Brick se método MP estiver selecionado
+                    if (selectedPaymentMethod === 'credit_card' || selectedPaymentMethod === 'ticket' || selectedPaymentMethod === 'pix_mercadopago') {
+                        const currentEmail = emailInput.value;
+                        if (currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)) {
+                            initializePaymentBrickForMethod(selectedPaymentMethod, currentEmail, currentAmount);
+                        } else {
+                            initializePaymentBrickForMethod(selectedPaymentMethod, null, currentAmount);
+                        }
+                    }
+                });
+            });
+            updateSummaryAndTotal();
+            updateMobileLayout();
+
+            // Função auxiliar para mensagens de erro por status
+            function getStatusErrorMessage(status) {
+                const statusMsg = {
+                    'pending': 'Pagamento pendente. Aguarde a confirmação.',
+                    'in_process': 'Pagamento em processamento. Aguarde a confirmação.',
+                    'rejected': 'Pagamento recusado. Verifique os dados do cartão ou tente outro método de pagamento.',
+                    'cancelled': 'Pagamento cancelado. Tente novamente ou escolha outro método de pagamento.',
+                    'refunded': 'Pagamento reembolsado.',
+                    'charged_back': 'Pagamento contestado. Entre em contato com o suporte.'
+                };
+                return statusMsg[status] || null;
+            }
+
+            function showAlert(message) {
+                const alertBox = document.getElementById('custom-alert-box');
+                alertBox.textContent = message;
+                alertBox.classList.add('show');
+                setTimeout(() => { alertBox.classList.remove('show'); }, 3000);
+            }
+
+            // --- Lógica de Validação Comum ---
+            function validateForm() {
+                const cpfEl = document.getElementById('cpf');
+                const phoneEl = document.getElementById('phone');
+                
+                // A lógica abaixo confia no DOM: 
+                // Se o PHP renderizou um campo 'hidden', é porque foi desabilitado no backend.
+                // Logo, não validamos e pegamos o valor padrão do hidden (ex: "000.000.000-00").
+                const isCpfActive = cpfEl && cpfEl.type !== 'hidden';
+                const isPhoneActive = phoneEl && phoneEl.type !== 'hidden';
+
+                const payerData = {
+                    name: nameInput.value,
+                    email: emailInput.value,
+                    phone: phoneEl ? phoneEl.value : '',
+                    cpf: cpfEl ? cpfEl.value : '',
+                    product_id: mainProductId,
+                    oferta_id: ofertaId,
+                    checkout_session_uuid: checkoutSessionUUID
+                };
+
+                if (!payerData.name || !payerData.email) { showAlert('Por favor, preencha o nome e o e-mail.'); return null; }
+                
+                // Validação condicional baseada no estado VISUAL do campo
+                if (isPhoneActive && !payerData.phone) { showAlert('Por favor, preencha o telefone.'); return null; }
+                if (isCpfActive && !payerData.cpf) { showAlert('Por favor, preencha o CPF/CNPJ.'); return null; }
+                
+                return payerData;
+            }
+
+            // --- LÓGICA DE SELEÇÃO DE MÉTODOS DE PAGAMENTO ---
+            let paymentBrickControllers = {};
+            
+            function selectPaymentMethod(methodType) {
+                const accentColor = '<?php echo htmlspecialchars($accentColor); ?>';
+                
+                // Remover classe active de todos os cards
+                document.querySelectorAll('.payment-method-card').forEach(card => {
+                    card.style.borderColor = '#e5e7eb';
+                    card.style.backgroundColor = '#ffffff';
+                });
+                
+                // Adicionar classe active ao card selecionado
+                const selectedCard = document.querySelector(`[data-payment-method="${methodType}"]`);
+                if (selectedCard) {
+                    selectedCard.style.borderColor = accentColor;
+                    // Converter hex para rgba com 5% de opacidade
+                    const hex = accentColor.replace('#', '');
+                    const r = parseInt(hex.substr(0, 2), 16);
+                    const g = parseInt(hex.substr(2, 2), 16);
+                    const b = parseInt(hex.substr(4, 2), 16);
+                    selectedCard.style.backgroundColor = `rgba(${r}, ${g}, ${b}, 0.05)`;
+                }
+                
+                // Oculta todos os containers de métodos
+                document.querySelectorAll('.payment-method-container').forEach(container => {
+                    container.classList.add('hidden');
+                });
+                
+                // Mostra apenas o container do método selecionado
+                const selectedContainer = document.querySelector(`[data-method-type="${methodType}"]`);
+                if (selectedContainer) {
+                    selectedContainer.classList.remove('hidden');
+                }
+                
+                selectedPaymentMethod = methodType;
+                
+                // Atualizar total com desconto Pix se aplicável
+                updateSummaryAndTotal();
+                
+                // Se for método do Mercado Pago, inicializar Payment Brick
+                if (methodType === 'credit_card' || methodType === 'ticket' || methodType === 'pix_mercadopago') {
+                    const currentEmail = emailInput.value;
+                    if (currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)) {
+                        initializePaymentBrickForMethod(methodType, currentEmail, currentAmount);
+                    } else {
+                        initializePaymentBrickForMethod(methodType, null, currentAmount);
+                    }
+                }
+                
+                // Recriar ícones Lucide
+                lucide.createIcons();
+            }
+            
+            // Event listeners nos cards do grid
+            document.querySelectorAll('.payment-method-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    const methodType = card.getAttribute('data-payment-method');
+                    selectPaymentMethod(methodType);
+                });
+            });
+            
+            // Seleção padrão: Pix (prioridade PushinPay)
+            // --- LÓGICA PUSHINPAY ---
+            const btnPagarPushin = document.getElementById('btn-pagar-pushinpay');
+            if (btnPagarPushin) {
+                btnPagarPushin.addEventListener('click', async () => {
+                    const payerData = validateForm();
+                    if (!payerData) return;
+
+                    btnPagarPushin.disabled = true;
+                    btnPagarPushin.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Gerando Pix...';
+                    lucide.createIcons();
+
+                    try {
+                        const response = await fetch('/process_payment', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                ...payerData,
+                                payment_method_id: 'pix', // Força Pix para PushinPay
+                                transaction_amount: parseFloat(currentAmount).toFixed(2),
+                                order_bump_product_ids: acceptedOrderBumps,
+                                utm_parameters: utmParameters,
+                                gateway: 'pushinpay' // Flag para o backend
+                            })
+                        });
+                        
+                        // Verifica se a resposta é JSON válido
+                        const contentType = response.headers.get('content-type');
+                        if (!contentType || !contentType.includes('application/json')) {
+                            const text = await response.text();
+                            console.error('Resposta não é JSON:', text);
+                            showAlert('Erro: Resposta inválida do servidor. Tente novamente.');
+                            return;
+                        }
+                        
+                        const result = await response.json();
+
+                        if (response.ok && result.status === 'pix_created') {
+                            showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'pushinpay');
+                        } else {
+                            showRejectedModal(result.error || 'Erro ao gerar Pix.');
+                        }
+                    } catch (e) {
+                        console.error('Erro ao processar pagamento:', e);
+                        if (e instanceof SyntaxError) {
+                            showRejectedModal('Erro: Resposta inválida do servidor. Verifique o console para mais detalhes.');
+                        } else {
+                            showRejectedModal('Erro de conexão. Verifique sua internet e tente novamente.');
+                        }
+                    } finally {
+                        btnPagarPushin.disabled = false;
+                        btnPagarPushin.innerHTML = '<i data-lucide="qr-code" class="w-6 h-6"></i> GERAR PIX AGORA';
+                        lucide.createIcons();
+                    }
+                });
+            }
+
+            // --- LÓGICA EFÍ PIX ---
+            const btnPagarEfi = document.getElementById('btn-pagar-efi');
+            if (btnPagarEfi) {
+                btnPagarEfi.addEventListener('click', async () => {
+                    const payerData = validateForm();
+                    if (!payerData) return;
+
+                    btnPagarEfi.disabled = true;
+                    btnPagarEfi.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Gerando Pix...';
+                    lucide.createIcons();
+
+                    try {
+                        const response = await fetch('/process_payment', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                ...payerData,
+                                payment_method_id: 'pix',
+                                transaction_amount: parseFloat(currentAmount).toFixed(2),
+                                order_bump_product_ids: acceptedOrderBumps,
+                                utm_parameters: utmParameters,
+                                gateway: 'efi'
+                            })
+                        });
+                        
+                        const contentType = response.headers.get('content-type');
+                        if (!contentType || !contentType.includes('application/json')) {
+                            const text = await response.text();
+                            console.error('Resposta não é JSON:', text);
+                            showAlert('Erro: Resposta inválida do servidor. Tente novamente.');
+                            return;
+                        }
+                        
+                        const result = await response.json();
+
+                        if (response.ok && result.status === 'pix_created') {
+                            showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'efi');
+                        } else {
+                            showAlert(result.error || 'Erro ao gerar Pix. Tente novamente mais tarde.');
+                        }
+                    } catch (e) {
+                        console.error('Erro ao processar pagamento:', e);
+                        showAlert('Erro de conexão. Verifique sua internet e tente novamente.');
+                    } finally {
+                        btnPagarEfi.disabled = false;
+                        btnPagarEfi.innerHTML = '<i data-lucide="qr-code" class="w-6 h-6"></i> GERAR PIX AGORA';
+                        lucide.createIcons();
+                    }
+                });
+            }
+
+            // --- LÓGICA PAGAR.ME PIX ---
+            const btnPagarPagarmePix = document.getElementById('btn-pagar-pagarme-pix');
+            if (btnPagarPagarmePix) {
+                btnPagarPagarmePix.addEventListener('click', async () => {
+                    const payerData = validateForm();
+                    if (!payerData) return;
+                    btnPagarPagarmePix.disabled = true;
+                    btnPagarPagarmePix.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Gerando Pix...';
+                    lucide.createIcons();
+                    try {
+                        const response = await fetch('/process_payment', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ ...payerData, payment_method_id: 'pix', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: 'pagarme' })
+                        });
+                        const result = await response.json();
+                        if (response.ok && result.status === 'pix_created') {
+                            showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'pagarme');
+                        } else {
+                            showRejectedModal(result.error || 'Erro ao gerar Pix.');
+                        }
+                    } catch (e) { showRejectedModal('Erro de conexão. Tente novamente.'); }
+                    finally { btnPagarPagarmePix.disabled = false; btnPagarPagarmePix.innerHTML = '<i data-lucide="qr-code" class="w-6 h-6"></i> GERAR PIX AGORA'; lucide.createIcons(); }
+                });
+            }
+
+            // --- LÓGICA STRIPE PIX ---
+            const btnPagarStripePix = document.getElementById('btn-pagar-stripe-pix');
+            if (btnPagarStripePix) {
+                btnPagarStripePix.addEventListener('click', async () => {
+                    const payerData = validateForm();
+                    if (!payerData) return;
+                    btnPagarStripePix.disabled = true;
+                    btnPagarStripePix.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Gerando Pix...';
+                    lucide.createIcons();
+                    try {
+                        const response = await fetch('/process_payment', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ ...payerData, payment_method_id: 'pix', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: 'stripe' })
+                        });
+                        const result = await response.json();
+                        if (response.ok && result.status === 'pix_created') {
+                            showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'stripe');
+                        } else if (response.ok && result.checkout_url) {
+                            window.location.href = result.checkout_url;
+                        } else {
+                            showRejectedModal(result.error || 'Erro ao gerar Pix.');
+                        }
+                    } catch (e) { showRejectedModal('Erro de conexão. Tente novamente.'); }
+                    finally { btnPagarStripePix.disabled = false; btnPagarStripePix.innerHTML = '<i data-lucide="qr-code" class="w-6 h-6"></i> GERAR PIX AGORA'; lucide.createIcons(); }
+                });
+            }
+
+            // --- LÓGICA PAGAR.ME CARTÃO / BOLETO / PAYPAL / STRIPE CARTÃO (placeholder - chama process_payment) ---
+            ['btn-pagar-pagarme-card','btn-pagar-paypal','btn-pagar-stripe-card','btn-pagar-pagarme-ticket'].forEach(btnId => {
+                const btn = document.getElementById(btnId);
+                if (btn) {
+                    btn.addEventListener('click', async () => {
+                        const payerData = validateForm();
+                        if (!payerData) return;
+                        const gwMap = {'btn-pagar-pagarme-card':'pagarme_card','btn-pagar-paypal':'paypal','btn-pagar-stripe-card':'stripe_card','btn-pagar-pagarme-ticket':'pagarme_ticket'};
+                        const gateway = gwMap[btnId];
+                        btn.disabled = true;
+                        const origHtml = btn.innerHTML;
+                        btn.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Processando...';
+                        lucide.createIcons();
+                        try {
+                            const response = await fetch('/process_payment', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ ...payerData, payment_method_id: gateway.includes('ticket') ? 'ticket' : 'credit_card', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: gateway })
+                            });
+                            const result = await response.json();
+                            if (response.ok && result.checkout_url) window.location.href = result.checkout_url;
+                            else if (response.ok && result.redirect_url) window.location.href = result.redirect_url;
+                            else showRejectedModal(result.error || 'Erro ao processar pagamento.');
+                        } catch (e) { showRejectedModal('Erro de conexão. Tente novamente.'); }
+                        finally { btn.disabled = false; btn.innerHTML = origHtml; lucide.createIcons(); }
+                    });
+                }
+            });
+
+            // --- LÓGICA BEEHIVE ---
+            <?php if ($should_load_beehive_script): ?>
+            const beehivePublicKey = '<?php echo htmlspecialchars($beehive_public_key, ENT_QUOTES); ?>';
+            const btnPagarBeehive = document.getElementById('btn-pagar-beehive');
+            
+            if (btnPagarBeehive && typeof BeehivePay !== 'undefined') {
+                BeehivePay.setPublicKey(beehivePublicKey);
+                BeehivePay.setTestMode(false);
+                
+                // Máscaras para os campos Beehive
+                const beehiveCardNumberInput = document.getElementById('beehive-card-number');
+                const beehiveCardExpiryInput = document.getElementById('beehive-card-expiry');
+                const beehiveCardCvvInput = document.getElementById('beehive-card-cvv');
+                
+                if (beehiveCardNumberInput) {
+                    beehiveCardNumberInput.addEventListener('input', function(e) {
+                        let value = e.target.value.replace(/\s/g, '').replace(/\D/g, '');
+                        value = value.replace(/(\d{4})/g, '$1 ').trim();
+                        e.target.value = value;
+                    });
+                }
+                
+                if (beehiveCardExpiryInput) {
+                    beehiveCardExpiryInput.addEventListener('input', function(e) {
+                        let value = e.target.value.replace(/\D/g, '');
+                        if (value.length >= 2) {
+                            value = value.substring(0, 2) + '/' + value.substring(2, 4);
+                        }
+                        e.target.value = value;
+                    });
+                }
+                
+                if (beehiveCardCvvInput) {
+                    beehiveCardCvvInput.addEventListener('input', function(e) {
+                        e.target.value = e.target.value.replace(/\D/g, '');
+                    });
+                }
+                
+                btnPagarBeehive.addEventListener('click', async function() {
+                    const payerData = validateForm();
+                    if (!payerData) return;
+                    
+                    const cardNumber = beehiveCardNumberInput.value.replace(/\s/g, '');
+                    const cardHolder = document.getElementById('beehive-card-holder').value.trim();
+                    const cardExpiry = beehiveCardExpiryInput.value;
+                    const cardCvv = beehiveCardCvvInput.value;
+                    
+                    if (!cardNumber || cardNumber.length < 13) { showAlert('Por favor, informe o número do cartão corretamente.'); return; }
+                    if (!cardHolder || cardHolder.length < 3) { showAlert('Por favor, informe o nome no cartão.'); return; }
+                    if (!cardExpiry || cardExpiry.length !== 5) { showAlert('Por favor, informe a validade do cartão (MM/AA).'); return; }
+                    if (!cardCvv || cardCvv.length < 3) { showAlert('Por favor, informe o CVV do cartão.'); return; }
+                    
+                    const [month, year] = cardExpiry.split('/');
+                    if (!month || !year || month.length !== 2 || year.length !== 2) { showAlert('Por favor, informe a validade no formato MM/AA.'); return; }
+                    
+                    btnPagarBeehive.disabled = true;
+                    btnPagarBeehive.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Processando...';
+                    lucide.createIcons();
+                    
+                    try {
+                        const tokenResult = await BeehivePay.encrypt({
+                            number: cardNumber,
+                            holderName: cardHolder,
+                            expMonth: parseInt(month),
+                            expYear: 2000 + parseInt(year),
+                            cvv: cardCvv
+                        });
+                        
+                        const cardToken = typeof tokenResult === 'string' ? tokenResult : (tokenResult.token || null);
+                        if (!cardToken) throw new Error('Erro ao tokenizar cartão.');
+                        
+                        const response = await fetch('/process_payment', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                ...payerData,
+                                card_token: cardToken,
+                                transaction_amount: parseFloat(currentAmount).toFixed(2),
+                                order_bump_product_ids: acceptedOrderBumps,
+                                utm_parameters: utmParameters,
+                                gateway: 'beehive'
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (response.ok && result.status === 'approved') {
+                            const defaultRedirectUrl = '/obrigado?payment_id=' + result.payment_id;
+                            window.location.href = result.redirect_url || customRedirectUrl || defaultRedirectUrl;
+                        } else if (response.ok && result.status === 'pending') {
+                            showPendingModal();
+                        } else {
+                            showRejectedModal(result.error || 'Erro ao processar pagamento.');
+                        }
+                    } catch (e) {
+                        console.error('Beehive Error:', e);
+                        showRejectedModal(e.message || 'Erro ao processar pagamento.');
+                    } finally {
+                        btnPagarBeehive.disabled = false;
+                        btnPagarBeehive.innerHTML = '<i data-lucide="credit-card" class="w-6 h-6"></i> FINALIZAR PAGAMENTO';
+                        lucide.createIcons();
+                    }
+                });
+            }
+            <?php endif; ?>
+
+            // --- LÓGICA HYPERCASH ---
+            <?php if ($should_load_hypercash_script): ?>
+            const btnPagarHypercash = document.getElementById('btn-pagar-hypercash');
+            const hypercashPublicKey = '<?php echo htmlspecialchars($hypercash_public_key, ENT_QUOTES, 'UTF-8'); ?>';
+            
+            if (btnPagarHypercash && typeof FastSoft !== 'undefined') {
+                FastSoft.setPublicKey(hypercashPublicKey);
+                
+                // Máscaras para os campos Hypercash
+                const hypercashCardNumberInput = document.getElementById('hypercash-card-number');
+                const hypercashCardExpiryInput = document.getElementById('hypercash-card-expiry');
+                const hypercashCardCvvInput = document.getElementById('hypercash-card-cvv');
+                
+                if (hypercashCardNumberInput) {
+                    hypercashCardNumberInput.addEventListener('input', function(e) {
+                        let value = e.target.value.replace(/\s/g, '').replace(/\D/g, '');
+                        value = value.replace(/(\d{4})/g, '$1 ').trim();
+                        e.target.value = value;
+                    });
+                }
+                
+                if (hypercashCardExpiryInput) {
+                    hypercashCardExpiryInput.addEventListener('input', function(e) {
+                        let value = e.target.value.replace(/\D/g, '');
+                        if (value.length >= 2) {
+                            value = value.substring(0, 2) + '/' + value.substring(2, 4);
+                        }
+                        e.target.value = value;
+                    });
+                }
+                
+                if (hypercashCardCvvInput) {
+                    hypercashCardCvvInput.addEventListener('input', function(e) {
+                        e.target.value = e.target.value.replace(/\D/g, '');
+                    });
+                }
+                
+                btnPagarHypercash.addEventListener('click', async function() {
+                    const payerData = validateForm();
+                    if (!payerData) return;
+                    
+                    const cardNumber = hypercashCardNumberInput?.value.replace(/\s/g, '') || '';
+                    const cardHolder = document.getElementById('hypercash-card-holder')?.value.trim() || '';
+                    const cardExpiry = hypercashCardExpiryInput?.value || '';
+                    const cardCvv = hypercashCardCvvInput?.value || '';
+                    
+                    if (!cardNumber || cardNumber.length < 13) { showAlert('Por favor, informe o número do cartão.'); return; }
+                    if (!cardHolder || cardHolder.length < 3) { showAlert('Por favor, informe o nome no cartão.'); return; }
+                    if (!cardExpiry || cardExpiry.length !== 5) { showAlert('Por favor, informe a validade do cartão (MM/AA).'); return; }
+                    if (!cardCvv || cardCvv.length < 3) { showAlert('Por favor, informe o CVV do cartão.'); return; }
+                    
+                    const [month, year] = cardExpiry.split('/');
+                    if (!month || !year || month.length !== 2 || year.length !== 2) { showAlert('Formato de validade inválido. Use MM/AA.'); return; }
+                    
+                    btnPagarHypercash.disabled = true;
+                    btnPagarHypercash.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Processando...';
+                    lucide.createIcons();
+                    
+                    try {
+                        const cardData = { number: cardNumber, holderName: cardHolder, expMonth: parseInt(month), expYear: 2000 + parseInt(year), cvv: cardCvv };
+                        const tokenResult = await FastSoft.encrypt(cardData);
+                        
+                        let cardToken;
+                        if (typeof tokenResult === 'string') cardToken = tokenResult;
+                        else if (tokenResult && tokenResult.token) cardToken = tokenResult.token;
+                        else if (tokenResult && tokenResult.error) throw new Error(tokenResult.error.message || tokenResult.error);
+                        else throw new Error('Erro ao tokenizar cartão.');
+                        
+                        const cardDataForApi = { number: cardNumber, holderName: cardHolder.trim().substring(0, 100), expirationMonth: parseInt(month), expirationYear: 2000 + parseInt(year), cvv: cardCvv.replace(/\D/g, '').substring(0, 4) };
+                        
+                        const response = await fetch('/process_payment', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                ...payerData,
+                                card_token: cardToken,
+                                card_data: cardDataForApi,
+                                transaction_amount: parseFloat(currentAmount).toFixed(2),
+                                order_bump_product_ids: acceptedOrderBumps,
+                                utm_parameters: utmParameters,
+                                gateway: 'hypercash'
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (response.ok && result.status === 'approved') {
+                            const defaultRedirectUrl = '/obrigado?payment_id=' + result.payment_id;
+                            window.location.href = result.redirect_url || customRedirectUrl || defaultRedirectUrl;
+                        } else if (response.ok && result.status === 'pending') {
+                            showPendingModal();
+                        } else {
+                            showRejectedModal(result.error || result.message || 'Erro ao processar pagamento.');
+                        }
+                    } catch (e) {
+                        console.error('Hypercash Error:', e);
+                        showRejectedModal(e.message || 'Erro ao processar pagamento.');
+                    } finally {
+                        btnPagarHypercash.disabled = false;
+                        btnPagarHypercash.innerHTML = '<i data-lucide="credit-card" class="w-6 h-6"></i> FINALIZAR PAGAMENTO';
+                        lucide.createIcons();
+                    }
+                });
+            }
+            <?php endif; ?>
+
+            // --- LÓGICA EFÍ CARTÃO ---
+            <?php 
+            $should_init_efi_card = (isset($credit_card_efi_enabled) && $credit_card_efi_enabled) && !empty($efi_payee_code) && !isset($_GET['preview']);
+            if ($should_init_efi_card): ?>
+            const btnPagarEfiCard = document.getElementById('btn-pagar-efi-card');
+            const efiPayeeCode = <?php echo json_encode($efi_payee_code); ?>;
+            
+            function waitForEfiPay(callback, maxAttempts = 50) {
+                let attempts = 0;
+                const checkEfiPay = setInterval(() => {
+                    attempts++;
+                    const efiPay = window.EfiPay || window.efiPay || (typeof EfiPay !== 'undefined' ? EfiPay : null);
+                    if (efiPay && efiPay.CreditCard && typeof efiPay.CreditCard.setAccount === 'function') {
+                        clearInterval(checkEfiPay);
+                        callback(efiPay);
+                    } else if (attempts >= maxAttempts) {
+                        clearInterval(checkEfiPay);
+                        console.error('Efí: EfiPay não carregou após ' + maxAttempts + ' tentativas');
+                    }
+                }, 100);
+            }
+            
+            if (btnPagarEfiCard) {
+                waitForEfiPay((EfiPay) => {
+                    // Máscaras para os campos Efí
+                    const efiCardNumberInput = document.getElementById('efi-card-number');
+                    const efiCardExpiryInput = document.getElementById('efi-card-expiry');
+                    const efiCardCvvInput = document.getElementById('efi-card-cvv');
+                    
+                    if (efiCardNumberInput) {
+                        efiCardNumberInput.addEventListener('input', function(e) {
+                            let value = e.target.value.replace(/\s/g, '').replace(/\D/g, '');
+                            value = value.replace(/(\d{4})/g, '$1 ').trim();
+                            e.target.value = value;
+                        });
+                    }
+                    
+                    if (efiCardExpiryInput) {
+                        efiCardExpiryInput.addEventListener('input', function(e) {
+                            let value = e.target.value.replace(/\D/g, '');
+                            if (value.length >= 2) {
+                                value = value.substring(0, 2) + '/' + value.substring(2, 4);
+                            }
+                            e.target.value = value;
+                        });
+                    }
+                    
+                    if (efiCardCvvInput) {
+                        efiCardCvvInput.addEventListener('input', function(e) {
+                            e.target.value = e.target.value.replace(/\D/g, '');
+                        });
+                    }
+                    
+                    btnPagarEfiCard.addEventListener('click', async function() {
+                        const payerData = validateForm();
+                        if (!payerData) return;
+                        
+                        const cardNumber = efiCardNumberInput?.value.replace(/\s/g, '') || '';
+                        const cardHolder = document.getElementById('efi-card-holder')?.value.trim() || '';
+                        const cardExpiry = efiCardExpiryInput?.value || '';
+                        const cardCvv = efiCardCvvInput?.value || '';
+                        
+                        if (!cardNumber || cardNumber.length < 13) { showAlert('Por favor, informe o número do cartão.'); return; }
+                        if (!cardHolder || cardHolder.length < 3) { showAlert('Por favor, informe o nome no cartão.'); return; }
+                        if (!cardExpiry || cardExpiry.length < 5) { showAlert('Por favor, informe a validade do cartão.'); return; }
+                        if (!cardCvv || cardCvv.length < 3) { showAlert('Por favor, informe o CVV do cartão.'); return; }
+                        
+                        const [month, year] = cardExpiry.split('/');
+                        if (!month || !year || month.length !== 2 || year.length !== 2) { showAlert('Por favor, informe a validade no formato MM/AA.'); return; }
+                        
+                        const cpfClean = payerData.cpf ? payerData.cpf.replace(/\D/g, '') : '';
+                        if (!cpfClean || (cpfClean.length !== 11 && cpfClean.length !== 14)) { showAlert('Por favor, informe um CPF ou CNPJ válido.'); return; }
+                        
+                        // Identificar bandeira
+                        let brand = 'visa';
+                        const firstDigit = cardNumber.charAt(0);
+                        if (firstDigit === '4') brand = 'visa';
+                        else if (firstDigit === '5' || firstDigit === '2') brand = 'mastercard';
+                        else if (firstDigit === '3') brand = 'amex';
+                        else if (firstDigit === '6') brand = 'elo';
+                        
+                        btnPagarEfiCard.disabled = true;
+                        btnPagarEfiCard.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Processando...';
+                        lucide.createIcons();
+                        
+                        try {
+                            const paymentTokenResult = await EfiPay.CreditCard
+                                .setAccount(efiPayeeCode)
+                                .setEnvironment('production')
+                                .setCreditCardData({
+                                    brand: brand,
+                                    number: cardNumber,
+                                    cvv: cardCvv,
+                                    expirationMonth: month,
+                                    expirationYear: '20' + year,
+                                    holderName: cardHolder,
+                                    holderDocument: cpfClean,
+                                    reuse: false
+                                })
+                                .getPaymentToken();
+                            
+                            const paymentTokenValue = paymentTokenResult.payment_token || paymentTokenResult;
+                            if (!paymentTokenValue) throw new Error('Erro ao tokenizar cartão.');
+                            
+                            const response = await fetch('/process_payment', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    ...payerData,
+                                    payment_token: paymentTokenValue,
+                                    transaction_amount: parseFloat(currentAmount).toFixed(2),
+                                    installments: 1,
+                                    order_bump_product_ids: acceptedOrderBumps,
+                                    utm_parameters: utmParameters,
+                                    gateway: 'efi_card'
+                                })
+                            });
+                            
+                            const result = await response.json();
+                            
+                            if (response.ok && result.status === 'approved') {
+                                const defaultRedirectUrl = '/obrigado?payment_id=' + result.payment_id;
+                                window.location.href = result.redirect_url || customRedirectUrl || defaultRedirectUrl;
+                            } else if (response.ok && result.status === 'pending') {
+                                // Inicia polling para verificar quando o pagamento for aprovado
+                                if (result.payment_id) {
+                                    startPaymentCheck(result.payment_id, infoprodutorId, 'efi_card');
+                                }
+                                showPendingModal();
+                            } else {
+                                showRejectedModal(result.error || 'Erro ao processar pagamento.');
+                            }
+                        } catch (e) {
+                            console.error('Efí Card Error:', e);
+                            showRejectedModal(e.message || 'Erro ao processar pagamento.');
+                        } finally {
+                            btnPagarEfiCard.disabled = false;
+                            btnPagarEfiCard.innerHTML = '<i data-lucide="credit-card" class="w-6 h-6"></i> FINALIZAR PAGAMENTO';
+                            lucide.createIcons();
+                        }
+                    });
+                });
+            }
+            <?php endif; ?>
+
+            // --- LÓGICA MERCADO PAGO ---
+            <?php 
+            // Inicializar Mercado Pago APENAS se houver métodos do MP habilitados E tiver public_key
+            $has_mp_methods = ($pix_mercadopago_enabled || $credit_card_mercadopago_enabled || $ticket_enabled);
+            $should_init_mp = $has_mp_methods && !empty($public_key) && !isset($_GET['preview']);
+            if ($should_init_mp): ?>
+            let mp; // Declara mp antes de usar
+            try {
+                mp = new MercadoPago('<?php echo $public_key; ?>', { locale: 'pt-BR' });
+            } catch (error) {
+                console.error('Erro ao inicializar Mercado Pago:', error);
+            }
+            
+            async function initializePaymentBrickForMethod(methodType, payerEmail = null, amount = mainProductPrice) {
+                // Verifica se mp está inicializado
+                if (typeof mp === 'undefined') {
+                    console.error('Mercado Pago não foi inicializado ainda. Aguardando...');
+                    return;
+                }
+                
+                let containerId, loadingSpinnerId, configWrapperId;
+                
+                // Determinar IDs baseado no método
+                if (methodType === 'credit_card') {
+                    containerId = 'paymentBrick_container_credit';
+                    loadingSpinnerId = 'loading_spinner_credit';
+                    configWrapperId = 'payment_container_wrapper_credit';
+                } else if (methodType === 'ticket') {
+                    containerId = 'paymentBrick_container_ticket';
+                    loadingSpinnerId = 'loading_spinner_ticket';
+                    configWrapperId = 'payment_container_wrapper_ticket';
+                } else if (methodType === 'pix_mercadopago') {
+                    containerId = 'paymentBrick_container_pix_mp';
+                    loadingSpinnerId = 'loading_spinner_pix_mp';
+                    configWrapperId = 'payment_container_wrapper_pix_mp';
+                } else {
+                    return; // Método não suportado
+                }
+                
+                // Verificar se o container existe
+                let container = document.getElementById(containerId);
+                if (!container) {
+                    console.error(`Container ${containerId} não encontrado`);
+                    return;
+                }
+                
+                // Desmontar controller anterior se existir
+                if (paymentBrickControllers[methodType]) {
+                    try { 
+                        await paymentBrickControllers[methodType].unmount(); 
+                    } catch(e) {
+                        console.error('Erro ao desmontar Payment Brick:', e);
+                    }
+                }
+                
+                // Garantir que o container está limpo
+                const newContainer = document.createElement('div');
+                newContainer.id = containerId;
+                if (container.parentNode) {
+                    container.parentNode.replaceChild(newContainer, container);
+                }
+                container = newContainer;
+                
+                const loadingSpinner = document.getElementById(loadingSpinnerId);
+                if (loadingSpinner) {
+                    loadingSpinner.classList.remove('hidden');
+                }
+                
+                // Recupera config do HTML
+                const configEl = document.getElementById(configWrapperId);
+                const paymentMethods = configEl ? JSON.parse(configEl.dataset.mpConfig || '{}') : {};
+                
+                console.log(`Inicializando Payment Brick para ${methodType} com métodos:`, paymentMethods);
+
+                try {
+                    paymentBrickControllers[methodType] = await mp.bricks().create("payment", containerId, {
+                        initialization: { amount: parseFloat(amount), ...(payerEmail && { payer: { email: payerEmail } }) },
+                        customization: {
+                            paymentMethods: paymentMethods,
+                            visual: { style: { theme: 'flat', borderRadius: '8px', verticalPadding: '26px', primaryColor: '<?php echo htmlspecialchars($accentColor); ?>' } },
+                        },
+                        callbacks: {
+                            onReady: () => { 
+                                if (loadingSpinner) {
+                                    loadingSpinner.classList.add('hidden');
+                                }
+                                
+                                // Quando apenas um método está configurado, o Payment Brick já mostra apenas esse método
+                                // Tentamos expandir automaticamente o formulário após um pequeno delay
+                                setTimeout(() => {
+                                    const container = document.getElementById(containerId);
+                                    if (container) {
+                                        // Tentar encontrar e clicar no primeiro elemento clicável relacionado ao método
+                                        // O Payment Brick pode ter elementos em shadow DOM ou iframe, então tentamos múltiplas abordagens
+                                        
+                                        // Abordagem 1: Tentar clicar em elementos com role="button" ou labels
+                                        const clickableElements = container.querySelectorAll('[role="button"], label, button, .payment-option, [class*="payment"], [class*="method"]');
+                                        
+                                        if (clickableElements.length > 0) {
+                                            // Se houver apenas um método configurado, tentar clicar no primeiro elemento
+                                            // Isso deve expandir o formulário automaticamente
+                                            const firstClickable = clickableElements[0];
+                                            if (firstClickable) {
+                                                // Usar um pequeno delay adicional para garantir que o DOM está totalmente renderizado
+                                                setTimeout(() => {
+                                                    try {
+                                                        firstClickable.click();
+                                                    } catch (e) {
+                                                        // Se não conseguir clicar, não é crítico
+                                                        console.log('Não foi possível auto-expandir o método de pagamento');
+                                                    }
+                                                }, 200);
+                                            }
+                                        }
+                                        
+                                        // Abordagem 2: Tentar focar no primeiro input do formulário
+                                        setTimeout(() => {
+                                            const inputs = container.querySelectorAll('input, select, textarea');
+                                            if (inputs.length > 0 && inputs[0]) {
+                                                try {
+                                                    inputs[0].focus();
+                                                } catch (e) {
+                                                    // Input pode estar em iframe/shadow DOM
+                                                }
+                                            }
+                                        }, 300);
+                                    }
+                                }, 600);
+                            },
+                            onSubmit: async ({ formData }) => {
+                                const payerData = validateForm();
+                                if (!payerData) return; // Validação já feita na função comum
+
+                                const response = await fetch('/process_payment', {
+                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ 
+                                        ...formData, 
+                                        ...payerData,
+                                        transaction_amount: parseFloat(currentAmount).toFixed(2),
+                                        order_bump_product_ids: acceptedOrderBumps,
+                                        utm_parameters: utmParameters,
+                                        gateway: 'mercadopago'
+                                    })
+                                });
+                                const result = await response.json();
+
+                                // Remove loading spinner em todos os casos
+                                if (loadingSpinner) {
+                                    loadingSpinner.classList.add('hidden');
+                                }
+
+                                // PRIORIDADE 1: Status de erro (rejected, cancelled, etc.) - verificar ANTES de pending
+                                if (response.ok && (result.status === 'rejected' || result.status === 'cancelled' || result.status === 'refunded' || result.status === 'charged_back')) {
+                                    // Pagamento recusado/rejeitado - mostra modal personalizado
+                                    const errorMsg = result.error || result.message || getStatusErrorMessage(result.status) || 'Pagamento não aprovado. Tente outro método de pagamento.';
+                                    showRejectedModal(errorMsg);
+                                } 
+                                // PRIORIDADE 2: PIX criado
+                                else if (response.ok && result.status === 'pix_created') {
+                                    showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'mercadopago');
+                                } 
+                                // PRIORIDADE 3: Pagamento aprovado
+                                else if (response.ok && result.status === 'approved') {
+                                    // Pagamento aprovado - mostra modal de sucesso antes de redirecionar
+                                    const defaultRedirectUrl = `/obrigado?payment_id=${result.payment_id || result.id || ''}`;
+                                    const finalRedirectUrl = result.redirect_url || customRedirectUrl || defaultRedirectUrl;
+                                    
+                                    // Mostra modal de sucesso do cartão
+                                    showCardSuccessModal(finalRedirectUrl);
+                                } 
+                                // PRIORIDADE 4: Redirect URL (para casos especiais)
+                                else if (response.ok && result.redirect_url) {
+                                    window.location.href = result.redirect_url;
+                                } 
+                                // PRIORIDADE 5: Status pendente/em processamento
+                                else if (response.ok && (result.status === 'pending' || result.status === 'in_process')) {
+                                    // Verifica se é Pix (mostra modal do Pix) ou Cartão (mostra modal de pendente)
+                                    const isPix = formData.payment_method_id === 'pix' || selectedPaymentMethod === 'pix_mercadopago';
+                                    
+                                    if (isPix && result.payment_id) {
+                                        // Para Pix, mostra modal do Pix com polling
+                                        startPaymentCheck(result.payment_id, infoprodutorId, 'mercadopago');
+                                        showPixModal(null, null, result.payment_id, 'mercadopago');
+                                    } else {
+                                        // Para Cartão, mostra modal de pagamento pendente
+                                        showPendingModal();
+                                    }
+                                } 
+                                // PRIORIDADE 6: Outros status conhecidos
+                                else if (response.ok && result.status) {
+                                    const msg = getStatusErrorMessage(result.status) || result.message || result.error || 'Status do pagamento: ' + result.status + '. Aguarde ou tente novamente.';
+                                    
+                                    // Se tiver payment_id e status pendente, mostra modal de pendente
+                                    if (result.payment_id && (result.status === 'pending' || result.status === 'in_process')) {
+                                        showPendingModal();
+                                    } else {
+                                        // Para outros status, mostra modal de erro
+                                        showRejectedModal(msg);
+                                    }
+                                } 
+                                // PRIORIDADE 7: Erro genérico ou resposta inválida
+                                else {
+                                    console.error('Resposta inesperada do servidor:', result);
+                                    const errorMsg = result.error || result.message || 'Ocorreu um erro ao processar o pagamento. Tente novamente ou escolha outro método de pagamento.';
+                                    showRejectedModal(errorMsg);
+                                }
+                            },
+                            onError: (error) => { 
+                                console.error('Erro no Payment Brick:', error);
+                                if (loadingSpinner) {
+                                    loadingSpinner.classList.add('hidden');
+                                }
+                                
+                                // Mensagens de erro mais específicas
+                                let errorMessage = 'Erro ao processar pagamento.';
+                                if (error && error.message) {
+                                    if (error.message.includes('rejected') || error.message.includes('recusado')) {
+                                        errorMessage = 'Pagamento recusado. Verifique os dados do cartão ou tente outro método de pagamento.';
+                                    } else if (error.message.includes('insufficient') || error.message.includes('insuficiente')) {
+                                        errorMessage = 'Saldo insuficiente. Tente outro cartão ou método de pagamento.';
+                                    } else if (error.message.includes('security') || error.message.includes('CVV') || error.message.includes('código')) {
+                                        errorMessage = 'Código de segurança (CVV) incorreto. Verifique e tente novamente.';
+                                    } else if (error.message.includes('expired') || error.message.includes('vencido')) {
+                                        errorMessage = 'Cartão vencido. Verifique a data de validade e tente novamente.';
+                                    } else {
+                                        errorMessage = 'Erro no Mercado Pago: ' + error.message + '. Tente outro método de pagamento.';
+                                    }
+                                } else {
+                                    errorMessage = 'Erro ao processar pagamento. Tente novamente ou escolha outro método de pagamento.';
+                                }
+                                
+                                showRejectedModal(errorMessage);
+                            },
+                        },
+                    });
+                } catch (error) {
+                    console.error('Erro ao criar Payment Brick:', error);
+                    if (loadingSpinner) {
+                        loadingSpinner.classList.add('hidden');
+                    }
+                    showAlert("Erro ao inicializar pagamento: " + (error.message || 'Erro desconhecido'));
+                }
+            }
+            
+            // Listener para atualizar Payment Brick quando email mudar (apenas para métodos MP)
+            emailInput.addEventListener('blur', () => {
+                const currentEmail = emailInput.value;
+                if (currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)) {
+                    if (selectedPaymentMethod === 'credit_card' || selectedPaymentMethod === 'ticket' || selectedPaymentMethod === 'pix_mercadopago') {
+                        initializePaymentBrickForMethod(selectedPaymentMethod, currentEmail, currentAmount);
+                    }
+                }
+            }); 
+            
+            // Seleciona método padrão APÓS inicializar Mercado Pago
+            selectDefaultPaymentMethod();
+            <?php endif; ?>
+            
+            // Função para selecionar método de pagamento padrão (funciona para todos os gateways)
+            function selectDefaultPaymentMethod() {
+                const pixPushinpayCard = document.querySelector('[data-payment-method="pix_pushinpay"]');
+                const pixEfiCard = document.querySelector('[data-payment-method="pix_efi"]');
+                const pixMercadopagoCard = document.querySelector('[data-payment-method="pix_mercadopago"]');
+                const creditCardCard = document.querySelector('[data-payment-method="credit_card"]');
+                const creditCardEfiCard = document.querySelector('[data-payment-method="credit_card_efi"]');
+                const creditCardHypercashCard = document.querySelector('[data-payment-method="credit_card_hypercash"]');
+                const creditCardBeehiveCard = document.querySelector('[data-payment-method="credit_card_beehive"]');
+                
+                if (pixPushinpayCard) {
+                    selectPaymentMethod('pix_pushinpay');
+                } else if (pixEfiCard) {
+                    selectPaymentMethod('pix_efi');
+                } else if (pixMercadopagoCard) {
+                    selectPaymentMethod('pix_mercadopago');
+                } else if (creditCardCard) {
+                    selectPaymentMethod('credit_card');
+                } else if (creditCardEfiCard) {
+                    selectPaymentMethod('credit_card_efi');
+                } else if (creditCardHypercashCard) {
+                    selectPaymentMethod('credit_card_hypercash');
+                } else if (creditCardBeehiveCard) {
+                    selectPaymentMethod('credit_card_beehive');
+                } else {
+                    // Se não houver nenhum método específico, selecionar o primeiro disponível
+                    const firstCard = document.querySelector('.payment-method-card');
+                    if (firstCard) {
+                        const methodType = firstCard.getAttribute('data-payment-method');
+                        selectPaymentMethod(methodType);
+                    }
+                }
+            }
+            
+            // Chama a seleção padrão se Mercado Pago não estiver inicializado
+            <?php if (!$should_init_mp): ?>
+            selectDefaultPaymentMethod();
+            <?php endif; ?>
+
+            // --- Funções Auxiliares de Pix e Status ---
+            document.getElementById('copy-pix-code-btn')?.addEventListener('click', (e) => {
+                const input = document.getElementById('pix-code-input');
+                input.select();
+                document.execCommand('copy');
+                e.target.textContent = 'Copiado!';
+                setTimeout(() => { e.target.textContent = 'Copiar'; }, 2000);
+            });
+
+            function showPixModal(qrCodeBase64, pixCode, paymentId, gatewayUsed) {
+                if (notificationTimer) clearInterval(notificationTimer);
+                document.getElementById('sales-notification')?.classList.remove('show');
+                
+                // Se tiver QR code, configura a imagem
+                if (qrCodeBase64) {
+                    // Detecta o formato da imagem ou usa PNG como padrão (formato correto para QR codes)
+                    let imageSrc = qrCodeBase64;
+                    if (!qrCodeBase64.startsWith('data:')) {
+                        // Se não tem prefixo data:, adiciona como PNG (formato padrão para QR codes)
+                        imageSrc = `data:image/png;base64,${qrCodeBase64}`;
+                    } else if (qrCodeBase64.includes('data:image/jpeg')) {
+                        // Se for JPEG, converte para PNG (QR codes devem ser PNG)
+                        imageSrc = qrCodeBase64.replace('data:image/jpeg', 'data:image/png');
+                    }
+                    
+                    const qrCodeImg = document.getElementById('pix-qr-code-img');
+                    if (qrCodeImg) {
+                        qrCodeImg.src = imageSrc;
+                        // Garante que a imagem seja renderizada corretamente sem filtros
+                        qrCodeImg.style.imageRendering = 'pixelated';
+                        qrCodeImg.style.filter = 'none';
+                    }
+                }
+                
+                // Se tiver código PIX, configura o input
+                if (pixCode) {
+                    const pixCodeInput = document.getElementById('pix-code-input');
+                    if (pixCodeInput) {
+                        pixCodeInput.value = pixCode;
+                    }
+                }
+                
+                // Mostra estado de aguardando pagamento
+                const waitingState = document.getElementById('pix-waiting-state');
+                const approvedState = document.getElementById('pix-approved-state');
+                if (waitingState) waitingState.classList.remove('hidden');
+                if (approvedState) approvedState.classList.add('hidden');
+                
+                // Mostra o modal
+                pixModalOverlay.classList.remove('hidden');
+                setTimeout(() => { 
+                    pixModalOverlay.classList.remove('opacity-0'); 
+                    pixModalContent.classList.remove('opacity-0', 'scale-95'); 
+                    lucide.createIcons(); 
+                }, 10);
+                
+                // Inicia verificação de status se tiver payment_id
+                if (paymentId) {
+                    startPaymentCheck(paymentId, infoprodutorId, gatewayUsed);
+                }
+            }
+
+            // Função para mostrar modal de sucesso do cartão
+            function showCardSuccessModal(redirectUrl) {
+                if (notificationTimer) clearInterval(notificationTimer);
+                document.getElementById('sales-notification')?.classList.remove('show');
+                
+                const modalOverlay = document.getElementById('card-success-modal-overlay');
+                const modalContent = document.getElementById('card-success-modal-content');
+                const countdownEl = document.getElementById('card-redirect-countdown');
+                const redirectBtn = document.getElementById('card-success-redirect-btn');
+                
+                if (!modalOverlay || !modalContent) {
+                    // Fallback: redireciona direto se modal não existir
+                    window.location.href = redirectUrl;
+                    return;
+                }
+                
+                // Mostra o modal
+                modalOverlay.classList.remove('hidden');
+                setTimeout(() => { 
+                    modalOverlay.classList.remove('opacity-0');
+                    lucide.createIcons(); 
+                }, 10);
+                
+                // Configura o botão de redirecionamento
+                if (redirectBtn) {
+                    redirectBtn.onclick = () => {
+                        window.location.href = redirectUrl;
+                    };
+                }
+                
+                // Inicia countdown de 5 segundos
+                let countdown = 5;
+                if (countdownEl) {
+                    countdownEl.textContent = countdown;
+                }
+                
+                const countdownInterval = setInterval(() => {
+                    countdown--;
+                    if (countdownEl) {
+                        countdownEl.textContent = countdown;
+                    }
+                    
+                    if (countdown <= 0) {
+                        clearInterval(countdownInterval);
+                        window.location.href = redirectUrl;
+                    }
+                }, 1000);
+            }
+
+            // Função para mostrar modal de pagamento pendente
+            function showPendingModal() {
+                if (notificationTimer) clearInterval(notificationTimer);
+                document.getElementById('sales-notification')?.classList.remove('show');
+                
+                const modalOverlay = document.getElementById('pending-modal-overlay');
+                const closeBtn = document.getElementById('pending-modal-close-btn');
+                
+                if (!modalOverlay) {
+                    showAlert('Pagamento em análise. Você receberá um e-mail quando for confirmado.');
+                    return;
+                }
+                
+                // Esconde o botão inicialmente
+                if (closeBtn) {
+                    closeBtn.classList.add('hidden');
+                }
+                
+                // Mostra o modal
+                modalOverlay.classList.remove('hidden');
+                setTimeout(() => { 
+                    modalOverlay.classList.remove('opacity-0');
+                    lucide.createIcons(); 
+                }, 10);
+                
+                // Mostra o botão após 10 segundos
+                setTimeout(() => {
+                    if (closeBtn) {
+                        closeBtn.classList.remove('hidden');
+                    }
+                }, 10000);
+                
+                // Configura o botão de fechar
+                if (closeBtn) {
+                    closeBtn.onclick = () => {
+                        modalOverlay.classList.add('opacity-0');
+                        setTimeout(() => {
+                            modalOverlay.classList.add('hidden');
+                        }, 300);
+                    };
+                }
+                
+                // Fecha ao clicar fora do modal
+                modalOverlay.onclick = (e) => {
+                    if (e.target === modalOverlay) {
+                        modalOverlay.classList.add('opacity-0');
+                        setTimeout(() => {
+                            modalOverlay.classList.add('hidden');
+                        }, 300);
+                    }
+                };
+            }
+
+            // Função para mostrar modal de pagamento recusado
+            function showRejectedModal(errorMessage = null) {
+                if (notificationTimer) clearInterval(notificationTimer);
+                document.getElementById('sales-notification')?.classList.remove('show');
+                
+                const modalOverlay = document.getElementById('rejected-modal-overlay');
+                const closeBtn = document.getElementById('rejected-modal-close-btn');
+                const messageEl = document.getElementById('rejected-modal-message');
+                
+                if (!modalOverlay) {
+                    showAlert(errorMessage || 'Pagamento recusado. Tente outro método de pagamento.');
+                    return;
+                }
+                
+                // Atualiza a mensagem se fornecida
+                if (messageEl && errorMessage) {
+                    messageEl.textContent = errorMessage;
+                }
+                
+                // Mostra o modal
+                modalOverlay.classList.remove('hidden');
+                setTimeout(() => { 
+                    modalOverlay.classList.remove('opacity-0');
+                    lucide.createIcons(); 
+                }, 10);
+                
+                // Configura o botão de fechar
+                if (closeBtn) {
+                    closeBtn.onclick = () => {
+                        modalOverlay.classList.add('opacity-0');
+                        setTimeout(() => {
+                            modalOverlay.classList.add('hidden');
+                            // Reseta a mensagem para o padrão
+                            if (messageEl) {
+                                messageEl.textContent = 'Não foi possível processar seu pagamento.';
+                            }
+                        }, 300);
+                    };
+                }
+                
+                // Fecha ao clicar fora do modal
+                modalOverlay.onclick = (e) => {
+                    if (e.target === modalOverlay) {
+                        modalOverlay.classList.add('opacity-0');
+                        setTimeout(() => {
+                            modalOverlay.classList.add('hidden');
+                            if (messageEl) {
+                                messageEl.textContent = 'Não foi possível processar seu pagamento.';
+                            }
+                        }, 300);
+                    }
+                };
+            }
+
+            function startPaymentCheck(paymentId, sellerId, gatewayUsed) {
+                if (paymentCheckInterval) clearInterval(paymentCheckInterval);
+                let attempts = 0;
+                paymentCheckInterval = setInterval(async () => {
+                    attempts++;
+                    if (attempts > 120) { 
+                        clearInterval(paymentCheckInterval); 
+                        showAlert("Tempo expirou. Verifique o status do pagamento manualmente."); 
+                        return; 
+                    }
+                    try {
+                        // Passa o gateway para o check_status.php
+                        const response = await fetch(`/check_status?id=${paymentId}&seller_id=${sellerId}&gateway=${gatewayUsed}`);
+                        
+                        // Se a resposta não for OK, tenta ler o texto para debug
+                        if (!response.ok) {
+                            const text = await response.text();
+                            if (text) {
+                                try {
+                                    const errorResult = JSON.parse(text);
+                                    console.warn('Erro ao verificar status:', errorResult.message || 'Erro desconhecido');
+                                } catch (e) {
+                                    console.error('Resposta de erro não é JSON válido:', text.substring(0, 200));
+                                }
+                            } else {
+                                console.error('Resposta vazia do servidor (HTTP ' + response.status + ')');
+                            }
+                            // Continua tentando
+                            return;
+                        }
+                        
+                        // Verifica se a resposta é JSON válido
+                        const contentType = response.headers.get('content-type');
+                        if (!contentType || !contentType.includes('application/json')) {
+                            const text = await response.text();
+                            console.error('Resposta não é JSON:', text.substring(0, 200));
+                            // Não para o intervalo, tenta novamente na próxima iteração
+                            return;
+                        }
+                        
+                        const text = await response.text();
+                        if (!text || text.trim() === '') {
+                            console.error('Resposta vazia do servidor');
+                            return;
+                        }
+                        
+                        let result;
+                        try {
+                            result = JSON.parse(text);
+                        } catch (e) {
+                            console.error('Erro ao fazer parse do JSON:', e, 'Resposta:', text.substring(0, 200));
+                            return;
+                        }
+                        
+                        if (result.status === 'approved' || result.status === 'paid') {
+                            clearInterval(paymentCheckInterval);
+                            
+                            // Fecha modal de pendente (cartão) se estiver aberto
+                            const pendingModal = document.getElementById('pending-modal-overlay');
+                            if (pendingModal && !pendingModal.classList.contains('hidden')) {
+                                pendingModal.classList.add('hidden');
+                            }
+                            
+                            // Fecha modal Pix se estiver aberto
+                            const pixWaiting = document.getElementById('pix-waiting-state');
+                            const pixApproved = document.getElementById('pix-approved-state');
+                            if (pixWaiting && !pixWaiting.classList.contains('hidden')) {
+                                pixWaiting.classList.add('hidden');
+                                if (pixApproved) pixApproved.classList.remove('hidden');
+                            }
+                            
+                            lucide.createIcons();
+                            
+                            // Usa a URL de redirecionamento personalizada ou fallback para obrigado
+                            const finalRedirectUrl = customRedirectUrl || `/obrigado?payment_id=${paymentId}`;
+                            const redirectWithPaymentId = finalRedirectUrl.includes('?') 
+                                ? `${finalRedirectUrl}&payment_id=${paymentId}` 
+                                : `${finalRedirectUrl}?payment_id=${paymentId}`;
+                            
+                            setTimeout(() => { window.location.href = redirectWithPaymentId; }, 2000);
+                        } else if (result.status === 'error') {
+                            // Se houver erro, loga mas continua tentando
+                            console.warn('Erro ao verificar status:', result.message || 'Erro desconhecido');
+                        } else if (result.status === 'pending') {
+                            // Status ainda pendente, continua verificando
+                            // Não faz nada, apenas continua o loop
+                        }
+                    } catch (error) { 
+                        console.error('Erro ao verificar status do pagamento:', error);
+                        // Não para o intervalo, continua tentando
+                    }
+                }, 5000);
+            }
+
+            // --- LÓGICA PRODUTO GRÁTIS ---
+            const btnGetFreeProduct = document.getElementById('btn-get-free-product');
+            if (btnGetFreeProduct) {
+                btnGetFreeProduct.addEventListener('click', async () => {
+                    const payerData = validateForm();
+                    if (!payerData) return;
+
+                    btnGetFreeProduct.disabled = true;
+                    btnGetFreeProduct.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Processando...';
+                    lucide.createIcons();
+
+                    try {
+                        const response = await fetch('/process_free.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 
+                                ...payerData,
+                                utm_parameters: utmParameters
+                            })
+                        });
+                        
+                        const contentType = response.headers.get('content-type');
+                        if (!contentType || !contentType.includes('application/json')) {
+                            const text = await response.text();
+                            console.error('Resposta não é JSON:', text);
+                            showAlert('Erro: Resposta inválida do servidor. Tente novamente.');
+                            return;
+                        }
+                        
+                        const result = await response.json();
+
+                        if (response.ok && result.status === 'approved') {
+                            // Redireciona para página de obrigado
+                            window.location.href = result.redirect_url || '/obrigado?payment_id=' + result.payment_id;
+                        } else {
+                            showAlert(result.error || 'Erro ao processar. Tente novamente.');
+                        }
+                    } catch (e) {
+                        console.error('Erro ao processar produto grátis:', e);
+                        showAlert('Erro de conexão. Verifique sua internet e tente novamente.');
+                    } finally {
+                        btnGetFreeProduct.disabled = false;
+                        btnGetFreeProduct.innerHTML = '<i data-lucide="download" class="w-6 h-6"></i> QUERO MEU ACESSO GRÁTIS';
+                        lucide.createIcons();
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

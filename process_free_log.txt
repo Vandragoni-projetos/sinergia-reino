@@ -1,0 +1,6 @@
+2026-01-31 03:55:43 - === INÍCIO DO PROCESSAMENTO ===
+2026-01-31 00:55:43 - Config carregado com sucesso
+2026-01-31 00:55:43 - Iniciando processamento de produto grátis
+2026-01-31 00:55:43 - Dados recebidos: {"name":"Gildene Ferreira de Souza","email":"gildenefsouza@gmail.com","phone":"11987424212","cpf":"000.000.000-00","product_id":42,"oferta_id":null,"checkout_session_uuid":"98431c79-2d57-4a00-b981-53b068362eb5","utm_parameters":{"utm_source":null,"utm_campaign":null,"utm_medium":null,"utm_content":null,"utm_term":null,"src":null,"sck":null}}
+2026-01-31 00:55:43 - Venda gratuita criada: ID=243, Produto=Checkout Inteligente Getfy, Email=gildenefsouza@gmail.com
+2026-01-31 00:55:43 - Evolution API: Disparo para evento 'approved' - Produto Grátis
