@@ -229,8 +229,37 @@ if (!isset($feed_items_biblioteca)) {
     <meta name="viewport" content="width=device-width, initial-scale-1.0">
     <title>Meus Cursos - Área de Membros GatewayPro</title>
     <?php
+    // PWA: manifest e meta para instalação como app
+    $pwa_activated = false;
+    if (file_exists(__DIR__ . '/../../config/config.php')) {
+        require_once __DIR__ . '/../../config/config.php';
+        try {
+            if (isset($pdo)) {
+                $st = $pdo->query("SELECT valor FROM configuracoes_sistema WHERE chave = 'pwa_activated' LIMIT 1");
+                if ($st) { $r = $st->fetch(PDO::FETCH_ASSOC); $pwa_activated = ($r && ($r['valor'] ?? '') === '1'); }
+            }
+        } catch (Exception $e) {}
+    }
+    if ($pwa_activated):
+        $theme_color = '#1e293b';
+        try {
+            if (isset($pdo)) {
+                $st = $pdo->query("SELECT theme_color FROM pwa_config ORDER BY id DESC LIMIT 1");
+                if ($st) { $r = $st->fetch(PDO::FETCH_ASSOC); if (!empty($r['theme_color'])) $theme_color = $r['theme_color']; }
+            }
+        } catch (Exception $e) {}
+    ?>
+    <link rel="manifest" href="/pwa/manifest.php">
+    <meta name="theme-color" content="<?php echo htmlspecialchars($theme_color); ?>">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <?php endif; ?>
+    <?php
     // Adiciona favicon se configurado
-    require_once __DIR__ . '/../../config/config.php';
+    if (!isset($pdo) && file_exists(__DIR__ . '/../../config/config.php')) {
+        require_once __DIR__ . '/../../config/config.php';
+    }
     $favicon_url_raw = getSystemSetting('favicon_url', '');
     $blocked_offers_grayscale = (getSystemSetting('blocked_offers_grayscale', '0') === '1');
     if (!empty($favicon_url_raw)) {
@@ -260,7 +289,7 @@ if (!isset($feed_items_biblioteca)) {
     </style>
 </head>
 <body class="bg-gray-900 text-gray-200 antialiased">
-
+    <?php include __DIR__ . '/../includes/session_heartbeat.php'; ?>
     <!-- Cabeçalho Premium Fixo (voltando para paleta 'gray') -->
     <header class="sticky top-0 z-50 w-full border-b border-gray-700/50 bg-gray-900/70 backdrop-blur-sm">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -314,6 +343,41 @@ if (!isset($feed_items_biblioteca)) {
             </div>
         </div>
     </header>
+
+    <!-- Banner: ativar notificações push (novo usuário deve clicar para inscrever) -->
+    <div id="pwa-push-banner" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2" role="region" aria-label="Notificações">
+        <div class="flex items-center justify-between gap-4 rounded-lg border border-gray-600 bg-gray-800/90 px-4 py-3 text-sm">
+            <span id="pwa-push-banner-text" class="text-gray-300"></span>
+            <button type="button" id="pwa-push-banner-btn" class="hidden shrink-0 rounded-lg bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-500 transition">Receber notificações</button>
+        </div>
+    </div>
+
+    <!-- Card pós-login: notificações + instalar como app (mostra uma vez) -->
+    <div id="pwa-welcome-card" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div class="rounded-xl border border-gray-600 bg-gray-800/95 p-6 shadow-lg">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <h3 class="text-lg font-semibold text-white mb-1">Instale o app e não perca o acesso</h3>
+                    <p class="text-gray-400 text-sm mb-4">Adicione à tela inicial do celular ou instale no computador para acessar seus cursos com um toque e não esquecer da plataforma. Você também pode ativar as notificações para receber avisos.</p>
+                    <div class="flex flex-wrap gap-3">
+                        <button type="button" id="pwa-welcome-install-btn" class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500 transition">
+                            Instalar como app
+                        </button>
+                        <button type="button" id="pwa-welcome-notify-btn" class="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-500 transition">
+                            Receber notificações
+                        </button>
+                        <button type="button" id="pwa-welcome-close" class="inline-flex items-center gap-2 rounded-lg border border-gray-600 px-4 py-2.5 text-sm font-medium text-gray-400 hover:text-white hover:border-gray-500 transition">
+                            Agora não
+                        </button>
+                    </div>
+                </div>
+                <button type="button" id="pwa-welcome-dismiss" class="text-gray-500 hover:text-white p-1 rounded" aria-label="Fechar">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <p id="pwa-install-hint" class="hidden mt-3 text-xs text-gray-500">No Chrome: menu (⋮) → Instalar aplicativo. No celular: Adicionar à tela inicial.</p>
+        </div>
+    </div>
 
     <!-- Modal Editar Perfil -->
     <div id="profile-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] hidden flex items-center justify-center p-4">
@@ -418,15 +482,10 @@ if (!isset($feed_items_biblioteca)) {
                                     <?php
                                     $image_path = null;
                                     $placeholder_url = 'https://placehold.co/600x400/1f2937/9ca3af?text=Curso+Sem+Imagem';
-                                    $use_protected = function_exists('getProtectedMediaUrl');
                                     if (!empty($curso['produto_foto'])) {
-                                        $image_path = $use_protected ? getProtectedMediaUrl($upload_dir . $curso['produto_foto'], $curso['produto_id'] ?? 0) : ('/' . ltrim($upload_dir . $curso['produto_foto'], '/'));
+                                        $image_path = resolve_product_image_url_protected($curso['produto_foto'], $upload_dir, $curso['produto_id'] ?? 0);
                                     } elseif (!empty($curso['curso_imagem_url'])) {
-                                        if (filter_var($curso['curso_imagem_url'], FILTER_VALIDATE_URL)) {
-                                            $image_path = $curso['curso_imagem_url'];
-                                        } else {
-                                            $image_path = $use_protected ? getProtectedMediaUrl($upload_dir . $curso['curso_imagem_url'], $curso['produto_id'] ?? 0) : ('/' . ltrim($upload_dir . $curso['curso_imagem_url'], '/'));
-                                        }
+                                        $image_path = resolve_product_image_url_protected($curso['curso_imagem_url'], $upload_dir, $curso['produto_id'] ?? 0);
                                     }
                                     if (empty($image_path)) {
                                         $image_path = $placeholder_url;
@@ -771,7 +830,7 @@ if (!isset($feed_items_biblioteca)) {
                             const lockedImgCls = useGrayscale ? ' grayscale brightness-75 contrast-125' : '';
                             const overlayHtml = useGrayscale ? '<div class="absolute inset-0 bg-black/35 pointer-events-none" aria-hidden="true"></div>' : '';
                             const lockedBadgeHtml = isLocked ? '<span class="absolute top-2 right-2 bg-gray-900/90 text-gray-300 text-xs font-semibold px-2 py-1 rounded flex items-center gap-1.5 pointer-events-none"><i data-lucide="lock" class="w-3.5 h-3.5 flex-shrink-0"></i> Bloqueado</span>' : '';
-                            const productPhoto = offer.product_photo ? uploadDir + offer.product_photo : 'https://placehold.co/280x160/1f2937/d1d5db?text=Produto';
+                            const productPhoto = (offer.product_photo && (offer.product_photo.startsWith('http://') || offer.product_photo.startsWith('https://'))) ? offer.product_photo : (offer.product_photo ? uploadDir + offer.product_photo : 'https://placehold.co/280x160/1f2937/d1d5db?text=Produto');
                             const productPrice = formatCurrency(offer.product_price);
                             const checkoutLink = offer.custom_link ? offer.custom_link : `/checkout?p=${offer.checkout_hash}`;
                             const linkTarget = offer.custom_link ? 'target="_blank" rel="noopener noreferrer"' : '';
@@ -837,6 +896,127 @@ if (!isset($feed_items_biblioteca)) {
 
             fetchExclusiveOffers();
         });
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/pwa/sw.js').then(function(reg) {
+                    console.log('ServiceWorker registrado com sucesso:', reg.scope);
+                }, function(err) {
+                    console.log('Falha no registro do ServiceWorker:', err);
+                });
+            });
+        }
+    </script>
+    <script src="/pwa/pwa_push_register.js"></script>
+    <script>
+    (function() {
+        var banner = document.getElementById('pwa-push-banner');
+        var text = document.getElementById('pwa-push-banner-text');
+        var btn = document.getElementById('pwa-push-banner-btn');
+        if (!banner || !text || !btn) return;
+        function showBanner(msg, showButton) {
+            text.textContent = msg;
+            btn.style.display = showButton ? 'block' : 'none';
+            banner.classList.remove('hidden');
+        }
+        function hideBanner() {
+            banner.classList.add('hidden');
+        }
+        function updateFromState() {
+            if (typeof window.PwaPush === 'undefined') return;
+            if (window.PwaPush.isSubscribed) {
+                showBanner('Você está inscrito para receber notificações.', false);
+                setTimeout(hideBanner, 4000);
+                return;
+            }
+            if (window.PwaPush.isDenied) {
+                showBanner('Para receber notificações, ative no ícone de cadeado da barra de endereço.', false);
+                return;
+            }
+            if (window.PwaPush.isRequestable) {
+                showBanner('Deseja receber notificações de novidades e avisos?', true);
+            }
+        }
+        window.addEventListener('pwa-push-state', function(e) {
+            var d = e.detail || {};
+            if (d.subscribed) { showBanner('Notificações ativadas. Você passará a receber avisos.', false); setTimeout(hideBanner, 4000); return; }
+            if (d.denied) { showBanner('Para receber notificações, ative no ícone de cadeado da barra de endereço.', false); return; }
+            if (d.requestable) { showBanner('Deseja receber notificações de novidades e avisos?', true); }
+        });
+        btn.addEventListener('click', function() {
+            if (window.PwaPush && window.PwaPush.requestPermission) {
+                btn.disabled = true;
+                btn.textContent = 'Aguarde...';
+                window.PwaPush.requestPermission().then(function(ok) {
+                    btn.disabled = false;
+                    btn.textContent = 'Receber notificações';
+                    if (ok) { showBanner('Notificações ativadas.', false); setTimeout(hideBanner, 4000); }
+                }).catch(function() { btn.disabled = false; btn.textContent = 'Receber notificações'; });
+            }
+        });
+        setTimeout(updateFromState, 1500);
+    })();
+    </script>
+    <script>
+    (function() {
+        var welcomeCard = document.getElementById('pwa-welcome-card');
+        var notifyBtn = document.getElementById('pwa-welcome-notify-btn');
+        var installBtn = document.getElementById('pwa-welcome-install-btn');
+        var installHint = document.getElementById('pwa-install-hint');
+        var closeBtn = document.getElementById('pwa-welcome-close');
+        var dismissBtn = document.getElementById('pwa-welcome-dismiss');
+        if (!welcomeCard) return;
+
+        var deferredPrompt = null;
+        window.addEventListener('beforeinstallprompt', function(e) {
+            e.preventDefault();
+            deferredPrompt = e;
+            if (installBtn) installBtn.classList.remove('hidden');
+        });
+
+        function closeWelcome() {
+            try { localStorage.setItem('pwa_welcome_closed', '1'); } catch (x) {}
+            welcomeCard.classList.add('hidden');
+        }
+
+        function showWelcomeIfNeeded() {
+            if (localStorage.getItem('pwa_welcome_closed') === '1') return;
+            var isMobile = window.matchMedia('(max-width: 768px)').matches || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            var show = deferredPrompt || (window.PwaPush && window.PwaPush.isRequestable) || isMobile;
+            if (show) welcomeCard.classList.remove('hidden');
+        }
+
+        if (notifyBtn) notifyBtn.addEventListener('click', function() {
+            if (window.PwaPush && window.PwaPush.requestPermission) {
+                notifyBtn.disabled = true;
+                notifyBtn.textContent = 'Aguarde...';
+                window.PwaPush.requestPermission().then(function(ok) {
+                    notifyBtn.disabled = false;
+                    notifyBtn.textContent = 'Receber notificações';
+                    if (ok) closeWelcome();
+                }).catch(function() { notifyBtn.disabled = false; notifyBtn.textContent = 'Receber notificações'; });
+            }
+        });
+        if (installBtn) installBtn.addEventListener('click', function() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then(function(choice) {
+                    if (choice.outcome === 'accepted') closeWelcome();
+                    deferredPrompt = null;
+                });
+            } else if (installHint) {
+                installHint.classList.remove('hidden');
+            }
+        });
+        if (closeBtn) closeBtn.addEventListener('click', closeWelcome);
+        if (dismissBtn) dismissBtn.addEventListener('click', closeWelcome);
+
+        window.addEventListener('pwa-push-state', function() {
+            if (window.PwaPush && window.PwaPush.isRequestable) showWelcomeIfNeeded();
+        });
+        setTimeout(showWelcomeIfNeeded, 2000);
+    })();
     </script>
     <?php 
     $mp_path = __DIR__ . '/../includes/member_protection.php';

@@ -517,7 +517,8 @@ $produtos = array_filter(array_map(function($item) {
                         <div class="relative group">
                             <div class="w-full h-64 bg-dark-elevated rounded-xl overflow-hidden border-2 border-dark-border border-dashed flex items-center justify-center relative">
                                 <?php if ($produto_edit && !empty($produto_edit['foto'])): ?>
-                                    <img src="<?php echo $upload_dir . htmlspecialchars($produto_edit['foto']); ?>" id="preview-img" class="absolute inset-0 w-full h-full object-cover">
+                                    <?php $foto_src_edit = resolve_product_image_url($produto_edit['foto'], $upload_dir ?? 'uploads/'); ?>
+                                    <img src="<?php echo htmlspecialchars($foto_src_edit); ?>" id="preview-img" class="absolute inset-0 w-full h-full object-cover">
                                 <?php else: ?>
                                     <img id="preview-img" class="absolute inset-0 w-full h-full object-cover hidden">
                                     <div id="placeholder-img" class="text-center p-4">
@@ -580,7 +581,8 @@ $produtos = array_filter(array_map(function($item) {
                         <!-- Capa do Card -->
                         <div class="relative h-56 overflow-hidden bg-dark-elevated">
                             <?php if ($produto['foto']): ?>
-                                <img src="<?php echo $upload_dir . htmlspecialchars($produto['foto']); ?>" alt="<?php echo htmlspecialchars($produto['nome']); ?>" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
+                                <?php $prod_foto_src = resolve_product_image_url($produto['foto'], $upload_dir ?? 'uploads/'); ?>
+                                <img src="<?php echo htmlspecialchars($prod_foto_src); ?>" alt="<?php echo htmlspecialchars($produto['nome']); ?>" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
                             <?php else: ?>
                                 <div class="w-full h-full flex flex-col items-center justify-center text-gray-500">
                                     <i data-lucide="image" class="w-12 h-12 mb-2"></i>

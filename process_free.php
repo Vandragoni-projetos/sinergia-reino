@@ -200,12 +200,17 @@ try {
                 || (!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && $_SERVER['HTTP_X_FORWARDED_SSL'] === 'on')
                 || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
     $protocol = $is_https ? 'https://' : 'https://'; // Força HTTPS sempre
-    $redirect_url = $protocol . $domainName . '/obrigado?payment_id=' . urlencode($transaction_id);
-    
-    // Verifica se há URL customizada no checkout_config
+    $base_url = $protocol . $domainName . '/';
+    $default_redirect = $base_url . 'obrigado?payment_id=' . urlencode($transaction_id);
     $checkout_config = json_decode($produto['checkout_config'] ?? '{}', true);
     if (!empty($checkout_config['redirectUrl'])) {
-        $redirect_url = $checkout_config['redirectUrl'] . '?payment_id=' . urlencode($transaction_id);
+        $default_redirect = rtrim($checkout_config['redirectUrl'], '?&') . '?payment_id=' . urlencode($transaction_id);
+    }
+    if (file_exists(__DIR__ . '/helpers/funnel_helper.php')) {
+        require_once __DIR__ . '/helpers/funnel_helper.php';
+        $redirect_url = build_final_redirect_url($pdo, (int)$product_id, $transaction_id, $default_redirect, $base_url);
+    } else {
+        $redirect_url = $default_redirect;
     }
     
     returnJsonSuccess([

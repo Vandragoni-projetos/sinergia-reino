@@ -47,7 +47,7 @@ try {
 // Sistema de roteamento simples para o painel de admin
 $pagina_admin = isset($_GET['pagina']) ? $_GET['pagina'] : 'admin_dashboard';
 $role_filter = isset($_GET['role']) ? $_GET['role'] : 'all'; // Nova variável para o filtro de função
-$paginas_permitidas_admin = ['admin_dashboard', 'admin_usuarios', 'admin_relatorios', 'admin_smtp_config', 'admin_configuracoes', 'admin_visual_config', 'admin_revenda_autorizada', 'admin_logs'];
+$paginas_permitidas_admin = ['admin_dashboard', 'admin_usuarios', 'admin_relatorios', 'admin_smtp_config', 'admin_configuracoes', 'admin_visual_config', 'admin_revenda_autorizada', 'admin_logs', 'admin_pwa'];
 
 // Classes para o menu ativo - Modern Glassmorphism Design
 $active_class = 'sidebar-item sidebar-item-active';
@@ -64,6 +64,7 @@ $inactive_class = 'sidebar-item sidebar-item-inactive';
     <!-- PWA Tags -->
     <meta name="theme-color" content="#2DD05E">
     <link rel="manifest" href="manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Plataforma">
@@ -156,6 +157,7 @@ $inactive_class = 'sidebar-item sidebar-item-inactive';
     </style>
 </head>
 <body class="font-sans flex flex-col min-h-screen bg-dark-base">
+    <?php include __DIR__ . '/views/includes/session_heartbeat.php'; ?>
     <!-- Header Fixo Invisível (Topo) -->
     <header class="fixed top-0 left-0 right-0 z-40 bg-dark-base/80 backdrop-blur-sm h-[60px] flex items-center justify-between px-4 md:px-6">
         <!-- Botão de Toggle Mobile -->
@@ -289,6 +291,11 @@ $inactive_class = 'sidebar-item sidebar-item-inactive';
             <a href="/admin?pagina=admin_logs" class="<?php echo $pagina_admin == 'admin_logs' ? $active_class : $inactive_class; ?>">
                 <i data-lucide="file-text" class="w-5 h-5"></i>
                 <span>Logs do Sistema</span>
+            </a>
+            <!-- PWA -->
+            <a href="/admin?pagina=admin_pwa" class="<?php echo $pagina_admin == 'admin_pwa' ? $active_class : $inactive_class; ?>">
+                <i data-lucide="smartphone" class="w-5 h-5"></i>
+                <span>PWA</span>
             </a>
             <!-- NOVO: Link para Revenda Autorizada 
             <a href="/admin?pagina=admin_revenda_autorizada" class="<?php echo $pagina_admin == 'admin_revenda_autorizada' ? $active_class : $inactive_class; ?>">
@@ -627,7 +634,7 @@ $inactive_class = 'sidebar-item sidebar-item-inactive';
             liveNotificationMessage.textContent = messageText;
             liveNotificationDetails.textContent = detailsText;
             // Modificação: Usa a foto do produto se disponível, caso contrário, usa a imagem padrão
-            liveNotificationProductImage.src = notification.produto_foto ? 'uploads/' + notification.produto_foto : '<?php echo htmlspecialchars($logo_url); ?>';
+            liveNotificationProductImage.src = (notification.produto_foto && (notification.produto_foto.startsWith('http://') || notification.produto_foto.startsWith('https://'))) ? notification.produto_foto : (notification.produto_foto ? 'uploads/' + notification.produto_foto : '<?php echo htmlspecialchars($logo_url); ?>');
             
             if (cashRegisterSound && audioContextResumed) {
                 cashRegisterSound.load();

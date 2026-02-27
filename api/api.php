@@ -35,7 +35,9 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 use PHPMailer\PHPMailer\SMTP;
 
-error_log("API: Script iniciado."); // Log para o início do script
+if (defined('APP_DEBUG') && APP_DEBUG) {
+    error_log("API: Script iniciado."); // Log para o início do script (apenas em modo debug)
+}
 
 // Incluir os arquivos do PHPMailer
 $phpmailer_path = __DIR__ . '/../PHPMailer/src/';
@@ -336,7 +338,93 @@ try {
         $action = $input['action'] ?? $action;
     }
 
-    error_log("API: Ação recebida: " . $action);
+    if (defined('APP_DEBUG') && APP_DEBUG) {
+        error_log("API: Ação recebida: " . $action);
+    }
+
+    // --- Heartbeat sessão única: verificação leve para o frontend detectar logout em outro dispositivo ---
+    if ($action === 'check_session') {
+        ob_clean();
+        echo json_encode(['success' => true, 'valid' => true]);
+        exit;
+    }
+
+    // --- PWA Push: chave VAPID pública (para inscrição no cliente) ---
+    if ($action === 'get_pwa_vapid_public') {
+        try {
+            $stmt = $pdo->prepare("SELECT valor FROM configuracoes_sistema WHERE chave = 'pwa_activated' LIMIT 1");
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row || $row['valor'] != '1') {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'PWA não ativado']);
+                exit;
+            }
+            $stmt = $pdo->query("SELECT push_enabled FROM pwa_config ORDER BY id DESC LIMIT 1");
+            $config = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$config || empty($config['push_enabled'])) {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Push não habilitado']);
+                exit;
+            }
+            if (!file_exists(__DIR__ . '/../pwa/api/web_push_helper.php')) {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Módulo PWA não encontrado']);
+                exit;
+            }
+            require_once __DIR__ . '/../pwa/api/web_push_helper.php';
+            $keys = pwa_get_or_generate_vapid_keys();
+            if (!$keys || empty($keys['publicKey'])) {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Chaves VAPID indisponíveis']);
+                exit;
+            }
+            ob_clean();
+            echo json_encode(['success' => true, 'publicKey' => $keys['publicKey']]);
+            exit;
+        } catch (Exception $e) {
+            error_log("API PWA get_pwa_vapid_public: " . $e->getMessage());
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Erro ao obter chave']);
+            exit;
+        }
+    }
+
+    // --- PWA Push: registrar subscription (usuário logado) ---
+    if ($action === 'register_pwa_push' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true) ?: [];
+        $subscription = $input['subscription'] ?? null;
+        if (!$subscription || empty($subscription['endpoint']) || empty($subscription['keys']['p256dh']) || empty($subscription['keys']['auth'])) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Dados de inscrição inválidos']);
+            exit;
+        }
+        try {
+            $stmt = $pdo->prepare("SELECT valor FROM configuracoes_sistema WHERE chave = 'pwa_activated' LIMIT 1");
+            $stmt->execute();
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row || $row['valor'] != '1') {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'PWA não ativado']);
+                exit;
+            }
+            if (!file_exists(__DIR__ . '/../pwa/api/web_push_helper.php')) {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Módulo PWA não encontrado']);
+                exit;
+            }
+            require_once __DIR__ . '/../pwa/api/web_push_helper.php';
+            $ok = pwa_register_subscription($usuario_id_logado, $subscription);
+            ob_clean();
+            echo json_encode($ok ? ['success' => true] : ['success' => false, 'error' => 'Falha ao registrar']);
+            exit;
+        } catch (Exception $e) {
+            error_log("API PWA register_pwa_push: " . $e->getMessage());
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Erro ao registrar']);
+            exit;
+        }
+    }
 
     // Atualizar perfil do infoprodutor (Editar Perfil)
     if ($action === 'update_infoprodutor_profile' && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -854,6 +942,98 @@ try {
                 'manual' => $manual_count
             ]
         ]);
+        exit;
+    }
+
+    // Exportar vendas em CSV (Excel)
+    if ($action == 'export_vendas_excel') {
+        $status_filter = $_GET['status'] ?? 'all';
+        $search_query = $_GET['search'] ?? '';
+        $produto_id = $_GET['produto_id'] ?? '';
+        $metodo_pagamento = $_GET['metodo_pagamento'] ?? '';
+        $data_inicio = $_GET['data_inicio'] ?? '';
+        $data_fim = $_GET['data_fim'] ?? '';
+        $telefone = $_GET['telefone'] ?? '';
+        $valor_min = $_GET['valor_min'] ?? '';
+        $valor_max = $_GET['valor_max'] ?? '';
+
+        $where_clauses = ["p.usuario_id = :usuario_id"];
+        $params = [':usuario_id' => $usuario_id_logado];
+        if ($status_filter === 'abandoned_all') {
+            $where_clauses[] = "v.status_pagamento IN ('pending', 'cancelled', 'info_filled')";
+        } elseif ($status_filter === 'info_filled') {
+            $where_clauses[] = "v.status_pagamento = 'info_filled'";
+        } elseif ($status_filter !== 'all') {
+            $where_clauses[] = "v.status_pagamento = :status_filter";
+            $params[':status_filter'] = $status_filter;
+        }
+        if (!empty($search_query)) {
+            $where_clauses[] = "(v.comprador_nome LIKE :search_query OR v.comprador_email LIKE :search_query OR v.comprador_telefone LIKE :search_query OR v.id = :search_id)";
+            $params[':search_query'] = '%' . $search_query . '%';
+            $params[':search_id'] = is_numeric($search_query) ? (int)$search_query : 0;
+        }
+        if (!empty($produto_id) && is_numeric($produto_id)) { $where_clauses[] = "v.produto_id = :produto_id"; $params[':produto_id'] = (int)$produto_id; }
+        if (!empty($metodo_pagamento)) { $where_clauses[] = "v.metodo_pagamento = :metodo_pagamento"; $params[':metodo_pagamento'] = $metodo_pagamento; }
+        if (!empty($data_inicio)) { $where_clauses[] = "DATE(v.data_venda) >= :data_inicio"; $params[':data_inicio'] = $data_inicio; }
+        if (!empty($data_fim)) { $where_clauses[] = "DATE(v.data_venda) <= :data_fim"; $params[':data_fim'] = $data_fim; }
+        if (!empty($telefone)) {
+            $telefone_limpo = preg_replace('/\D/', '', $telefone);
+            $where_clauses[] = "REPLACE(REPLACE(REPLACE(REPLACE(v.comprador_telefone, '(', ''), ')', ''), '-', ''), ' ', '') LIKE :telefone";
+            $params[':telefone'] = '%' . $telefone_limpo . '%';
+        }
+        if (!empty($valor_min) && is_numeric($valor_min)) { $where_clauses[] = "v.valor >= :valor_min"; $params[':valor_min'] = (float)$valor_min; }
+        if (!empty($valor_max) && is_numeric($valor_max)) { $where_clauses[] = "v.valor <= :valor_max"; $params[':valor_max'] = (float)$valor_max; }
+        $where_sql = 'WHERE ' . implode(' AND ', $where_clauses);
+
+        $sql_export = "
+            SELECT v.id, v.comprador_nome AS Cliente, v.comprador_email AS Email, v.comprador_telefone AS Telefone,
+                   p.nome AS Produto, v.valor AS Valor, v.metodo_pagamento AS Metodo,
+                   v.data_venda AS Data, v.status_pagamento AS Status
+            FROM vendas v
+            JOIN produtos p ON v.produto_id = p.id
+            {$where_sql}
+            ORDER BY v.data_venda DESC
+        ";
+        $stmt_export = $pdo->prepare($sql_export);
+        foreach ($params as $k => $v) $stmt_export->bindValue($k, $v);
+        $stmt_export->execute();
+        $rows = $stmt_export->fetchAll(PDO::FETCH_ASSOC);
+
+        // Incluir acessos manuais se status all/approved/manual
+        $include_manual = ($status_filter === 'all' || $status_filter === 'approved' || $status_filter === 'manual');
+        if ($include_manual) {
+            $manual_where = ["p.usuario_id = :uid", "aa.criado_manualmente = 1"];
+            $manual_params = [':uid' => $usuario_id_logado];
+            if (!empty($search_query)) { $manual_where[] = "(u.nome LIKE :sm OR aa.aluno_email LIKE :sm)"; $manual_params[':sm'] = '%' . $search_query . '%'; }
+            if (!empty($produto_id) && is_numeric($produto_id)) { $manual_where[] = "aa.produto_id = :pid"; $manual_params[':pid'] = (int)$produto_id; }
+            if (!empty($data_inicio)) { $manual_where[] = "DATE(aa.data_concessao) >= :di"; $manual_params[':di'] = $data_inicio; }
+            if (!empty($data_fim)) { $manual_where[] = "DATE(aa.data_concessao) <= :df"; $manual_params[':df'] = $data_fim; }
+            $mw_sql = 'WHERE ' . implode(' AND ', $manual_where);
+            $sql_manual = "SELECT CONCAT('M', aa.id) AS id, COALESCE(u.nome, aa.aluno_email) AS Cliente, aa.aluno_email AS Email, '' AS Telefone, p.nome AS Produto, 0 AS Valor, 'Manual' AS Metodo, aa.data_concessao AS Data, 'approved' AS Status FROM alunos_acessos aa JOIN produtos p ON aa.produto_id = p.id LEFT JOIN usuarios u ON u.usuario = aa.aluno_email AND u.tipo = 'usuario' {$mw_sql} ORDER BY aa.data_concessao DESC";
+            $stmt_m = $pdo->prepare($sql_manual);
+            foreach ($manual_params as $k => $v) $stmt_m->bindValue($k, $v);
+            $stmt_m->execute();
+            $manuais = $stmt_m->fetchAll(PDO::FETCH_ASSOC);
+            $rows = array_merge($rows, $manuais);
+            usort($rows, function($a, $b) { return strtotime($b['Data']) - strtotime($a['Data']); });
+        }
+
+        ob_clean();
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="vendas_' . date('Y-m-d_H-i') . '.csv"');
+        $out = fopen('php://output', 'w');
+        fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM UTF-8
+        if (count($rows) > 0) {
+            fputcsv($out, array_keys($rows[0]), ';');
+            foreach ($rows as $r) {
+                $r['Valor'] = number_format((float)$r['Valor'], 2, ',', '.');
+                $r['Data'] = date('d/m/Y H:i', strtotime($r['Data']));
+                fputcsv($out, $r, ';');
+            }
+        } else {
+            fputcsv($out, ['Cliente','Email','Telefone','Produto','Valor','Metodo','Data','Status'], ';');
+        }
+        fclose($out);
         exit;
     }
     

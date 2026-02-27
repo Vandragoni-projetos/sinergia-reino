@@ -1,0 +1,77 @@
+2026-02-21 19:32:01 - Webhook recebido: {"resource":"146545848151","topic":"payment"}
+2026-02-21 19:32:01 - Payment ID extraído de resource (limpo): 146545848151
+2026-02-21 19:32:01 - Payment ID final extraído: 146545848151 | Gateway detectado: NÃO DETECTADO
+2026-02-21 19:32:01 - Buscando venda com transacao_id: 146545848151
+2026-02-21 19:32:01 - Venda encontrada. ID: 282, Status atual: approved, Email enviado: 0
+2026-02-21 19:32:01 - Venda encontrada no BD. Transacao ID: 146545848151, Status atual: approved
+2026-02-21 19:32:01 - Status extraído do webhook: NÃO ENCONTRADO
+2026-02-21 19:32:01 - Buscando status do Mercado Pago via API (webhook não envia status)...
+2026-02-21 19:32:01 - Webhook recebido: {"action":"payment.created","api_version":"v1","data":{"id":"146545848151"},"date_created":"2026-02-21T22:31:58Z","id":129210089705,"live_mode":true,"type":"payment","user_id":"3217830019"}
+2026-02-21 19:32:01 - Payment ID extraído do formato Mercado Pago (type=payment): 146545848151
+2026-02-21 19:32:01 - Payment ID final extraído: 146545848151 | Gateway detectado: mercadopago
+2026-02-21 19:32:01 - Buscando venda com transacao_id: 146545848151
+2026-02-21 19:32:01 - Venda encontrada. ID: 282, Status atual: approved, Email enviado: 0
+2026-02-21 19:32:01 - Venda encontrada no BD. Transacao ID: 146545848151, Status atual: approved
+2026-02-21 19:32:01 - Webhook do Mercado Pago detectado (type=payment). Status será buscado da API.
+2026-02-21 19:32:01 - Status extraído do webhook: NÃO ENCONTRADO
+2026-02-21 19:32:01 - Buscando status do Mercado Pago via API (webhook não envia status)...
+2026-02-21 19:32:01 - Status obtido da API Mercado Pago: approved
+2026-02-21 19:32:01 - Status normalizado para BD: approved
+2026-02-21 19:32:01 - Status já está como 'approved' no BD, não precisa atualizar
+2026-02-21 19:32:01 - WEBHOOKS: Verificando webhooks para evento 'approved' (campo: event_approved, usuario_id: 50, produto_id: NULL)
+2026-02-21 19:32:01 - WEBHOOKS: Nenhum webhook encontrado para o evento 'approved'.
+2026-02-21 19:32:01 - WEBHOOKS: Verificando webhooks para evento 'approved' (campo: event_approved, usuario_id: 50, produto_id: 67)
+2026-02-21 19:32:01 - WEBHOOKS: Nenhum webhook encontrado para o evento 'approved'.
+2026-02-21 19:32:01 - WEBHOOKS: Verificando webhooks para evento 'approved' (campo: event_approved, usuario_id: 50, produto_id: 62)
+2026-02-21 19:32:01 - WEBHOOKS: Nenhum webhook encontrado para o evento 'approved'.
+2026-02-21 19:32:01 - Iniciando processamento de entrega para transacao: 146545848151
+2026-02-21 19:32:01 - Email entrega enviado: 0
+2026-02-21 19:32:01 - Processando produto: Curso Negócio 5 Digitos - Tipo: area_membros
+2026-02-21 19:32:01 - Acesso concedido via helper: email=vandragoni@gmail.com, produto=67, oferta=padrão
+2026-02-21 19:32:01 - Produto processado com sucesso: Curso Negócio 5 Digitos - Tipo: area_membros
+2026-02-21 19:32:01 - Usuario existente encontrado, senha mantida: vandragoni@gmail.com
+2026-02-21 19:32:01 - Processando produto: Curso CriADS - Tipo: area_membros
+2026-02-21 19:32:01 - Acesso concedido via helper: email=vandragoni@gmail.com, produto=62, oferta=padrão
+2026-02-21 19:32:01 - Produto processado com sucesso: Curso CriADS - Tipo: area_membros
+2026-02-21 19:32:01 - Usuario existente encontrado, senha mantida: vandragoni@gmail.com
+2026-02-21 19:32:01 - Total de produtos processados: 2
+2026-02-21 19:32:01 - Preparando envio de email para: vandragoni@gmail.com
+2026-02-21 19:32:01 - Login URL: https://core.vitrineacademy.com.br/member_login.php
+2026-02-21 19:32:01 - Senha gerada: SIM
+2026-02-21 19:32:01 - send_delivery_email_consolidated chamada para: vandragoni@gmail.com
+2026-02-21 19:32:01 - Configuracoes SMTP carregadas. Host: smtp.gmail.com
+2026-02-21 19:32:01 - Logo URL final: https://core.vitrineacademy.com.br/uploads/config/logo_1771293809.png
+2026-02-21 19:32:01 - Tentando enviar email...
+2026-02-21 19:32:01 - Status obtido da API Mercado Pago: approved
+2026-02-21 19:32:01 - Status normalizado para BD: approved
+2026-02-21 19:32:01 - Status já está como 'approved' no BD, não precisa atualizar
+2026-02-21 19:32:01 - WEBHOOKS: Verificando webhooks para evento 'approved' (campo: event_approved, usuario_id: 50, produto_id: NULL)
+2026-02-21 19:32:01 - WEBHOOKS: Nenhum webhook encontrado para o evento 'approved'.
+2026-02-21 19:32:01 - WEBHOOKS: Verificando webhooks para evento 'approved' (campo: event_approved, usuario_id: 50, produto_id: 67)
+2026-02-21 19:32:01 - WEBHOOKS: Nenhum webhook encontrado para o evento 'approved'.
+2026-02-21 19:32:01 - WEBHOOKS: Verificando webhooks para evento 'approved' (campo: event_approved, usuario_id: 50, produto_id: 62)
+2026-02-21 19:32:01 - WEBHOOKS: Nenhum webhook encontrado para o evento 'approved'.
+2026-02-21 19:32:01 - Iniciando processamento de entrega para transacao: 146545848151
+2026-02-21 19:32:01 - Email entrega enviado: 0
+2026-02-21 19:32:01 - Processando produto: Curso Negócio 5 Digitos - Tipo: area_membros
+2026-02-21 19:32:01 - Acesso concedido via helper: email=vandragoni@gmail.com, produto=67, oferta=padrão
+2026-02-21 19:32:01 - Produto processado com sucesso: Curso Negócio 5 Digitos - Tipo: area_membros
+2026-02-21 19:32:01 - Usuario existente encontrado, senha mantida: vandragoni@gmail.com
+2026-02-21 19:32:01 - Processando produto: Curso CriADS - Tipo: area_membros
+2026-02-21 19:32:01 - Acesso concedido via helper: email=vandragoni@gmail.com, produto=62, oferta=padrão
+2026-02-21 19:32:01 - Produto processado com sucesso: Curso CriADS - Tipo: area_membros
+2026-02-21 19:32:01 - Usuario existente encontrado, senha mantida: vandragoni@gmail.com
+2026-02-21 19:32:01 - Total de produtos processados: 2
+2026-02-21 19:32:01 - Preparando envio de email para: vandragoni@gmail.com
+2026-02-21 19:32:01 - Login URL: https://core.vitrineacademy.com.br/member_login.php
+2026-02-21 19:32:01 - Senha gerada: SIM
+2026-02-21 19:32:01 - send_delivery_email_consolidated chamada para: vandragoni@gmail.com
+2026-02-21 19:32:01 - Configuracoes SMTP carregadas. Host: smtp.gmail.com
+2026-02-21 19:32:01 - Logo URL final: https://core.vitrineacademy.com.br/uploads/config/logo_1771293809.png
+2026-02-21 19:32:01 - Tentando enviar email...
+2026-02-21 19:32:05 - Email enviado com sucesso!
+2026-02-21 19:32:05 - Email enviado com sucesso para: vandragoni@gmail.com
+2026-02-21 19:32:05 - Flag email_entrega_enviado atualizada para 1
+2026-02-21 19:32:05 - Email enviado com sucesso!
+2026-02-21 19:32:05 - Email enviado com sucesso para: vandragoni@gmail.com
+2026-02-21 19:32:05 - Flag email_entrega_enviado atualizada para 1

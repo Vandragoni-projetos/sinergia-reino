@@ -223,6 +223,16 @@ function renderLogs(logs) {
                             </div>
                         </div>
                         <div class="flex items-center gap-4">
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="event.stopPropagation(); clearLog('${fileName}')" class="px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 text-red-400 hover:text-red-300 rounded-lg text-sm flex items-center gap-1.5 border border-red-600/40" title="Limpar este log (cria backup)">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                    Limpar
+                                </button>
+                                <button type="button" onclick="event.stopPropagation(); downloadLog('${fileName}')" class="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 hover:text-blue-300 rounded-lg text-sm flex items-center gap-1.5 border border-blue-600/40" title="Download do log">
+                                    <i data-lucide="download" class="w-4 h-4"></i>
+                                    Download
+                                </button>
+                            </div>
                             <div class="text-right text-sm">
                                 <div class="text-gray-300">📊 ${stats.lines} linhas | ${stats.size_formatted}</div>
                                 <div class="text-gray-500">⏱️ ${stats.last_modified_formatted}</div>
@@ -232,27 +242,15 @@ function renderLogs(logs) {
                     </div>
                 </div>
                 <div class="log-card-body" id="log-body-${fileName}">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="flex gap-2">
-                            <input type="text" placeholder="🔍 Buscar..." class="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm" onkeyup="searchLog('${fileName}', this.value)">
-                            <select class="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm" onchange="filterLogByDate('${fileName}', this.value)">
-                                <option value="">Todas as datas</option>
-                                <option value="today">Hoje</option>
-                                <option value="yesterday">Ontem</option>
-                                <option value="week">Últimos 7 dias</option>
-                                <option value="month">Últimos 30 dias</option>
-                            </select>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="downloadLog('${fileName}')" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm flex items-center gap-2">
-                                <i data-lucide="download" class="w-4 h-4"></i>
-                                Download
-                            </button>
-                            <button onclick="clearLog('${fileName}')" class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm flex items-center gap-2">
-                                <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                Limpar
-                            </button>
-                        </div>
+                    <div class="flex items-center gap-2 mb-4">
+                        <input type="text" placeholder="🔍 Buscar..." class="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm" onkeyup="searchLog('${fileName}', this.value)">
+                        <select class="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm" onchange="filterLogByDate('${fileName}', this.value)">
+                            <option value="">Todas as datas</option>
+                            <option value="today">Hoje</option>
+                            <option value="yesterday">Ontem</option>
+                            <option value="week">Últimos 7 dias</option>
+                            <option value="month">Últimos 30 dias</option>
+                        </select>
                     </div>
                     <div id="log-content-${fileName}" class="min-h-[200px]">
                         <div class="text-center py-8 text-gray-400">

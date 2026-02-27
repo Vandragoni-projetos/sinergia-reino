@@ -128,11 +128,25 @@ $page_content = ob_get_clean();
     <title>Painel do Usuário</title>
     <?php include __DIR__ . '/config/load_settings.php'; ?>
     
-    <!-- PWA Tags -->
-    <meta name="theme-color" content="#2DD05E">
-    <link rel="manifest" href="manifest.json">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <!-- PWA Tags (manifest dinâmico quando módulo PWA ativado) -->
+    <?php
+    $pwa_manifest_href = 'manifest.json';
+    $pwa_theme_color = '#2DD05E';
+    try {
+        if (isset($pdo)) {
+            $st = $pdo->query("SELECT valor FROM configuracoes_sistema WHERE chave = 'pwa_activated' LIMIT 1");
+            if ($st && ($r = $st->fetch(PDO::FETCH_ASSOC)) && ($r['valor'] ?? '') === '1') {
+                $pwa_manifest_href = '/pwa/manifest.php';
+                $st2 = $pdo->query("SELECT theme_color FROM pwa_config ORDER BY id DESC LIMIT 1");
+                if ($st2 && ($r2 = $st2->fetch(PDO::FETCH_ASSOC)) && !empty($r2['theme_color'])) $pwa_theme_color = $r2['theme_color'];
+            }
+        }
+    } catch (Exception $e) {}
+    ?>
+    <meta name="theme-color" content="<?php echo htmlspecialchars($pwa_theme_color); ?>">
+    <link rel="manifest" href="<?php echo htmlspecialchars($pwa_manifest_href); ?>">
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Plataforma">
     <link rel="apple-touch-icon" href="https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png">
@@ -349,6 +363,7 @@ $page_content = ob_get_clean();
     </style>
 </head>
 <body class="font-sans flex flex-col min-h-screen bg-dark-base">
+    <?php include __DIR__ . '/views/includes/session_heartbeat.php'; ?>
     <!-- Header Fixo Invisível (Topo) -->
     <header class="fixed top-0 left-0 right-0 z-40 bg-dark-base/80 backdrop-blur-sm h-[60px] flex items-center justify-between px-4 md:px-6">
         <!-- Botão de Toggle Mobile -->
@@ -585,6 +600,31 @@ $page_content = ob_get_clean();
 
     <!-- Conteúdo Principal -->
     <main class="flex-1 md:ml-64 mt-[60px] p-6 lg:p-8 overflow-y-auto">
+        <!-- Banner: ativar notificações push -->
+        <div id="pwa-push-banner" class="hidden mb-4" role="region" aria-label="Notificações">
+            <div class="flex items-center justify-between gap-4 rounded-lg border border-dark-border bg-dark-card px-4 py-3 text-sm">
+                <span id="pwa-push-banner-text" class="text-gray-300"></span>
+                <button type="button" id="pwa-push-banner-btn" class="hidden shrink-0 rounded-lg px-4 py-2 font-medium text-white transition" style="background: var(--accent-primary);">Receber notificações</button>
+            </div>
+        </div>
+        <!-- Card pós-login: notificações + instalar como app -->
+        <div id="pwa-welcome-card" class="hidden mb-4">
+            <div class="rounded-xl border border-dark-border bg-dark-card p-6 shadow-lg">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <h3 class="text-lg font-semibold text-white mb-1">Melhore sua experiência</h3>
+                        <p class="text-gray-400 text-sm mb-4">Ative as notificações e instale o painel como app no celular ou computador.</p>
+                        <div class="flex flex-wrap gap-3">
+                            <button type="button" id="pwa-welcome-notify-btn" class="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition" style="background: var(--accent-primary);">Receber notificações</button>
+                            <button type="button" id="pwa-welcome-install-btn" class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500 transition">Instalar como app</button>
+                            <button type="button" id="pwa-welcome-close" class="inline-flex items-center gap-2 rounded-lg border border-dark-border px-4 py-2.5 text-sm font-medium text-gray-400 hover:text-white transition">Agora não</button>
+                        </div>
+                    </div>
+                    <button type="button" id="pwa-welcome-dismiss" class="text-gray-500 hover:text-white p-1 rounded" aria-label="Fechar"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                </div>
+                <p id="pwa-install-hint" class="hidden mt-3 text-xs text-gray-500">Chrome: menu (⋮) → Instalar aplicativo. Celular: Adicionar à tela inicial.</p>
+            </div>
+        </div>
         <?php
         // Agora, simplesmente exibe o conteúdo que foi capturado no buffer
         echo $page_content;
@@ -1026,16 +1066,117 @@ $page_content = ob_get_clean();
         setInterval(fetchLiveNotifications, 10000);
     </script>
     <script>
-        // Registra o Service Worker
+        // Registra o Service Worker (PWA com push)
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').then(registration => {
+                navigator.serviceWorker.register('/pwa/sw.js').then(registration => {
                     console.log('ServiceWorker registrado com sucesso: ', registration.scope);
                 }, err => {
                     console.log('Falha no registro do ServiceWorker: ', err);
                 });
             });
         }
+    </script>
+    <script src="/pwa/pwa_push_register.js"></script>
+    <script>
+    (function() {
+        var banner = document.getElementById('pwa-push-banner');
+        var text = document.getElementById('pwa-push-banner-text');
+        var btn = document.getElementById('pwa-push-banner-btn');
+        if (!banner || !text || !btn) return;
+        function showBanner(msg, showButton) {
+            text.textContent = msg;
+            btn.style.display = showButton ? 'block' : 'none';
+            banner.classList.remove('hidden');
+        }
+        function hideBanner() {
+            banner.classList.add('hidden');
+        }
+        function updateFromState() {
+            if (typeof window.PwaPush === 'undefined') return;
+            if (window.PwaPush.isSubscribed) {
+                showBanner('Você está inscrito para receber notificações.', false);
+                setTimeout(hideBanner, 4000);
+                return;
+            }
+            if (window.PwaPush.isDenied) {
+                showBanner('Para receber notificações, ative no ícone de cadeado da barra de endereço.', false);
+                return;
+            }
+            if (window.PwaPush.isRequestable) {
+                showBanner('Deseja receber notificações de novidades e avisos?', true);
+            }
+        }
+        window.addEventListener('pwa-push-state', function(e) {
+            var d = e.detail || {};
+            if (d.subscribed) { showBanner('Notificações ativadas. Você passará a receber avisos.', false); setTimeout(hideBanner, 4000); return; }
+            if (d.denied) { showBanner('Para receber notificações, ative no ícone de cadeado da barra de endereço.', false); return; }
+            if (d.requestable) { showBanner('Deseja receber notificações de novidades e avisos?', true); }
+        });
+        btn.addEventListener('click', function() {
+            if (window.PwaPush && window.PwaPush.requestPermission) {
+                btn.disabled = true;
+                btn.textContent = 'Aguarde...';
+                window.PwaPush.requestPermission().then(function(ok) {
+                    btn.disabled = false;
+                    btn.textContent = 'Receber notificações';
+                    if (ok) { showBanner('Notificações ativadas.', false); setTimeout(hideBanner, 4000); }
+                }).catch(function() { btn.disabled = false; btn.textContent = 'Receber notificações'; });
+            }
+        });
+        setTimeout(updateFromState, 1500);
+    })();
+    </script>
+    <script>
+    (function() {
+        var welcomeCard = document.getElementById('pwa-welcome-card');
+        var notifyBtn = document.getElementById('pwa-welcome-notify-btn');
+        var installBtn = document.getElementById('pwa-welcome-install-btn');
+        var installHint = document.getElementById('pwa-install-hint');
+        var closeBtn = document.getElementById('pwa-welcome-close');
+        var dismissBtn = document.getElementById('pwa-welcome-dismiss');
+        if (!welcomeCard) return;
+        var deferredPrompt = null;
+        window.addEventListener('beforeinstallprompt', function(e) {
+            e.preventDefault();
+            deferredPrompt = e;
+            if (installBtn) installBtn.classList.remove('hidden');
+        });
+        function closeWelcome() {
+            try { localStorage.setItem('pwa_welcome_closed', '1'); } catch (x) {}
+            welcomeCard.classList.add('hidden');
+        }
+        function showWelcomeIfNeeded() {
+            if (localStorage.getItem('pwa_welcome_closed') === '1') return;
+            if (deferredPrompt || (window.PwaPush && window.PwaPush.isRequestable)) welcomeCard.classList.remove('hidden');
+        }
+        if (notifyBtn) notifyBtn.addEventListener('click', function() {
+            if (window.PwaPush && window.PwaPush.requestPermission) {
+                notifyBtn.disabled = true;
+                notifyBtn.textContent = 'Aguarde...';
+                window.PwaPush.requestPermission().then(function(ok) {
+                    notifyBtn.disabled = false;
+                    notifyBtn.textContent = 'Receber notificações';
+                    if (ok) closeWelcome();
+                }).catch(function() { notifyBtn.disabled = false; notifyBtn.textContent = 'Receber notificações'; });
+            }
+        });
+        if (installBtn) installBtn.addEventListener('click', function() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then(function(choice) {
+                    if (choice.outcome === 'accepted') closeWelcome();
+                    deferredPrompt = null;
+                });
+            } else if (installHint) installHint.classList.remove('hidden');
+        });
+        if (closeBtn) closeBtn.addEventListener('click', closeWelcome);
+        if (dismissBtn) dismissBtn.addEventListener('click', closeWelcome);
+        window.addEventListener('pwa-push-state', function() {
+            if (window.PwaPush && window.PwaPush.isRequestable) showWelcomeIfNeeded();
+        });
+        setTimeout(showWelcomeIfNeeded, 2000);
+    })();
     </script>
 </body>
 </html>

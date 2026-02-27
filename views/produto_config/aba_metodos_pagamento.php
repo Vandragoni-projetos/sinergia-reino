@@ -655,7 +655,7 @@ function handlePixExclusivity(changedInput) {
         return;
     }
     
-    ['cb_payment_pix_pushinpay', 'cb_payment_pix_efi', 'cb_payment_pix_enabled'].forEach(id => {
+    ['cb_payment_pix_pushinpay', 'cb_payment_pix_efi', 'cb_payment_pix_pagarme', 'cb_payment_pix_stripe', 'cb_payment_pix_enabled'].forEach(id => {
         const cb = document.getElementById(id);
         if (cb && cb !== changedInput) {
             cb.checked = false;
@@ -724,7 +724,7 @@ function updateSummary() {
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
     // Listeners para gateways
-    ['pushinpay', 'efi', 'mercadopago', 'beehive', 'hypercash'].forEach(gw => {
+    ['pushinpay', 'efi', 'mercadopago', 'pagarme', 'paypal', 'stripe', 'beehive', 'hypercash'].forEach(gw => {
         const cb = document.getElementById(`gateway_${gw}_enabled_visual`);
         if (cb) cb.addEventListener('change', updatePaymentMethods);
     });
@@ -736,7 +736,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Listeners para Cartão (exclusividade)
-    ['cb_payment_credit_card_mercadopago', 'cb_payment_credit_card_efi', 'cb_payment_credit_card_beehive', 'cb_payment_credit_card_hypercash'].forEach(id => {
+    ['cb_payment_credit_card_mercadopago', 'cb_payment_credit_card_efi', 'cb_payment_credit_card_pagarme', 'cb_payment_credit_card_paypal', 'cb_payment_credit_card_stripe', 'cb_payment_credit_card_beehive', 'cb_payment_credit_card_hypercash'].forEach(id => {
         const cb = document.getElementById(id);
         if (cb) cb.addEventListener('change', function() { handleCreditCardExclusivity(this); });
     });

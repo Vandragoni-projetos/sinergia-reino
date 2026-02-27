@@ -22,47 +22,85 @@ if (isset($_COOKIE['remember_member'])) {
 }
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    try {
-        $client_ip = get_client_ip();
-        $email_input = trim($_POST["email"] ?? '');
-        $rate_check = check_login_attempts($client_ip, $email_input);
-        if (!$rate_check['allowed']) {
-            $blocked_time = strtotime($rate_check['blocked_until']) - time();
-            $minutes = ceil($blocked_time / 60);
-            $erro = "Muitas tentativas de login. Tente novamente em {$minutes} minuto(s).";
-            log_security_event('blocked_login_attempt', [
-                'ip' => $client_ip,
-                'email' => $email_input,
-                'reason' => $rate_check['reason']
-            ]);
-        } elseif (empty(trim($_POST["email"] ?? '')) || empty(trim($_POST["senha"] ?? ''))) {
-            $erro = "Por favor, preencha o e-mail e a senha.";
-        } else {
-            $senha_input = trim($_POST["senha"]);
-            $sql = "SELECT id, usuario, nome, senha, tipo FROM usuarios WHERE usuario = :email";
-            
-            $stmt = $pdo->prepare($sql);
-            if ($stmt) {
-                $stmt->bindParam(":email", $email_input, PDO::PARAM_STR);
+    $csrf_token = $_POST['csrf_token'] ?? '';
+    if (!verify_csrf_token($csrf_token)) {
+        $erro = "Sessão expirada ou formulário inválido. Atualize a página e tente novamente.";
+    } else {
+        try {
+            $client_ip = get_client_ip();
+            $email_input = trim($_POST["email"] ?? '');
+            $rate_check = check_login_attempts($client_ip, $email_input);
+            if (!$rate_check['allowed']) {
+                $blocked_time = strtotime($rate_check['blocked_until']) - time();
+                $minutes = ceil($blocked_time / 60);
+                $erro = "Muitas tentativas de login. Tente novamente em {$minutes} minuto(s).";
+                log_security_event('blocked_login_attempt', [
+                    'ip' => $client_ip,
+                    'email' => $email_input,
+                    'reason' => $rate_check['reason']
+                ]);
+            } elseif (empty(trim($_POST["email"] ?? '')) || empty(trim($_POST["senha"] ?? ''))) {
+                $erro = "Por favor, preencha o e-mail e a senha.";
+            } else {
+                $senha_input = trim($_POST["senha"]);
+                $sql = "SELECT id, usuario, nome, senha, tipo FROM usuarios WHERE usuario = :email";
                 
-                if ($stmt->execute()) {
-                    if ($stmt->rowCount() == 1) {
-                        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-                        
-                        if ($row && isset($row["senha"]) && password_verify($senha_input, $row["senha"])) {
-                            clear_login_attempts($client_ip, $email_input);
-                            if ($row["tipo"] == 'admin' || $row["tipo"] == 'infoprodutor') {
-                                $licenseCheck = checkLicenseOnLogin();
-                                if (!$licenseCheck['valid']) {
-                                    $_SESSION['license_error'] = $licenseCheck['reason'] ?? 'Licença inválida ou expirada.';
-                                    header("location: /ativacao");
-                                    exit();
+                $stmt = $pdo->prepare($sql);
+                if ($stmt) {
+                    $stmt->bindParam(":email", $email_input, PDO::PARAM_STR);
+                    
+                    if ($stmt->execute()) {
+                        if ($stmt->rowCount() == 1) {
+                            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                            
+                            if ($row && isset($row["senha"]) && password_verify($senha_input, $row["senha"])) {
+                                clear_login_attempts($client_ip, $email_input);
+                                if ($row["tipo"] == 'admin' || $row["tipo"] == 'infoprodutor') {
+                                    $licenseCheck = checkLicenseOnLogin();
+                                    if (!$licenseCheck['valid']) {
+                                        $_SESSION['license_error'] = $licenseCheck['reason'] ?? 'Licença inválida ou expirada.';
+                                        header("location: /ativacao");
+                                        exit();
+                                    } else {
+                                        if (session_status() === PHP_SESSION_ACTIVE) {
+                                            session_regenerate_id(true);
+                                        }
+                                        $_SESSION["loggedin"] = true;
+                                        $_SESSION["id"] = $row["id"];
+                                        $_SESSION["usuario"] = $row["usuario"]; 
+                                        $_SESSION["nome"] = $row["nome"]; 
+                                        $_SESSION["tipo"] = $row["tipo"];
+                                        $st = set_user_session_token($row['id']);
+                                        if ($st !== '') {
+                                            $_SESSION['session_token'] = $st;
+                                        }
+                                        if (isset($_POST['remember'])) {
+                                            setcookie('remember_member', $email_input, time() + (86400 * 30), "/");
+                                        } else {
+                                            if(isset($_COOKIE['remember_member'])) {
+                                                setcookie('remember_member', "", time() - 3600, "/");
+                                            }
+                                        }
+                                        if ($row["tipo"] == 'admin') {
+                                            header("location: /admin");
+                                        } else {
+                                            header("location: /");
+                                        }
+                                        exit();
+                                    }
                                 } else {
+                                    if (session_status() === PHP_SESSION_ACTIVE) {
+                                        session_regenerate_id(true);
+                                    }
                                     $_SESSION["loggedin"] = true;
                                     $_SESSION["id"] = $row["id"];
                                     $_SESSION["usuario"] = $row["usuario"]; 
                                     $_SESSION["nome"] = $row["nome"]; 
                                     $_SESSION["tipo"] = $row["tipo"];
+                                    $st = set_user_session_token($row['id']);
+                                    if ($st !== '') {
+                                        $_SESSION['session_token'] = $st;
+                                    }
                                     if (isset($_POST['remember'])) {
                                         setcookie('remember_member', $email_input, time() + (86400 * 30), "/");
                                     } else {
@@ -70,53 +108,34 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                                             setcookie('remember_member', "", time() - 3600, "/");
                                         }
                                     }
-                                    if ($row["tipo"] == 'admin') {
-                                        header("location: /admin");
-                                    } else {
-                                        header("location: /");
-                                    }
+
+                                    header("location: /member_area_dashboard");
                                     exit();
                                 }
+                                
                             } else {
-                                $_SESSION["loggedin"] = true;
-                                $_SESSION["id"] = $row["id"];
-                                $_SESSION["usuario"] = $row["usuario"]; 
-                                $_SESSION["nome"] = $row["nome"]; 
-                                $_SESSION["tipo"] = $row["tipo"];
-                                if (isset($_POST['remember'])) {
-                                    setcookie('remember_member', $email_input, time() + (86400 * 30), "/");
-                                } else {
-                                    if(isset($_COOKIE['remember_member'])) {
-                                        setcookie('remember_member', "", time() - 3600, "/");
-                                    }
-                                }
-
-                                header("location: /member_area_dashboard");
-                                exit();
+                                record_failed_login($client_ip, $email_input);
+                                $erro = "E-mail ou senha incorretos. Verifique suas credenciais.";
                             }
-                            
                         } else {
                             record_failed_login($client_ip, $email_input);
-                            $erro = "E-mail ou senha incorretos. Verifique suas credenciais.";
+                            $erro = "E-mail não cadastrado.";
                         }
                     } else {
-                        record_failed_login($client_ip, $email_input);
-                        $erro = "E-mail não cadastrado.";
+                        $erro = "Erro no sistema. Tente novamente mais tarde.";
                     }
+                    unset($stmt);
                 } else {
-                    $erro = "Erro no sistema. Tente novamente mais tarde.";
+                    $erro = "Erro ao preparar consulta. Tente novamente.";
                 }
-                unset($stmt);
-            } else {
-                $erro = "Erro ao preparar consulta. Tente novamente.";
             }
+        } catch (PDOException $e) {
+            error_log("Erro no login de membros: " . $e->getMessage());
+            $erro = "Erro no sistema. Tente novamente mais tarde.";
+        } catch (Exception $e) {
+            error_log("Erro geral no login de membros: " . $e->getMessage());
+            $erro = "Erro no sistema. Tente novamente mais tarde.";
         }
-    } catch (PDOException $e) {
-        error_log("Erro no login de membros: " . $e->getMessage());
-        $erro = "Erro no sistema. Tente novamente mais tarde.";
-    } catch (Exception $e) {
-        error_log("Erro geral no login de membros: " . $e->getMessage());
-        $erro = "Erro no sistema. Tente novamente mais tarde.";
     }
 }
 ?>
@@ -310,7 +329,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 <?php endif; ?>
 
                 <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" class="space-y-6">
-                    
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(generate_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
+
                     <div class="space-y-5">
                         <div class="modern-input-group">
                             <label for="email" class="block text-gray-300 text-sm font-bold mb-2 ml-1">E-mail</label>
@@ -426,6 +446,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                                    placeholder="seuemail@exemplo.com">
                         </div>
                     </div>
+                    <input type="hidden" id="forgot-csrf" value="<?php echo htmlspecialchars(generate_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
                     
                     <button type="button" onclick="submitForgotPassword()" id="forgot-submit-btn" class="btn-primary w-full text-white font-bold py-4 px-6 rounded-xl shadow-lg transform transition-all duration-300 flex items-center justify-center gap-2">
                         <i data-lucide="send" class="w-5 h-5"></i>
@@ -610,10 +631,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             lucide.createIcons();
             
             try {
+                const csrfToken = document.getElementById('forgot-csrf').value;
                 const response = await fetch('/api/forgot_password.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: email, user_type: 'usuario' })
+                    body: JSON.stringify({ email: email, user_type: 'usuario', csrf_token: csrfToken })
                 });
                 
                 const result = await response.json();

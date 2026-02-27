@@ -282,7 +282,8 @@ if (!function_exists('log_security_event')) {
 
 if (!function_exists('check_session_timeout')) {
     /**
-     * Verifica e atualiza timeout de sessão
+     * Verifica e atualiza timeout de sessão por inatividade.
+     * Só deve ser chamada após enforce_single_session() para não renovar sessão inválida.
      * @param int $timeout_seconds Tempo limite em segundos (padrão: 7200 = 2 horas)
      * @return bool True se sessão válida, False se expirada
      */
@@ -314,6 +315,69 @@ if (!function_exists('is_https')) {
         return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || 
                $_SERVER['SERVER_PORT'] == 443 ||
                (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+    }
+}
+
+if (!function_exists('set_user_session_token')) {
+    /**
+     * Gera e persiste o token de sessão única para o usuário (novo login invalida outras sessões).
+     * @param int $user_id ID do usuário em usuarios.id
+     * @return string Token gerado (guardar em $_SESSION['session_token'])
+     */
+    function set_user_session_token($user_id) {
+        global $pdo;
+        $token = bin2hex(random_bytes(32));
+        try {
+            $stmt = $pdo->prepare("UPDATE usuarios SET session_token = ? WHERE id = ?");
+            $stmt->execute([$token, (int) $user_id]);
+            if ($stmt->rowCount() === 0) {
+                error_log("set_user_session_token: UPDATE não afetou linhas para user_id={$user_id}");
+            }
+            return $token;
+        } catch (PDOException $e) {
+            error_log("set_user_session_token [user_id={$user_id}]: " . $e->getMessage());
+            return '';
+        }
+    }
+}
+
+if (!function_exists('enforce_single_session')) {
+    /**
+     * Garante que apenas uma sessão por usuário seja válida.
+     * Se o usuário logou em outro navegador/dispositivo, esta sessão é invalidada.
+     * @return bool True se a sessão atual é a válida (ou não há controle); false se foi invalidada.
+     */
+    function enforce_single_session() {
+        if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || empty($_SESSION['id'])) {
+            return true;
+        }
+        global $pdo;
+        try {
+            $stmt = $pdo->prepare("SELECT session_token FROM usuarios WHERE id = ?");
+            $stmt->execute([(int) $_SESSION['id']]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row) {
+                return true;
+            }
+            $valid_token = isset($row['session_token']) ? trim((string) $row['session_token']) : '';
+            $current_token = trim((string) ($_SESSION['session_token'] ?? ''));
+            // Sessão válida: token na sessão coincide com o do banco
+            if ($current_token !== '' && $valid_token !== '' && hash_equals($valid_token, $current_token)) {
+                return true;
+            }
+            // valid_token vazio = ninguém fez login desde o deploy → invalida sessões legacy (sem token)
+            // Token diferente = login em outro dispositivo → invalida
+            $_SESSION = [];
+            if (ini_get('session.use_cookies')) {
+                $p = session_get_cookie_params();
+                setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'], $p['secure'], $p['httponly']);
+            }
+            session_destroy();
+            return false;
+        } catch (PDOException $e) {
+            error_log("enforce_single_session: " . $e->getMessage());
+            return true;
+        }
     }
 }
 

@@ -1,0 +1,33 @@
+2026-02-21 19:15:36 - INÍCIO DO PROCESSAMENTO
+2026-02-21 19:15:36 - Evolution Helper carregado: SIM
+2026-02-21 19:15:36 - Webhook URL gerada: https://core.vitrineacademy.com.br/notification.php
+2026-02-21 19:15:36 - Efí Pix: Certificado não encontrado. Caminho verificado: /home/u527060234/domains/vitrineacademy.com.br/public_html/core/uploads/certificados/efi_cert_50_1771681307.p12
+2026-02-21 19:15:36 - Erro Exception: Certificado Efí não encontrado. Verifique se o arquivo existe em uploads/certificados/ e se foi enviado em Integrações.
+2026-02-21 19:15:36 - Stack trace: #0 {main}
+2026-02-21 19:15:41 - INÍCIO DO PROCESSAMENTO
+2026-02-21 19:15:41 - Evolution Helper carregado: SIM
+2026-02-21 19:15:41 - Webhook URL gerada: https://core.vitrineacademy.com.br/notification.php
+2026-02-21 19:15:41 - Efí Pix: Certificado não encontrado. Caminho verificado: /home/u527060234/domains/vitrineacademy.com.br/public_html/core/uploads/certificados/efi_cert_50_1771681307.p12
+2026-02-21 19:15:41 - Erro Exception: Certificado Efí não encontrado. Verifique se o arquivo existe em uploads/certificados/ e se foi enviado em Integrações.
+2026-02-21 19:15:41 - Stack trace: #0 {main}
+2026-02-21 19:22:30 - INÍCIO DO PROCESSAMENTO
+2026-02-21 19:22:30 - Evolution Helper carregado: SIM
+2026-02-21 19:22:30 - Webhook URL gerada: https://core.vitrineacademy.com.br/notification.php
+2026-02-21 19:22:31 - Erro Exception: Mercado Pago Error
+2026-02-21 19:22:31 - Stack trace: #0 {main}
+2026-02-21 19:30:44 - INÍCIO DO PROCESSAMENTO
+2026-02-21 19:30:44 - Evolution Helper carregado: SIM
+2026-02-21 19:30:44 - Webhook URL gerada: https://core.vitrineacademy.com.br/notification.php
+2026-02-21 19:30:44 - Efí Pix: Certificado não encontrado. Caminho verificado: /home/u527060234/domains/vitrineacademy.com.br/public_html/core/uploads/certificados/efi_cert_50_1771681307.p12
+2026-02-21 19:30:44 - Erro Exception: Certificado Efí não encontrado. Verifique se o arquivo existe em uploads/certificados/ e se foi enviado em Integrações.
+2026-02-21 19:30:44 - Stack trace: #0 {main}
+2026-02-21 19:31:58 - INÍCIO DO PROCESSAMENTO
+2026-02-21 19:31:58 - Evolution Helper carregado: SIM
+2026-02-21 19:31:58 - Webhook URL gerada: https://core.vitrineacademy.com.br/notification.php
+2026-02-21 19:32:00 - Evolution API: Disparo para evento 'approved' (status: approved) - Mercado Pago (Cartão de crédito)
+2026-02-22 14:43:06 - INÍCIO DO PROCESSAMENTO
+2026-02-22 14:43:06 - Evolution Helper carregado: SIM
+2026-02-22 14:43:06 - Webhook URL gerada: https://core.vitrineacademy.com.br/notification.php
+2026-02-22 14:43:06 - Efí Pix: Certificado não encontrado. Caminho verificado: /home/u527060234/domains/vitrineacademy.com.br/public_html/core/uploads/certificados/efi_cert_50_1771681307.p12
+2026-02-22 14:43:06 - Erro Exception: Certificado Efí não encontrado. Verifique se o arquivo existe em uploads/certificados/ e se foi enviado em Integrações.
+2026-02-22 14:43:06 - Stack trace: #0 {main}

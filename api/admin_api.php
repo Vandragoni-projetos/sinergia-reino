@@ -13,13 +13,17 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 use PHPMailer\PHPMailer\SMTP;
 
-// Ativar log de erros detalhado (APENAS PARA DEPURAÇÃO - REMOVA EM PRODUÇÃO!)
+// Ativar log de erros detalhado (em produção, os logs verbosos são controlados por APP_DEBUG)
 error_reporting(E_ALL); // Exibe todos os erros no log
 ini_set('display_errors', 0); // DESABILITAR exibição de erros no navegador para APIs
 ini_set('log_errors', 1); // Habilita o log de erros
 ini_set('error_log', __DIR__ . '/../admin_api_errors.log'); // Opcional: log personalizado para esta API, ou use o padrão do PHP
 
-error_log("ADMIN_API: Script iniciado.");
+$adminApiDebug = (defined('APP_DEBUG') && APP_DEBUG);
+
+if ($adminApiDebug) {
+    error_log("ADMIN_API: Script iniciado.");
+}
 
 // CORREÇÃO: Ajustar os caminhos para o PHPMailer com base na informação do usuário.
 // O usuário informou que a pasta 'PHPMailer' está diretamente em 'GatewayPro 10000/'.
@@ -28,21 +32,27 @@ $phpmailer_path = __DIR__ . '/../PHPMailer/src/';
 
 if (file_exists($phpmailer_path . 'Exception.php')) {
     require_once $phpmailer_path . 'Exception.php';
-    error_log("ADMIN_API: Exception.php carregado com sucesso.");
+    if ($adminApiDebug) {
+        error_log("ADMIN_API: Exception.php carregado com sucesso.");
+    }
 } else {
     error_log("ADMIN_API: ERRO: Exception.php não encontrado em " . $phpmailer_path . 'Exception.php');
 }
 
 if (file_exists($phpmailer_path . 'PHPMailer.php')) {
     require_once $phpmailer_path . 'PHPMailer.php';
-    error_log("ADMIN_API: PHPMailer.php carregado com sucesso.");
+    if ($adminApiDebug) {
+        error_log("ADMIN_API: PHPMailer.php carregado com sucesso.");
+    }
 } else {
     error_log("ADMIN_API: ERRO: PHPMailer.php não encontrado em " . $phpmailer_path . 'PHPMailer.php');
 }
 
 if (file_exists($phpmailer_path . 'SMTP.php')) {
     require_once $phpmailer_path . 'SMTP.php';
-    error_log("ADMIN_API: SMTP.php carregado com sucesso.");
+    if ($adminApiDebug) {
+        error_log("ADMIN_API: SMTP.php carregado com sucesso.");
+    }
 } else {
     error_log("ADMIN_API: ERRO: SMTP.php não encontrado em " . $phpmailer_path . 'SMTP.php');
 }
@@ -50,7 +60,9 @@ if (file_exists($phpmailer_path . 'SMTP.php')) {
 
 try {
     require_once __DIR__ . '/../config/config.php';
-    error_log("ADMIN_API: config.php carregado com sucesso.");
+    if ($adminApiDebug) {
+        error_log("ADMIN_API: config.php carregado com sucesso.");
+    }
 
     // Verificação de segurança: Apenas admins logados podem acessar esta API
     if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || $_SESSION['tipo'] !== 'admin') {
@@ -62,7 +74,9 @@ try {
     }
 
     $action = $_GET['action'] ?? '';
-    error_log("ADMIN_API: Ação recebida: " . $action); // Log da ação recebida
+    if ($adminApiDebug) {
+        error_log("ADMIN_API: Ação recebida: " . $action); // Log da ação recebida
+    }
 
     // Função auxiliar para obter configurações SMTP, incluindo a senha do BD se não fornecida
     function getSmtpConfigFromRequest($pdo, $input_data) {
@@ -75,20 +89,26 @@ try {
             'from_name' => $input_data['smtp_from_name'] ?? 'GatewayPro',
         ];
 
-        error_log("ADMIN_API: getSmtpConfigFromRequest - input_data['smtp_password'] está vazio: " . (empty($input_data['smtp_password']) ? 'true' : 'false'));
+        if ($adminApiDebug) {
+            error_log("ADMIN_API: getSmtpConfigFromRequest - input_data['smtp_password'] está vazio: " . (empty($input_data['smtp_password']) ? 'true' : 'false'));
+        }
 
         // Se a senha não foi fornecida no POST (frontend deixou em branco), busca a do BD
         if (empty($input_data['smtp_password'])) {
             $stmt = $pdo->query("SELECT valor FROM configuracoes WHERE chave = 'smtp_password'");
             $db_password = $stmt->fetchColumn() ?? '';
             $smtp_config['password'] = $db_password;
-            error_log("ADMIN_API: getSmtpConfigFromRequest - Senha buscada do BD (comprimento: " . strlen($db_password) . ")");
-            if (empty($db_password)) {
-                error_log("ADMIN_API: getSmtpConfigFromRequest - Aviso: Senha 'smtp_password' está vazia no banco de dados.");
+            if ($adminApiDebug) {
+                error_log("ADMIN_API: getSmtpConfigFromRequest - Senha buscada do BD (comprimento: " . strlen($db_password) . ")");
+                if (empty($db_password)) {
+                    error_log("ADMIN_API: getSmtpConfigFromRequest - Aviso: Senha 'smtp_password' está vazia no banco de dados.");
+                }
             }
         } else {
             $smtp_config['password'] = $input_data['smtp_password'];
-            error_log("ADMIN_API: getSmtpConfigFromRequest - Senha do input (comprimento: " . strlen($input_data['smtp_password']) . ")");
+            if ($adminApiDebug) {
+                error_log("ADMIN_API: getSmtpConfigFromRequest - Senha do input (comprimento: " . strlen($input_data['smtp_password']) . ")");
+            }
         }
         return $smtp_config;
     }
@@ -1593,6 +1613,182 @@ try {
             echo json_encode([
                 'success' => false,
                 'error' => $result['reason'] ?? 'Chave de ativação inválida'
+            ]);
+        }
+        exit;
+    }
+
+    // ==================== PWA ====================
+    $pwa_activated_paths = [
+        __DIR__ . '/../pwa_activated.key',
+        isset($_SERVER['DOCUMENT_ROOT']) ? rtrim($_SERVER['DOCUMENT_ROOT'], '/\\') . '/pwa_activated.key' : '',
+        dirname(__DIR__) . '/pwa_activated.key',
+    ];
+    $pwa_activated = false;
+    foreach ($pwa_activated_paths as $p) {
+        if ($p !== '' && file_exists($p)) {
+            $pwa_activated = true;
+            break;
+        }
+    }
+    if (!$pwa_activated && function_exists('getSystemSetting') && getSystemSetting('pwa_activated', '0') === '1') {
+        $pwa_activated = true;
+    }
+
+    if ($action === 'activate_pwa_module' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (function_exists('setSystemSetting')) {
+            setSystemSetting('pwa_activated', '1');
+            ob_clean();
+            echo json_encode(['success' => true, 'message' => 'Módulo PWA ativado (banco de dados).']);
+        } else {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Função setSystemSetting não disponível.']);
+        }
+        exit;
+    }
+
+    if ($action === 'get_pwa_status') {
+        ob_clean();
+        echo json_encode(['success' => true, 'activated' => $pwa_activated]);
+        exit;
+    }
+
+    if ($action === 'get_pwa_config' && file_exists(__DIR__ . '/../pwa/pwa_config.php')) {
+        require_once __DIR__ . '/../pwa/pwa_config.php';
+        $config = function_exists('pwa_get_config') ? pwa_get_config() : null;
+        ob_clean();
+        echo json_encode(['success' => true, 'data' => $config ?: []]);
+        exit;
+    }
+
+    if ($action === 'save_pwa_config' && $_SERVER['REQUEST_METHOD'] === 'POST' && file_exists(__DIR__ . '/../pwa/pwa_config.php')) {
+        require_once __DIR__ . '/../pwa/pwa_config.php';
+        $raw = file_get_contents('php://input');
+        $input = json_decode($raw, true) ?: [];
+        $current = function_exists('pwa_get_config') ? pwa_get_config() : [];
+        if (!is_array($current)) $current = [];
+        $config = array_merge($current, [
+            'app_name' => $input['app_name'] ?? $current['app_name'] ?? 'Plataforma',
+            'short_name' => $input['short_name'] ?? $current['short_name'] ?? 'App',
+            'description' => $input['description'] ?? $current['description'] ?? '',
+            'icon_path' => $input['icon_path'] ?? $current['icon_path'] ?? '',
+            'theme_color' => $input['theme_color'] ?? $current['theme_color'] ?? '#32e768',
+            'background_color' => $input['background_color'] ?? $current['background_color'] ?? '#ffffff',
+            'display_mode' => $input['display_mode'] ?? $current['display_mode'] ?? 'standalone',
+            'start_url' => $input['start_url'] ?? $current['start_url'] ?? '/',
+            'scope' => $input['scope'] ?? $current['scope'] ?? '/',
+            'push_enabled' => isset($input['push_enabled']) ? (int)$input['push_enabled'] : (isset($current['push_enabled']) ? (int)$current['push_enabled'] : 0)
+        ]);
+        $ok = function_exists('pwa_save_config') && pwa_save_config($config);
+        ob_clean();
+        echo json_encode($ok ? ['success' => true] : ['success' => false, 'error' => 'Erro ao salvar configuração PWA']);
+        exit;
+    }
+
+    if ($action === 'upload_pwa_icon' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (empty($_FILES['pwa_icon']['tmp_name']) || !is_uploaded_file($_FILES['pwa_icon']['tmp_name'])) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Nenhum arquivo enviado']);
+            exit;
+        }
+        $allowed = ['image/png', 'image/jpeg', 'image/webp'];
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mime = $finfo->file($_FILES['pwa_icon']['tmp_name']);
+        if (!in_array($mime, $allowed)) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Formato não permitido. Use PNG, JPG ou WEBP.']);
+            exit;
+        }
+        if ($_FILES['pwa_icon']['size'] > 2 * 1024 * 1024) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Arquivo maior que 2MB']);
+            exit;
+        }
+        $uploads_dir = __DIR__ . '/../uploads';
+        if (!is_dir($uploads_dir)) mkdir($uploads_dir, 0755, true);
+        $ext = pathinfo($_FILES['pwa_icon']['name'], PATHINFO_EXTENSION) ?: 'png';
+        $name = 'pwa_icon_' . time() . '.' . (preg_match('/^[a-z0-9]+$/i', $ext) ? $ext : 'png');
+        $path = $uploads_dir . '/' . $name;
+        if (!move_uploaded_file($_FILES['pwa_icon']['tmp_name'], $path)) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Erro ao mover arquivo']);
+            exit;
+        }
+        $icon_url = '/uploads/' . $name;
+        if (file_exists(__DIR__ . '/../pwa/pwa_config.php')) {
+            require_once __DIR__ . '/../pwa/pwa_config.php';
+            $current = function_exists('pwa_get_config') ? pwa_get_config() : [];
+            if (!is_array($current)) $current = [];
+            $current['icon_path'] = $icon_url;
+            if (function_exists('pwa_save_config')) pwa_save_config($current);
+        }
+        ob_clean();
+        echo json_encode(['success' => true, 'icon_url' => $icon_url]);
+        exit;
+    }
+
+    if ($action === 'get_pwa_push_info') {
+        $vapid_preview = '';
+        $subscriptions_count = 0;
+        if (file_exists(__DIR__ . '/../pwa/pwa_config.php')) {
+            require_once __DIR__ . '/../pwa/pwa_config.php';
+            $cfg = function_exists('pwa_get_config') ? pwa_get_config() : null;
+            if ($cfg && !empty($cfg['vapid_public_key'])) {
+                $vapid_preview = substr($cfg['vapid_public_key'], 0, 20) . '...';
+            }
+        }
+        if (file_exists(__DIR__ . '/../pwa/api/web_push_helper.php')) {
+            require_once __DIR__ . '/../pwa/api/web_push_helper.php';
+            if (function_exists('pwa_count_subscriptions')) {
+                $subscriptions_count = pwa_count_subscriptions();
+            }
+        }
+        ob_clean();
+        echo json_encode([
+            'success' => true,
+            'vapid_configured' => !empty($vapid_preview),
+            'vapid_preview' => $vapid_preview,
+            'subscriptions_count' => (int) $subscriptions_count
+        ]);
+        exit;
+    }
+
+    if ($action === 'send_pwa_push' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $raw = file_get_contents('php://input');
+        $input = json_decode($raw, true) ?: [];
+        $title = trim($input['title'] ?? '');
+        $message = trim($input['message'] ?? '');
+        if (empty($title) || empty($message)) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Título e mensagem são obrigatórios.']);
+            exit;
+        }
+        $url = trim($input['url'] ?? '') ?: null;
+        $icon = trim($input['icon'] ?? '') ?: null;
+        $created_by = (int)($_SESSION['id'] ?? 0);
+        if (!file_exists(__DIR__ . '/../pwa/api/web_push_helper.php')) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Módulo de push não disponível.']);
+            exit;
+        }
+        require_once __DIR__ . '/../pwa/api/web_push_helper.php';
+        if (!function_exists('pwa_send_push_notification')) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Função de envio não disponível.']);
+            exit;
+        }
+        $result = pwa_send_push_notification($title, $message, $url, $icon, $created_by);
+        $err = isset($result['error']) ? $result['error'] : null;
+        ob_clean();
+        if ($err) {
+            echo json_encode(['success' => false, 'error' => $err, 'sent' => (int)($result['sent'] ?? 0), 'failed' => (int)($result['failed'] ?? 0)]);
+        } else {
+            echo json_encode([
+                'success' => true,
+                'message' => 'Notificação enviada.',
+                'sent' => (int)($result['sent'] ?? 0),
+                'failed' => (int)($result['failed'] ?? 0),
+                'total' => (int)($result['total'] ?? 0)
             ]);
         }
         exit;

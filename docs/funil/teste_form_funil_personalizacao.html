@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste manual – Personalização Upsell/Downsell</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .form-input { @apply w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent; }
+        body { background: #0f172a; }
+    </style>
+</head>
+<body class="p-6 text-gray-100">
+    <div class="max-w-3xl mx-auto space-y-6">
+        <h1 class="text-lg font-semibold text-white mb-1">Pré-visualização: formulário de personalização</h1>
+        <p class="text-sm text-gray-400 mb-4">Assim ficam os blocos Upsell e Downsell na aba Funil de Vendas (configuração do produto).</p>
+        <p class="text-xs text-gray-500">
+            Dica: você pode criar produtos específicos para Upsell/Downsell (ex.: versão PRO, pacote complementar) e selecioná‑los acima.
+        </p>
+
+        <!-- Personalização Upsell -->
+        <div class="mt-6 p-4 rounded-lg border border-blue-500/50 bg-gray-800/80">
+            <h3 class="text-sm font-semibold text-blue-400 mb-3">Personalizar oferta Upsell</h3>
+            <p class="text-xs text-gray-400 mb-4">Opcional: capa, banners e descrição para a tela de oferta. Se vazio, usa os dados do produto selecionado.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Banner cabeçalho (URL ou envio)</label>
+                    <input type="url" name="funnel_upsell_banner_header_url" class="form-input text-sm" placeholder="https://..." value="">
+                    <input type="file" name="funnel_upsell_banner_header" class="form-input text-sm mt-1" accept="image/*">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Banner lateral (URL ou envio)</label>
+                    <input type="url" name="funnel_upsell_banner_side_url" class="form-input text-sm" placeholder="https://..." value="">
+                    <input type="file" name="funnel_upsell_banner_side" class="form-input text-sm mt-1" accept="image/*">
+                </div>
+            </div>
+            <div class="mt-3">
+                <label class="block text-xs text-gray-400 mb-1">Capa da oferta (opcional; sobrescreve a capa do produto)</label>
+                <input type="file" name="funnel_upsell_cover" class="form-input text-sm" accept="image/*">
+            </div>
+            <div class="mt-3">
+                <label class="block text-xs text-gray-400 mb-1">Descrição / copy da oferta (HTML permitido)</label>
+                <textarea name="funnel_upsell_description" class="form-input text-sm" rows="4" placeholder="Texto de vendas da oferta de upsell..."></textarea>
+            </div>
+        </div>
+
+        <!-- Personalização Downsell -->
+        <div class="mt-6 p-4 rounded-lg border border-amber-500/50 bg-gray-800/80">
+            <h3 class="text-sm font-semibold text-amber-400 mb-3">Personalizar oferta Downsell</h3>
+            <p class="text-xs text-gray-400 mb-4">Opcional: capa, banners e descrição para a tela de downsell. Se vazio, usa os dados do produto selecionado.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Banner cabeçalho (URL ou envio)</label>
+                    <input type="url" name="funnel_downsell_banner_header_url" class="form-input text-sm" placeholder="https://..." value="">
+                    <input type="file" name="funnel_downsell_banner_header" class="form-input text-sm mt-1" accept="image/*">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1">Banner lateral (URL ou envio)</label>
+                    <input type="url" name="funnel_downsell_banner_side_url" class="form-input text-sm" placeholder="https://..." value="">
+                    <input type="file" name="funnel_downsell_banner_side" class="form-input text-sm mt-1" accept="image/*">
+                </div>
+            </div>
+            <div class="mt-3">
+                <label class="block text-xs text-gray-400 mb-1">Capa da oferta (opcional)</label>
+                <input type="file" name="funnel_downsell_cover" class="form-input text-sm" accept="image/*">
+            </div>
+            <div class="mt-3">
+                <label class="block text-xs text-gray-400 mb-1">Descrição / copy da oferta (HTML permitido)</label>
+                <textarea name="funnel_downsell_description" class="form-input text-sm" rows="4" placeholder="Texto de vendas da oferta de downsell..."></textarea>
+            </div>
+        </div>
+
+        <p class="text-xs text-gray-500 pt-4">Arquivo apenas para teste visual. Os mesmos <code class="bg-gray-700 px-1 rounded">name</code> são usados em <code class="bg-gray-700 px-1 rounded">views/produto_config/aba_funil.php</code>.</p>
+    </div>
+</body>
+</html>

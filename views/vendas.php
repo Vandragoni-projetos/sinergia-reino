@@ -24,13 +24,19 @@ try {
 </style>
 
 <div class="container mx-auto relative">
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex justify-between items-center mb-6 flex-wrap gap-3">
         <h1 class="text-3xl font-bold text-white">Relatório de Vendas</h1>
-        <button onclick="toggleFilters()" class="flex items-center gap-2 px-4 py-2 bg-dark-elevated border border-dark-border rounded-lg text-gray-300 hover:text-white hover:border-[#32e768] transition-colors">
-            <i data-lucide="sliders-horizontal" class="w-5 h-5"></i>
-            <span>Filtros</span>
-            <span id="active-filters-count" class="hidden px-2 py-0.5 text-xs font-bold rounded-full bg-[#32e768] text-black">0</span>
-        </button>
+        <div class="flex items-center gap-2">
+            <button type="button" id="btn-export-excel" class="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 border border-emerald-500 rounded-lg text-white font-medium transition-colors" title="Baixar planilha com os filtros atuais">
+                <i data-lucide="file-spreadsheet" class="w-5 h-5"></i>
+                <span>Baixar Excel</span>
+            </button>
+            <button onclick="toggleFilters()" class="flex items-center gap-2 px-4 py-2 bg-dark-elevated border border-dark-border rounded-lg text-gray-300 hover:text-white hover:border-[#32e768] transition-colors">
+                <i data-lucide="sliders-horizontal" class="w-5 h-5"></i>
+                <span>Filtros</span>
+                <span id="active-filters-count" class="hidden px-2 py-0.5 text-xs font-bold rounded-full bg-[#32e768] text-black">0</span>
+            </button>
+        </div>
     </div>
 
     <!-- Painel de Filtros Avançados -->
@@ -168,7 +174,7 @@ try {
             </div>
         </div>
 
-        <div class="overflow-x-auto">
+        <div id="table-wrapper" class="overflow-x-auto" style="display: none;">
             <table class="min-w-full divide-y divide-dark-border">
                 <thead class="bg-dark-elevated">
                     <tr>
@@ -185,9 +191,14 @@ try {
             </table>
         </div>
 
-        <div id="loading-state" class="text-center py-12 text-gray-400" style="display: none;">
+        <div id="loading-state" class="text-center py-12 text-gray-400">
             <svg class="animate-spin h-8 w-8 mx-auto" style="color: var(--accent-primary);" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z"></path></svg>
             <p class="mt-4 font-medium">Carregando...</p>
+        </div>
+        <div id="error-state" class="text-center py-12 text-red-400 hidden">
+            <i data-lucide="alert-circle" class="mx-auto w-12 h-12"></i>
+            <p class="mt-4 font-medium" id="error-state-message">Erro ao carregar vendas.</p>
+            <button type="button" onclick="window.fetchVendasData && window.fetchVendasData()" class="mt-4 px-4 py-2 bg-dark-elevated border border-dark-border rounded-lg text-gray-300 hover:text-white transition-colors">Tentar novamente</button>
         </div>
         <div id="empty-state" class="text-center py-12 text-gray-400" style="display: none;">
             <i data-lucide="inbox" class="mx-auto w-16 h-16 text-gray-500"></i>
@@ -363,6 +374,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const tbody = document.getElementById('vendas-tbody');
     const loadingState = document.getElementById('loading-state');
     const emptyState = document.getElementById('empty-state');
+    const errorState = document.getElementById('error-state');
+    const tableWrapper = document.getElementById('table-wrapper');
     const searchInput = document.getElementById('search-input');
     const metricCardsContainer = document.querySelector('.grid.grid-cols-2.md\\:grid-cols-7');
     
@@ -430,21 +443,13 @@ document.addEventListener('DOMContentLoaded', function() {
         return map[status] || status;
     };
 
-    const fetchVendas = async () => {
-        loadingState.style.display = 'block';
-        emptyState.style.display = 'none';
-        paginationControls.classList.add('hidden');
-        tbody.innerHTML = '';
-        
-        try {
-            // Construir URL com todos os filtros
+    const buildVendasParams = (forExport) => {
             const params = new URLSearchParams({
-                action: 'get_vendas',
+                action: forExport ? 'export_vendas_excel' : 'get_vendas',
                 status: state.status,
                 search: state.search,
-                page: state.page
+                page: forExport ? '1' : state.page
             });
-            
             if (state.produto_id) params.append('produto_id', state.produto_id);
             if (state.metodo_pagamento) params.append('metodo_pagamento', state.metodo_pagamento);
             if (state.data_inicio) params.append('data_inicio', state.data_inicio);
@@ -452,10 +457,32 @@ document.addEventListener('DOMContentLoaded', function() {
             if (state.telefone) params.append('telefone', state.telefone);
             if (state.valor_min) params.append('valor_min', state.valor_min);
             if (state.valor_max) params.append('valor_max', state.valor_max);
-            
+            return params;
+        };
+
+    const fetchVendas = async () => {
+        loadingState.style.display = 'block';
+        emptyState.style.display = 'none';
+        if (errorState) errorState.classList.add('hidden');
+        if (tableWrapper) tableWrapper.style.display = 'none';
+        paginationControls.classList.add('hidden');
+        tbody.innerHTML = '';
+        
+        try {
+            const params = buildVendasParams(false);
             const url = `/api/api?${params.toString()}`;
-            const response = await fetch(url);
+            const response = await fetch(url, { credentials: 'same-origin' });
+            
+            const contentType = response.headers.get('content-type') || '';
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(response.status === 403 ? 'Sessão expirada. Faça login novamente.' : (text || 'Erro ao carregar vendas.'));
+            }
+            if (!contentType.includes('application/json')) {
+                throw new Error('Resposta inválida do servidor.');
+            }
             const data = await response.json();
+            if (data.error) throw new Error(data.error);
 
             document.getElementById('metric-all').textContent = data.metrics.all || 0;
             document.getElementById('metric-approved').textContent = data.metrics.approved || 0;
@@ -473,6 +500,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.vendas.length === 0) {
                 emptyState.style.display = 'block';
             } else {
+                if (tableWrapper) tableWrapper.style.display = 'block';
                 data.vendas.forEach(venda => {
                     const tr = document.createElement('tr');
                     const valorFormatado = venda.criado_manualmente == 1 ? 'Acesso Manual' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(venda.valor);
@@ -552,10 +580,26 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         } catch (error) {
             console.error('Erro:', error);
+            if (errorState) {
+                const msg = document.getElementById('error-state-message');
+                if (msg) msg.textContent = error.message || 'Erro ao carregar vendas.';
+                errorState.classList.remove('hidden');
+            }
         } finally {
             loadingState.style.display = 'none';
         }
     };
+
+    // Botão Exportar Excel: usa os mesmos filtros e abre o download
+    const btnExport = document.getElementById('btn-export-excel');
+    if (btnExport) {
+        btnExport.addEventListener('click', function(e) {
+            e.preventDefault();
+            const params = buildVendasParams(true);
+            const url = `/api/api?${params.toString()}`;
+            window.open(url, '_blank', 'noopener');
+        });
+    }
 
     function updatePagination(data) {
         if (!data || data.totalPages <= 1) { paginationControls.classList.add('hidden'); return; }

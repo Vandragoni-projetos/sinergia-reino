@@ -12,6 +12,7 @@ error_reporting(E_ALL);
 ini_set('log_errors', 1);
 
 require_once __DIR__ . '/../config/config.php';
+require_once __DIR__ . '/../config/csrf_helper.php';
 
 // Incluir PHPMailer
 use PHPMailer\PHPMailer\PHPMailer;
@@ -29,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $input = json_decode(file_get_contents('php://input'), true);
+validate_csrf_request($input);
 $email = trim($input['email'] ?? '');
 $user_type = $input['user_type'] ?? 'usuario'; // 'usuario' para membros, 'all' para qualquer tipo
 

@@ -245,26 +245,32 @@ try {
             return null; // Retorna null se não houver upload
         }
 
-        // Salvar Banner do Curso
+        // Salvar Banner do Curso (URL externa ou upload)
         if (isset($_POST['salvar_banner_curso'])) {
             $should_redirect = true;
-            $upload_result = handle_file_upload('banner_curso', $upload_dir, $curso['banner_url'], $allowed_image_extensions);
-            
-            if (is_array($upload_result) && isset($upload_result['error'])) {
-                $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>" . htmlspecialchars($upload_result['error']) . "</div>";
-            } elseif (is_array($upload_result) && isset($upload_result['path'])) {
+            $banner_url_externa = trim($_POST['banner_url_externa'] ?? '');
+            if (!empty($banner_url_externa) && filter_var($banner_url_externa, FILTER_VALIDATE_URL)) {
                 $stmt = $pdo->prepare("UPDATE cursos SET banner_url = ? WHERE id = ?");
-                $stmt->execute([$upload_result['path'], $curso_id]);
-                $mensagem = "<div class='bg-green-900/20 border border-green-500 text-green-300 px-4 py-3 rounded' role='alert'>Banner do curso atualizado!</div>";
-            } else if (!empty($_POST['remove_banner'])) { // Lógica para remover banner
-                if ($curso['banner_url'] && file_exists($curso['banner_url']) && strpos($curso['banner_url'], 'uploads/') === 0) {
-                    unlink($curso['banner_url']);
-                }
-                $stmt = $pdo->prepare("UPDATE cursos SET banner_url = NULL WHERE id = ?");
-                $stmt->execute([$curso_id]);
-                $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Banner do curso removido!</div>";
+                $stmt->execute([$banner_url_externa, $curso_id]);
+                $mensagem = "<div class='bg-green-900/20 border border-green-500 text-green-300 px-4 py-3 rounded' role='alert'>Banner do curso atualizado (URL externa)!</div>";
             } else {
-                 $mensagem = "<div class='bg-yellow-900/20 border border-yellow-500 text-yellow-300 px-4 py-3 rounded' role='alert'>Nenhuma imagem de banner enviada ou selecionada para remover.</div>";
+                $upload_result = handle_file_upload('banner_curso', $upload_dir, $curso['banner_url'], $allowed_image_extensions);
+                if (is_array($upload_result) && isset($upload_result['error'])) {
+                    $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>" . htmlspecialchars($upload_result['error']) . "</div>";
+                } elseif (is_array($upload_result) && isset($upload_result['path'])) {
+                    $stmt = $pdo->prepare("UPDATE cursos SET banner_url = ? WHERE id = ?");
+                    $stmt->execute([$upload_result['path'], $curso_id]);
+                    $mensagem = "<div class='bg-green-900/20 border border-green-500 text-green-300 px-4 py-3 rounded' role='alert'>Banner do curso atualizado!</div>";
+                } else if (!empty($_POST['remove_banner'])) {
+                    if ($curso['banner_url'] && !filter_var($curso['banner_url'], FILTER_VALIDATE_URL) && file_exists($curso['banner_url']) && strpos($curso['banner_url'], 'uploads/') === 0) {
+                        unlink($curso['banner_url']);
+                    }
+                    $stmt = $pdo->prepare("UPDATE cursos SET banner_url = NULL WHERE id = ?");
+                    $stmt->execute([$curso_id]);
+                    $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Banner do curso removido!</div>";
+                } else {
+                    $mensagem = "<div class='bg-yellow-900/20 border border-yellow-500 text-yellow-300 px-4 py-3 rounded' role='alert'>Nenhuma imagem de banner enviada, URL válida ou selecionada para remover.</div>";
+                }
             }
         }
 
@@ -748,16 +754,26 @@ try {
         <form action="/index?pagina=gerenciar_curso&produto_id=<?php echo $produto_id; ?>" method="post" enctype="multipart/form-data">
             <div class="mb-4">
                 <label for="banner_curso" class="block text-gray-300 text-sm font-semibold mb-2">Banner do Topo</label>
-                <?php if (!empty($curso['banner_url']) && file_exists($curso['banner_url'])): ?>
+                <?php
+                $banner_display_src = '';
+                if (!empty($curso['banner_url'])) {
+                    $banner_display_src = filter_var($curso['banner_url'], FILTER_VALIDATE_URL) ? $curso['banner_url'] : ('/' . ltrim($curso['banner_url'], '/'));
+                }
+                ?>
+                <?php if (!empty($banner_display_src)): ?>
                     <div class="mb-2">
-                        <img src="<?php echo htmlspecialchars($curso['banner_url']); ?>" alt="Banner atual" class="w-full h-48 object-cover rounded-lg border border-dark-border">
+                        <img src="<?php echo htmlspecialchars($banner_display_src); ?>" alt="Banner atual" class="w-full h-48 object-cover rounded-lg border border-dark-border">
                         <label class="mt-2 flex items-center text-sm text-gray-400">
                             <input type="checkbox" name="remove_banner" value="1" class="h-4 w-4 mr-1 text-red-400 focus:ring-red-500 rounded"> Remover banner existente
                         </label>
                     </div>
                 <?php endif; ?>
+                <div class="mb-3">
+                    <label for="banner_url_externa" class="block text-gray-400 text-xs mb-1">Ou use URL externa (WordPress, CDN, etc.)</label>
+                    <input type="url" id="banner_url_externa" name="banner_url_externa" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded-lg text-white text-sm" placeholder="https://seusite.com/banner.jpg" value="<?php echo (!empty($curso['banner_url']) && filter_var($curso['banner_url'], FILTER_VALIDATE_URL)) ? htmlspecialchars($curso['banner_url']) : ''; ?>">
+                </div>
                 <input type="file" id="banner_curso" name="banner_curso" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#32e768]/20 file:text-[#32e768] hover:file:bg-[#32e768]/30" accept="image/*">
-                <p class="mt-1 text-xs text-gray-400">Recomendado: 1920x400px</p>
+                <p class="mt-1 text-xs text-gray-400">Recomendado: 1920x400px. Upload ou URL externa evita perda no deploy.</p>
             </div>
             <button type="submit" name="salvar_banner_curso" class="bg-[#32e768] text-white font-bold py-2 px-5 rounded-lg hover:bg-[#28d15e] transition">Salvar Banner</button>
         </form>

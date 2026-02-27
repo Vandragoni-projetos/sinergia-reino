@@ -81,6 +81,18 @@ function handle_multiple_uploads($file_key, $prefix, $product_id) {
     return $uploaded_paths;
 }
 
+// Upload único para imagens do funil (banner/capa); retorna caminho ou null
+function save_funnel_single_upload($file_key) {
+    global $upload_dir;
+    if (!isset($_FILES[$file_key]) || $_FILES[$file_key]['error'] !== UPLOAD_ERR_OK) return null;
+    $f = $_FILES[$file_key];
+    $ext = strtolower(pathinfo($f['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp'])) return null;
+    $name = 'funnel_' . uniqid() . '.' . $ext;
+    if (move_uploaded_file($f['tmp_name'], $upload_dir . $name)) return $upload_dir . $name;
+    return null;
+}
+
 // Processar formulário de salvamento
 if (isset($_POST['salvar_produto_config'])) {
     $pdo->beginTransaction();
@@ -98,10 +110,13 @@ if (isset($_POST['salvar_produto_config'])) {
             $gateway = $_POST['gateway'] ?? $current_gateway;
             $tipo_entrega = $_POST['tipo_entrega'] ?? $produto['tipo_entrega'];
 
-            // Upload de foto
+            // Foto: URL externa ou upload
             $foto_atual = $_POST['foto_atual'] ?? $produto['foto'];
             $nome_foto = $foto_atual;
-            if (isset($_FILES['foto']) && $_FILES['foto']['error'] == 0) {
+            $foto_url_externa = trim($_POST['foto_url_externa'] ?? '');
+            if (!empty($foto_url_externa) && filter_var($foto_url_externa, FILTER_VALIDATE_URL)) {
+                $nome_foto = $foto_url_externa;
+            } elseif (isset($_FILES['foto']) && $_FILES['foto']['error'] == 0) {
                 $arquivo_tmp = $_FILES['foto']['tmp_name'];
                 $nome_original = $_FILES['foto']['name'];
                 $extensao = strtolower(pathinfo($nome_original, PATHINFO_EXTENSION));
@@ -109,7 +124,7 @@ if (isset($_POST['salvar_produto_config'])) {
                 if(in_array($extensao, $allowed_img_ext)) {
                     $nome_foto = uniqid() . '.' . $extensao;
                     if (move_uploaded_file($arquivo_tmp, $upload_dir . $nome_foto)) {
-                        if ($foto_atual && file_exists($upload_dir . $foto_atual)) {
+                        if ($foto_atual && !filter_var($foto_atual, FILTER_VALIDATE_URL) && file_exists($upload_dir . $foto_atual)) {
                             unlink($upload_dir . $foto_atual);
                         }
                     } else {
@@ -324,8 +339,11 @@ if (isset($_POST['salvar_produto_config'])) {
         // Payment Methods - Preserva configuração existente se não houver campos no POST
         $existing_payment_methods = $config_array['paymentMethods'] ?? [];
         $has_payment_methods_in_post = isset($_POST['gateway_pushinpay_enabled']) || isset($_POST['gateway_efi_enabled']) || isset($_POST['gateway_mercadopago_enabled']) || isset($_POST['gateway_beehive_enabled']) || isset($_POST['gateway_hypercash_enabled']) ||
-                                       isset($_POST['payment_pix_pushinpay']) || isset($_POST['payment_pix_efi']) || isset($_POST['payment_pix_enabled']) || 
-                                       isset($_POST['payment_credit_card_enabled']) || isset($_POST['payment_credit_card_mercadopago']) || isset($_POST['payment_credit_card_beehive']) || isset($_POST['payment_credit_card_hypercash']) || isset($_POST['payment_credit_card_efi']) || isset($_POST['payment_ticket_enabled']);
+                                       isset($_POST['gateway_pagarme_enabled']) || isset($_POST['gateway_paypal_enabled']) || isset($_POST['gateway_stripe_enabled']) ||
+                                       isset($_POST['payment_pix_pushinpay']) || isset($_POST['payment_pix_efi']) || isset($_POST['payment_pix_pagarme']) || isset($_POST['payment_pix_stripe']) || isset($_POST['payment_pix_enabled']) || 
+                                       isset($_POST['payment_credit_card_enabled']) || isset($_POST['payment_credit_card_mercadopago']) || isset($_POST['payment_credit_card_beehive']) || isset($_POST['payment_credit_card_hypercash']) || isset($_POST['payment_credit_card_efi']) ||
+                                       isset($_POST['payment_credit_card_pagarme']) || isset($_POST['payment_credit_card_paypal']) || isset($_POST['payment_credit_card_stripe']) ||
+                                       isset($_POST['payment_ticket_enabled']) || isset($_POST['payment_ticket_pagarme']);
         
         // Só atualiza paymentMethods se houver campos no POST (usuário está na aba de métodos de pagamento)
         if ($has_payment_methods_in_post) {
@@ -335,13 +353,18 @@ if (isset($_POST['salvar_produto_config'])) {
             $mercadopago_enabled = isset($_POST['gateway_mercadopago_enabled']) && $_POST['gateway_mercadopago_enabled'] == '1';
             $beehive_enabled = isset($_POST['gateway_beehive_enabled']) && $_POST['gateway_beehive_enabled'] == '1';
             $hypercash_enabled = isset($_POST['gateway_hypercash_enabled']) && $_POST['gateway_hypercash_enabled'] == '1';
+            $pagarme_enabled = isset($_POST['gateway_pagarme_enabled']) && $_POST['gateway_pagarme_enabled'] == '1';
+            $paypal_enabled = isset($_POST['gateway_paypal_enabled']) && $_POST['gateway_paypal_enabled'] == '1';
+            $stripe_enabled = isset($_POST['gateway_stripe_enabled']) && $_POST['gateway_stripe_enabled'] == '1';
             
-            // Determinar qual Pix está habilitado (prioridade: PushinPay > Efí > Mercado Pago)
+            // Determinar qual Pix está habilitado (prioridade: PushinPay > Efí > Pagar.me > Stripe > Mercado Pago)
             $pix_pushinpay_checked = $pushinpay_enabled && isset($_POST['payment_pix_pushinpay']) && $_POST['payment_pix_pushinpay'] == '1';
             $pix_efi_checked = $efi_enabled && isset($_POST['payment_pix_efi']) && $_POST['payment_pix_efi'] == '1';
+            $pix_pagarme_checked = $pagarme_enabled && isset($_POST['payment_pix_pagarme']) && $_POST['payment_pix_pagarme'] == '1';
+            $pix_stripe_checked = $stripe_enabled && isset($_POST['payment_pix_stripe']) && $_POST['payment_pix_stripe'] == '1';
             $pix_mercadopago_checked = $mercadopago_enabled && isset($_POST['payment_pix_enabled']) && $_POST['payment_pix_enabled'] == '1';
             
-            // Prioridade: PushinPay > Efí > Mercado Pago
+            // Prioridade: PushinPay > Efí > Pagar.me > Stripe > Mercado Pago
             $pix_gateway = 'mercadopago';
             $pix_enabled = false;
             if ($pix_pushinpay_checked) {
@@ -350,15 +373,30 @@ if (isset($_POST['salvar_produto_config'])) {
             } elseif ($pix_efi_checked) {
                 $pix_gateway = 'efi';
                 $pix_enabled = true;
+            } elseif ($pix_pagarme_checked) {
+                $pix_gateway = 'pagarme';
+                $pix_enabled = true;
+            } elseif ($pix_stripe_checked) {
+                $pix_gateway = 'stripe';
+                $pix_enabled = true;
             } elseif ($pix_mercadopago_checked) {
                 $pix_gateway = 'mercadopago';
                 $pix_enabled = true;
             }
 
-            // Determinar qual gateway de cartão está habilitado (prioridade: Hypercash > Beehive > Efí > Mercado Pago)
+            // Determinar qual gateway de cartão está habilitado (prioridade: Stripe > PayPal > Pagar.me > Hypercash > Beehive > Efí > Mercado Pago)
             $credit_card_gateway = null;
             $credit_card_enabled = false;
-            if ($hypercash_enabled && isset($_POST['payment_credit_card_hypercash']) && $_POST['payment_credit_card_hypercash'] == '1') {
+            if ($stripe_enabled && isset($_POST['payment_credit_card_stripe']) && $_POST['payment_credit_card_stripe'] == '1') {
+                $credit_card_gateway = 'stripe';
+                $credit_card_enabled = true;
+            } elseif ($paypal_enabled && isset($_POST['payment_credit_card_paypal']) && $_POST['payment_credit_card_paypal'] == '1') {
+                $credit_card_gateway = 'paypal';
+                $credit_card_enabled = true;
+            } elseif ($pagarme_enabled && isset($_POST['payment_credit_card_pagarme']) && $_POST['payment_credit_card_pagarme'] == '1') {
+                $credit_card_gateway = 'pagarme';
+                $credit_card_enabled = true;
+            } elseif ($hypercash_enabled && isset($_POST['payment_credit_card_hypercash']) && $_POST['payment_credit_card_hypercash'] == '1') {
                 $credit_card_gateway = 'hypercash';
                 $credit_card_enabled = true;
             } elseif ($beehive_enabled && isset($_POST['payment_credit_card_beehive']) && $_POST['payment_credit_card_beehive'] == '1') {
@@ -377,7 +415,7 @@ if (isset($_POST['salvar_produto_config'])) {
             }
 
             // Configuração híbrida - múltiplos gateways podem estar habilitados
-            if ($pushinpay_enabled || $efi_enabled || $mercadopago_enabled || $beehive_enabled || $hypercash_enabled) {
+            if ($pushinpay_enabled || $efi_enabled || $mercadopago_enabled || $beehive_enabled || $hypercash_enabled || $pagarme_enabled || $paypal_enabled || $stripe_enabled) {
                 $config_array['paymentMethods'] = [
                     'pix' => [
                         'gateway' => $pix_gateway,
@@ -388,8 +426,9 @@ if (isset($_POST['salvar_produto_config'])) {
                         'enabled' => $credit_card_enabled
                     ],
                     'ticket' => [
-                        'gateway' => 'mercadopago',
-                        'enabled' => $mercadopago_enabled && isset($_POST['payment_ticket_enabled']) && $_POST['payment_ticket_enabled'] == '1'
+                        'gateway' => ($pagarme_enabled && isset($_POST['payment_ticket_pagarme']) && $_POST['payment_ticket_pagarme'] == '1') ? 'pagarme' : 'mercadopago',
+                        'enabled' => ($pagarme_enabled && isset($_POST['payment_ticket_pagarme']) && $_POST['payment_ticket_pagarme'] == '1') ||
+                                    ($mercadopago_enabled && isset($_POST['payment_ticket_enabled']) && $_POST['payment_ticket_enabled'] == '1')
                     ]
                 ];
             } else {
@@ -493,6 +532,116 @@ if (isset($_POST['salvar_produto_config'])) {
             } // Fim do if (isset($_POST['orderbump_product_id']))
         } // Fim do if ($aba_atual === 'order_bumps')
 
+        // ========== FUNIL DE VENDAS ==========
+        // Só processa funil se estiver na aba correspondente
+        if ($aba_atual === 'funil') {
+            // Normaliza dados do POST
+            $upsell_id = !empty($_POST['funnel_upsell_product_id']) ? (int)$_POST['funnel_upsell_product_id'] : null;
+            $downsell_id = !empty($_POST['funnel_downsell_product_id']) ? (int)$_POST['funnel_downsell_product_id'] : null;
+            $is_active = isset($_POST['funnel_is_active']) ? 1 : 0;
+
+            // Busca community_id do produto principal (se existir coluna)
+            $community_id = null;
+            try {
+                $stmt_c = $pdo->prepare("SHOW COLUMNS FROM produtos LIKE 'community_id'");
+                $stmt_c->execute();
+                if ($stmt_c->rowCount() > 0) {
+                    $stmt_prod = $pdo->prepare("SELECT community_id FROM produtos WHERE id = ? AND usuario_id = ? LIMIT 1");
+                    $stmt_prod->execute([$id_produto, $usuario_id]);
+                    $community_id = (int)($stmt_prod->fetchColumn() ?? 0) ?: null;
+                }
+            } catch (PDOException $e) {
+                // Ignora, mantém community_id null se algo der errado
+            }
+
+            // Garante que produtos escolhidos pertencem ao mesmo usuário
+            $validUpsell = null;
+            $validDownsell = null;
+            if ($upsell_id) {
+                $stmt_check = $pdo->prepare("SELECT id FROM produtos WHERE id = ? AND usuario_id = ?");
+                $stmt_check->execute([$upsell_id, $usuario_id]);
+                if ($stmt_check->rowCount() > 0) {
+                    $validUpsell = $upsell_id;
+                }
+            }
+            if ($downsell_id) {
+                $stmt_check = $pdo->prepare("SELECT id FROM produtos WHERE id = ? AND usuario_id = ?");
+                $stmt_check->execute([$downsell_id, $usuario_id]);
+                if ($stmt_check->rowCount() > 0) {
+                    $validDownsell = $downsell_id;
+                }
+            }
+
+            // Upsert em product_funnels
+            $stmt_exist = $pdo->prepare("SELECT * FROM product_funnels WHERE main_product_id = ? LIMIT 1");
+            $stmt_exist->execute([$id_produto]);
+            $existing_funnel = $stmt_exist->fetch(PDO::FETCH_ASSOC);
+            $existing_funnel_id = $existing_funnel ? (int)$existing_funnel['id'] : null;
+
+            // Monta JSON de personalização upsell/downsell (quando as colunas existirem)
+            $upsell_custom = $existing_funnel ? (json_decode($existing_funnel['upsell_custom_config'] ?? '{}', true) ?: []) : [];
+            $downsell_custom = $existing_funnel ? (json_decode($existing_funnel['downsell_custom_config'] ?? '{}', true) ?: []) : [];
+            $offer_theme = $existing_funnel && !empty($existing_funnel['offer_theme']) ? (json_decode($existing_funnel['offer_theme'], true) ?: []) : [];
+
+            $u_header = save_funnel_single_upload('funnel_upsell_banner_header');
+            $u_side = save_funnel_single_upload('funnel_upsell_banner_side');
+            $u_cover = save_funnel_single_upload('funnel_upsell_cover');
+            $upsell_custom['banner_header'] = $u_header ?: trim($_POST['funnel_upsell_banner_header_url'] ?? '') ?: ($upsell_custom['banner_header'] ?? '');
+            $upsell_custom['banner_side'] = $u_side ?: trim($_POST['funnel_upsell_banner_side_url'] ?? '') ?: ($upsell_custom['banner_side'] ?? '');
+            $upsell_custom['cover_image'] = $u_cover ?: ($upsell_custom['cover_image'] ?? '');
+            $upsell_custom['description'] = trim($_POST['funnel_upsell_description'] ?? '');
+
+            $d_header = save_funnel_single_upload('funnel_downsell_banner_header');
+            $d_side = save_funnel_single_upload('funnel_downsell_banner_side');
+            $d_cover = save_funnel_single_upload('funnel_downsell_cover');
+            $downsell_custom['banner_header'] = $d_header ?: trim($_POST['funnel_downsell_banner_header_url'] ?? '') ?: ($downsell_custom['banner_header'] ?? '');
+            $downsell_custom['banner_side'] = $d_side ?: trim($_POST['funnel_downsell_banner_side_url'] ?? '') ?: ($downsell_custom['banner_side'] ?? '');
+            $downsell_custom['cover_image'] = $d_cover ?: ($downsell_custom['cover_image'] ?? '');
+            $downsell_custom['description'] = trim($_POST['funnel_downsell_description'] ?? '');
+
+            $json_upsell = json_encode($upsell_custom);
+            $json_downsell = json_encode($downsell_custom);
+
+            // Tema da página de oferta (cores, logo, textos do cabeçalho)
+            $theme_logo = save_funnel_single_upload('funnel_theme_logo');
+            $offer_theme['logo_url'] = $theme_logo ?: trim($_POST['funnel_theme_logo_url'] ?? '') ?: ($offer_theme['logo_url'] ?? '');
+            $offer_theme['primary_color'] = trim($_POST['funnel_theme_primary_color'] ?? '') ?: ($offer_theme['primary_color'] ?? '#6366f1');
+            $offer_theme['secondary_color'] = trim($_POST['funnel_theme_secondary_color'] ?? '') ?: ($offer_theme['secondary_color'] ?? '#4f46e5');
+            $offer_theme['page_bg'] = trim($_POST['funnel_theme_page_bg'] ?? '') ?: ($offer_theme['page_bg'] ?? '#f1f5f9');
+            $offer_theme['header_label_upsell'] = trim($_POST['funnel_theme_header_label_upsell'] ?? '');
+            $offer_theme['header_headline_upsell'] = trim($_POST['funnel_theme_header_headline_upsell'] ?? '');
+            $offer_theme['header_label_downsell'] = trim($_POST['funnel_theme_header_label_downsell'] ?? '');
+            $offer_theme['header_headline_downsell'] = trim($_POST['funnel_theme_header_headline_downsell'] ?? '');
+            $json_offer_theme = json_encode($offer_theme);
+
+            $has_custom_cols = false;
+            $has_offer_theme = false;
+            try {
+                $stmt_col = $pdo->query("SHOW COLUMNS FROM product_funnels LIKE 'upsell_custom_config'");
+                $has_custom_cols = $stmt_col && $stmt_col->rowCount() > 0;
+                $stmt_theme = $pdo->query("SHOW COLUMNS FROM product_funnels LIKE 'offer_theme'");
+                $has_offer_theme = $stmt_theme && $stmt_theme->rowCount() > 0;
+            } catch (PDOException $e) { /* coluna não existe */ }
+
+            if ($existing_funnel_id) {
+                $sets = "upsell_product_id = ?, downsell_product_id = ?, is_active = ?, community_id = ?";
+                $params = [$validUpsell, $validDownsell, $is_active, $community_id];
+                if ($has_custom_cols) { $sets .= ", upsell_custom_config = ?, downsell_custom_config = ?"; $params[] = $json_upsell; $params[] = $json_downsell; }
+                if ($has_offer_theme) { $sets .= ", offer_theme = ?"; $params[] = $json_offer_theme; }
+                $params[] = $existing_funnel_id;
+                $stmt_upd = $pdo->prepare("UPDATE product_funnels SET $sets WHERE id = ?");
+                $stmt_upd->execute($params);
+            } else {
+                $cols = "main_product_id, community_id, upsell_product_id, downsell_product_id, is_active";
+                $placeholders = "?, ?, ?, ?, ?";
+                $params = [$id_produto, $community_id, $validUpsell, $validDownsell, $is_active];
+                if ($has_custom_cols) { $cols .= ", upsell_custom_config, downsell_custom_config"; $placeholders .= ", ?, ?"; $params[] = $json_upsell; $params[] = $json_downsell; }
+                if ($has_offer_theme) { $cols .= ", offer_theme"; $placeholders .= ", ?"; $params[] = $json_offer_theme; }
+                $stmt_ins = $pdo->prepare("INSERT INTO product_funnels ($cols) VALUES ($placeholders)");
+                $stmt_ins->execute($params);
+            }
+        } // Fim do if ($aba_atual === 'funil')
+
         $pdo->commit();
         $mensagem = "<div class='bg-green-900/20 border border-green-500 text-green-300 px-4 py-3 rounded relative mb-4' role='alert'>Configurações salvas com sucesso!</div>";
 
@@ -554,7 +703,7 @@ $customer_fields_config = $checkout_config['customer_fields'] ?? ['enable_cpf' =
 
 // Determinar aba ativa
 $aba_ativa = $_GET['aba'] ?? 'geral';
-$abas_permitidas = ['geral', 'order_bumps', 'metodos_pagamento', 'rastreamento', 'checkout', 'links'];
+$abas_permitidas = ['geral', 'order_bumps', 'funil', 'metodos_pagamento', 'rastreamento', 'checkout', 'links'];
 if (!in_array($aba_ativa, $abas_permitidas)) {
     $aba_ativa = 'geral';
 }
@@ -597,6 +746,11 @@ if (!in_array($aba_ativa, $abas_permitidas)) {
                    class="flex items-center gap-2 px-6 py-4 text-sm font-semibold border-b-2 transition-all duration-200 whitespace-nowrap <?php echo $aba_ativa === 'order_bumps' ? 'text-[#32e768] border-[#32e768] bg-dark-card' : 'text-gray-400 border-transparent hover:text-white hover:border-gray-600'; ?>">
                     <i data-lucide="gift" class="w-5 h-5"></i>
                     <span>Order Bumps</span>
+                </a>
+                <a href="/index?pagina=produto_config&id=<?php echo $id_produto; ?>&aba=funil" 
+                   class="flex items-center gap-2 px-6 py-4 text-sm font-semibold border-b-2 transition-all duration-200 whitespace-nowrap <?php echo $aba_ativa === 'funil' ? 'text-[#32e768] border-[#32e768] bg-dark-card' : 'text-gray-400 border-transparent hover:text-white hover:border-gray-600'; ?>">
+                    <i data-lucide="workflow" class="w-5 h-5"></i>
+                    <span>Funil de Vendas</span>
                 </a>
                 <a href="/index?pagina=produto_config&id=<?php echo $id_produto; ?>&aba=metodos_pagamento" 
                    class="flex items-center gap-2 px-6 py-4 text-sm font-semibold border-b-2 transition-all duration-200 whitespace-nowrap <?php echo $aba_ativa === 'metodos_pagamento' ? 'text-[#32e768] border-[#32e768] bg-dark-card' : 'text-gray-400 border-transparent hover:text-white hover:border-gray-600'; ?>">

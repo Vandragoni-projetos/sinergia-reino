@@ -127,7 +127,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     data.top_products.forEach(product => {
                         const productHtml = `
                             <div class="flex items-center space-x-4">
-                                <img src="${product.foto ? 'uploads/' + product.foto : 'https://placehold.co/64x64/f97316/FFF?text=P'}" alt="${product.nome}" class="w-16 h-16 rounded-lg object-cover flex-shrink-0">
+                                <img src="${(product.foto && (product.foto.startsWith('http://') || product.foto.startsWith('https://'))) ? product.foto : (product.foto ? 'uploads/' + product.foto : 'https://placehold.co/64x64/f97316/FFF?text=P')}" alt="${product.nome}" class="w-16 h-16 rounded-lg object-cover flex-shrink-0">
                                 <div class="flex-grow">
                                     <p class="font-semibold text-white truncate" title="${product.nome}">${product.nome}</p>
                                     <p class="text-sm text-gray-400">${formatCurrency(product.faturamento_total)}</p>

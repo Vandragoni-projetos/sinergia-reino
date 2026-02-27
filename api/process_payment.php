@@ -91,12 +91,28 @@ try {
     $path = rtrim(str_replace('\\', '/', $scriptDir), '/');
     $webhook_url = "https://" . $domainName . $path . '/notification.php';
     
-    // URL Obrigado
+    // URL Obrigado (ou funil se ativo)
     $stmt_prod_conf = $pdo->prepare("SELECT checkout_config FROM produtos WHERE id = ?");
     $stmt_prod_conf->execute([$main_product_id]);
     $p_conf = $stmt_prod_conf->fetch(PDO::FETCH_ASSOC);
     $checkout_config = json_decode($p_conf['checkout_config'] ?? '{}', true);
     $redirect_url_after_approval = $checkout_config['redirectUrl'] ?? ("https://" . $domainName . $path . '/obrigado.php');
+    $base_url_funnel = 'https://' . $domainName . '/';
+    if (file_exists(dirname(__DIR__) . '/helpers/funnel_helper.php')) {
+        require_once dirname(__DIR__) . '/helpers/funnel_helper.php';
+    }
+    // Etapa 5: redirect pós-pagamento quando compra veio do funil
+    $funnel_main_payment_id = isset($data['funnel_main_payment_id']) ? preg_replace('/[^a-zA-Z0-9_\-]/', '', substr(trim((string)$data['funnel_main_payment_id']), 0, 128)) : '';
+    $funnel_step_param = isset($data['funnel_step']) ? strtolower(trim((string)$data['funnel_step'])) : '';
+    if (!in_array($funnel_step_param, ['upsell', 'downsell'], true)) $funnel_step_param = '';
+    $redirect_url_computed = function($payment_id) use ($pdo, $main_product_id, $redirect_url_after_approval, $base_url_funnel, $funnel_main_payment_id, $funnel_step_param) {
+        if ($funnel_main_payment_id !== '' && $funnel_step_param !== '' && function_exists('build_funnel_redirect_after_offer_payment')) {
+            $obrigado_default = $redirect_url_after_approval . '?payment_id=' . urlencode($funnel_main_payment_id);
+            $url = build_funnel_redirect_after_offer_payment($pdo, $funnel_main_payment_id, $funnel_step_param, rtrim($base_url_funnel, '/'), $obrigado_default);
+            if ($url !== null) return $url;
+        }
+        return function_exists('build_final_redirect_url') ? build_final_redirect_url($pdo, $main_product_id, $payment_id, $redirect_url_after_approval . '?payment_id=' . $payment_id, $base_url_funnel) : ($redirect_url_after_approval . '?payment_id=' . $payment_id);
+    };
 
     log_process("Webhook URL gerada: " . $webhook_url);
     $checkout_session_uuid = uniqid('checkout_') . bin2hex(random_bytes(8));
@@ -187,7 +203,7 @@ try {
                     'qr_code' => $res_data['qr_code'] ?? '',
                     'payment_id' => $payment_id
                 ],
-                'redirect_url_after_approval' => $redirect_url_after_approval . '?payment_id=' . $payment_id
+                'redirect_url_after_approval' => $redirect_url_computed($payment_id)
             ]);
             exit;
 
@@ -302,7 +318,7 @@ try {
                         'qr_code' => $res_data['point_of_interaction']['transaction_data']['qr_code'],
                         'payment_id' => $payment_id
                     ],
-                    'redirect_url_after_approval' => $redirect_url_after_approval . '?payment_id=' . $payment_id
+                    'redirect_url_after_approval' => $redirect_url_computed($payment_id)
                 ]);
                 exit;
             }
@@ -317,7 +333,7 @@ try {
             
             // Se o pagamento foi aprovado, inclui URL de redirecionamento
             if ($status == 'approved') {
-                $response_front['redirect_url'] = $redirect_url_after_approval . '?payment_id=' . $payment_id;
+                $response_front['redirect_url'] = $redirect_url_computed($payment_id);
             }
             
             // Se o pagamento está pendente ou em processamento, inclui informação para polling

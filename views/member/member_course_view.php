@@ -421,12 +421,9 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
     <?php else: ?>
     <div id="course-container" class="min-h-screen member-protected-content">
         <?php
-        $banner_path = $curso['banner_url'] ?? ($upload_dir . ($curso['produto_foto'] ?? ''));
-        $banner_src = '';
-        if (!empty($banner_path)) {
-            $banner_src = function_exists('getProtectedMediaUrl') ? getProtectedMediaUrl($banner_path, $produto_id) : ('/' . ltrim($banner_path, '/'));
-            $banner_src = htmlspecialchars($banner_src);
-        }
+        $banner_raw = $curso['banner_url'] ?? $curso['produto_foto'] ?? '';
+        $banner_src = !empty($banner_raw) ? resolve_product_image_url_protected($banner_raw, $upload_dir ?? 'uploads/', $produto_id) : '';
+        $banner_src = $banner_src ? htmlspecialchars($banner_src) : '';
         ?>
         <!-- Banner do Topo do Curso (URL protegida) -->
         <header class="relative h-64 md:h-80 bg-gray-800 bg-cover bg-center" style="<?php echo $banner_src ? "background-image: url('$banner_src');" : ''; ?>">

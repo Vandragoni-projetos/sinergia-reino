@@ -165,12 +165,28 @@ try {
     $path = rtrim(str_replace('\\', '/', $scriptDir), '/');
     $webhook_url = "https://" . $domainName . $path . '/notification.php';
     
-    // URL Obrigado
+    // URL Obrigado (ou funil de vendas se ativo)
     $stmt_prod_conf = $pdo->prepare("SELECT checkout_config FROM produtos WHERE id = ?");
     $stmt_prod_conf->execute([$main_product_id]);
     $p_conf = $stmt_prod_conf->fetch(PDO::FETCH_ASSOC);
     $checkout_config = json_decode($p_conf['checkout_config'] ?? '{}', true);
     $redirect_url_after_approval = $checkout_config['redirectUrl'] ?? ("https://" . $domainName . $path . '/obrigado');
+    $base_url_funnel = 'https://' . $domainName . ($path ? $path . '/' : '/');
+    if (file_exists(__DIR__ . '/helpers/funnel_helper.php')) {
+        require_once __DIR__ . '/helpers/funnel_helper.php';
+    }
+    // Etapa 5: redirect pós-pagamento quando compra veio do funil (upsell/downsell)
+    $funnel_main_payment_id = isset($data['funnel_main_payment_id']) ? preg_replace('/[^a-zA-Z0-9_\-]/', '', substr(trim((string)$data['funnel_main_payment_id']), 0, 128)) : '';
+    $funnel_step_param = isset($data['funnel_step']) ? strtolower(trim((string)$data['funnel_step'])) : '';
+    if (!in_array($funnel_step_param, ['upsell', 'downsell'], true)) $funnel_step_param = '';
+    $redirect_url_computed = function($payment_id) use ($pdo, $main_product_id, $redirect_url_after_approval, $base_url_funnel, $funnel_main_payment_id, $funnel_step_param) {
+        if ($funnel_main_payment_id !== '' && $funnel_step_param !== '' && function_exists('build_funnel_redirect_after_offer_payment')) {
+            $obrigado_default = $redirect_url_after_approval . '?payment_id=' . urlencode($funnel_main_payment_id);
+            $url = build_funnel_redirect_after_offer_payment($pdo, $funnel_main_payment_id, $funnel_step_param, rtrim($base_url_funnel, '/'), $obrigado_default);
+            if ($url !== null) return $url;
+        }
+        return function_exists('build_final_redirect_url') ? build_final_redirect_url($pdo, $main_product_id, $payment_id, $redirect_url_after_approval . '?payment_id=' . $payment_id, $base_url_funnel) : ($redirect_url_after_approval . '?payment_id=' . $payment_id);
+    };
 
     log_process("Webhook URL gerada: " . $webhook_url);
     $checkout_session_uuid = uniqid('checkout_') . bin2hex(random_bytes(8));
@@ -278,7 +294,7 @@ try {
                     'qr_code' => $res_data['qr_code'] ?? '',
                     'payment_id' => $payment_id
                 ],
-                'redirect_url_after_approval' => $redirect_url_after_approval . '?payment_id=' . $payment_id
+                'redirect_url_after_approval' => $redirect_url_computed($payment_id)
             ]);
 
         } else {
@@ -310,11 +326,13 @@ try {
             throw new Exception("Credenciais Efí não configuradas completamente.");
         }
         
-        $certificate_path_normalized = str_replace('\\', '/', $certificate_path);
+        $certificate_path_normalized = ltrim(str_replace('\\', '/', $certificate_path), '/');
         $full_cert_path = __DIR__ . '/' . $certificate_path_normalized;
         
         if (!file_exists($full_cert_path)) {
-            throw new Exception("Certificado Efí não encontrado.");
+            log_process("Efí Pix: Certificado não encontrado. Caminho verificado: " . realpath(__DIR__) . '/' . $certificate_path_normalized);
+            $msg = "Certificado Efí não encontrado. Verifique se o arquivo existe em uploads/certificados/ e se foi enviado em Integrações.";
+            throw new Exception($msg);
         }
         
         $token_data = efi_get_access_token($client_id, $client_secret, $full_cert_path);
@@ -388,7 +406,7 @@ try {
                 'qr_code' => $pix_result['qr_code'] ?? '',
                 'payment_id' => $payment_id
             ],
-            'redirect_url_after_approval' => $redirect_url_after_approval . '?payment_id=' . $payment_id
+            'redirect_url_after_approval' => $redirect_url_computed($payment_id)
         ]);
 
     // ==========================================================
@@ -457,7 +475,7 @@ try {
         
         $response_data = ['status' => $status, 'payment_id' => $payment_id];
         if ($status === 'approved') {
-            $response_data['redirect_url'] = $redirect_url_after_approval . '?payment_id=' . $payment_id;
+            $response_data['redirect_url'] = $redirect_url_computed($payment_id);
         }
         returnJsonSuccess($response_data);
 
@@ -527,7 +545,7 @@ try {
         
         $response_data = ['status' => $status, 'payment_id' => $payment_id];
         if ($status === 'approved') {
-            $response_data['redirect_url'] = $redirect_url_after_approval . '?payment_id=' . $payment_id;
+            $response_data['redirect_url'] = $redirect_url_computed($payment_id);
         }
         returnJsonSuccess($response_data);
 
@@ -560,9 +578,11 @@ try {
             throw new Exception("Valor inválido.");
         }
         
-        $full_cert_path = __DIR__ . '/' . str_replace('\\', '/', $certificate_path);
+        $certificate_path_normalized = ltrim(str_replace('\\', '/', $certificate_path), '/');
+        $full_cert_path = __DIR__ . '/' . $certificate_path_normalized;
         if (!file_exists($full_cert_path)) {
-            throw new Exception("Certificado Efí não encontrado.");
+            log_process("Efí Cartão: Certificado não encontrado. Caminho: " . realpath(__DIR__) . '/' . $certificate_path_normalized);
+            throw new Exception("Certificado Efí não encontrado. Verifique se o arquivo existe em uploads/certificados/ e se foi enviado em Integrações.");
         }
         
         $token_data = efi_get_charges_access_token($client_id, $client_secret, $full_cert_path);
@@ -642,7 +662,7 @@ try {
         
         $response_data = ['status' => $status, 'payment_id' => $payment_id];
         if ($status === 'approved') {
-            $response_data['redirect_url'] = $redirect_url_after_approval . '?payment_id=' . $payment_id;
+            $response_data['redirect_url'] = $redirect_url_computed($payment_id);
         }
         returnJsonSuccess($response_data);
 
@@ -765,12 +785,12 @@ try {
                         'qr_code' => $res_data['point_of_interaction']['transaction_data']['qr_code'],
                         'payment_id' => $payment_id
                     ],
-                    'redirect_url_after_approval' => $redirect_url_after_approval . '?payment_id=' . $payment_id
+                    'redirect_url_after_approval' => $redirect_url_computed($payment_id)
                 ]);
             }
 
             $response_front = ['status' => $status, 'message' => 'Processado.'];
-            if ($status == 'approved') $response_front['redirect_url'] = $redirect_url_after_approval . '?payment_id=' . $payment_id;
+            if ($status == 'approved') $response_front['redirect_url'] = $redirect_url_computed($payment_id);
             returnJsonSuccess($response_front);
 
         } else {

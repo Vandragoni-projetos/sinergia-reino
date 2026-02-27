@@ -89,11 +89,14 @@
             <i data-lucide="image" class="w-5 h-5 text-[#32e768]"></i>
             Capa do Produto
         </h2>
-        <div class="bg-dark-elevated p-6 rounded-lg border border-dark-border">
+        <div class="bg-dark-elevated p-6 rounded-lg border border-dark-border space-y-4">
             <div class="relative group">
                 <div class="w-full h-64 bg-dark-card rounded-xl overflow-hidden border-2 border-dark-border border-dashed flex items-center justify-center relative">
-                    <?php if (!empty($produto['foto'])): ?>
-                        <img src="<?php echo $upload_dir . htmlspecialchars($produto['foto']); ?>" id="preview-img" class="absolute inset-0 w-full h-full object-cover">
+                    <?php
+                    $foto_src = !empty($produto['foto']) ? resolve_product_image_url($produto['foto'], $upload_dir ?? 'uploads/') : '';
+                    ?>
+                    <?php if (!empty($foto_src)): ?>
+                        <img src="<?php echo htmlspecialchars($foto_src); ?>" id="preview-img" class="absolute inset-0 w-full h-full object-cover">
                     <?php else: ?>
                         <img id="preview-img" class="absolute inset-0 w-full h-full object-cover hidden">
                         <div id="placeholder-img" class="text-center p-4">
@@ -110,7 +113,16 @@
                 </div>
                 <input type="file" id="foto" name="foto" class="hidden" accept="image/png, image/jpeg, image/webp" onchange="previewImage(this)">
             </div>
-            <p class="text-xs text-gray-400 mt-2 text-center">Recomendado: 800x800px (JPG/PNG/WebP)</p>
+            <div>
+                <label for="foto_url_externa" class="block text-gray-300 text-sm font-medium mb-2">
+                    <i data-lucide="link" class="w-4 h-4 inline mr-1"></i> Ou use URL externa (WordPress, CDN, etc.)
+                </label>
+                <input type="url" id="foto_url_externa" name="foto_url_externa" class="form-input" placeholder="https://seusite.com/imagem.jpg"
+                       value="<?php echo (!empty($produto['foto']) && filter_var($produto['foto'], FILTER_VALIDATE_URL)) ? htmlspecialchars($produto['foto']) : ''; ?>"
+                       oninput="previewImageFromUrl(this.value)">
+                <p class="text-xs text-gray-400 mt-1">Cole a URL da imagem. Se preenchido, substitui o upload e evita perda de imagens no deploy.</p>
+            </div>
+            <p class="text-xs text-gray-400 text-center">Recomendado: 800x800px (JPG/PNG/WebP). Upload ou URL externa.</p>
         </div>
     </div>
 
@@ -209,6 +221,21 @@ function previewImage(input) {
             if (placeholder) placeholder.classList.add('hidden');
         }
         reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function previewImageFromUrl(url) {
+    const preview = document.getElementById('preview-img');
+    const placeholder = document.getElementById('placeholder-img');
+    const trimmed = (url || '').trim();
+    if (trimmed && (trimmed.startsWith('http://') || trimmed.startsWith('https://'))) {
+        preview.src = trimmed;
+        preview.classList.remove('hidden');
+        if (placeholder) placeholder.classList.add('hidden');
+    } else if (!document.getElementById('foto')?.files?.length) {
+        preview.classList.add('hidden');
+        preview.src = '';
+        if (placeholder) placeholder.classList.remove('hidden');
     }
 }
 

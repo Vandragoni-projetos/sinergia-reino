@@ -2,7 +2,7 @@
 require __DIR__ . '/config/config.php';
 include __DIR__ . '/config/load_settings.php';
 
-// Se vier payment_id, redireciona para obrigado
+// Se vier payment_id, redireciona para obrigado (não confundir com funnel_main que é o payment_id da compra principal no funil)
 $payment_id = $_GET['payment_id'] ?? null;
 if ($payment_id) {
     header('Location: /obrigado?payment_id=' . urlencode($payment_id));
@@ -10,6 +10,18 @@ if ($payment_id) {
 }
 
 $checkout_hash = $_GET['p'] ?? null;
+// Etapa 4: parâmetros do funil (prefill + redirect pós-pagamento)
+$prefill_token_raw = isset($_GET['prefill_token']) ? trim((string) $_GET['prefill_token']) : '';
+$prefill_token = preg_match('/^[a-f0-9]{32}$/', $prefill_token_raw) ? $prefill_token_raw : null;
+$funnel_main_get = isset($_GET['funnel_main']) ? preg_replace('/[^a-zA-Z0-9_\-]/', '', substr(trim((string) $_GET['funnel_main']), 0, 128)) : '';
+$funnel_step_get = isset($_GET['funnel_step']) ? strtolower(trim((string) $_GET['funnel_step'])) : '';
+if (!in_array($funnel_step_get, ['upsell', 'downsell'], true)) $funnel_step_get = '';
+$prefill_name = '';
+$prefill_email = '';
+$prefill_phone = '';
+$prefill_cpf = '';
+$funnel_main_payment_id = $funnel_main_get !== '' ? $funnel_main_get : null;
+$funnel_step_param = $funnel_step_get !== '' ? $funnel_step_get : null;
 $oferta_hash = $_GET['oferta'] ?? null;
 
 if (!$checkout_hash) {
@@ -105,11 +117,12 @@ try {
 
     $infoprodutor_id = $produto['usuario_id'];
     
-    // Busca o nome do vendedor e as public keys (MP, Beehive, Hypercash e Efí)
-    $stmt_vendedor = $pdo->prepare("SELECT nome, mp_public_key, beehive_public_key, hypercash_public_key, efi_payee_code FROM usuarios WHERE id = ?");
+    // Busca o nome do vendedor e as public keys (MP, Stripe, Beehive, Hypercash e Efí)
+    $stmt_vendedor = $pdo->prepare("SELECT nome, mp_public_key, stripe_publishable_key, beehive_public_key, hypercash_public_key, efi_payee_code FROM usuarios WHERE id = ?");
     $stmt_vendedor->execute([$infoprodutor_id]);
     $vendedor_data = $stmt_vendedor->fetch(PDO::FETCH_ASSOC);
     $public_key = $vendedor_data['mp_public_key'] ?? '';
+    $stripe_publishable_key = $vendedor_data['stripe_publishable_key'] ?? '';
     $beehive_public_key = $vendedor_data['beehive_public_key'] ?? '';
     $hypercash_public_key = $vendedor_data['hypercash_public_key'] ?? '';
     $efi_payee_code = $vendedor_data['efi_payee_code'] ?? '';
@@ -117,6 +130,21 @@ try {
 
 } catch (PDOException $e) {
     die("Erro de banco de dados: " . $e->getMessage());
+}
+
+// Etapa 4: prefill a partir do funil (uso único do token)
+if ($prefill_token) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    if (!empty($_SESSION['checkout_prefill'][$prefill_token])) {
+        $data = $_SESSION['checkout_prefill'][$prefill_token];
+        $prefill_name = isset($data['nome']) ? (string) $data['nome'] : '';
+        $prefill_email = isset($data['email']) ? (string) $data['email'] : '';
+        $prefill_phone = isset($data['telefone']) ? (string) $data['telefone'] : '';
+        $prefill_cpf = isset($data['cpf']) ? (string) $data['cpf'] : '';
+        unset($_SESSION['checkout_prefill'][$prefill_token]);
+    }
 }
 
 $orderbump_active = !empty($order_bumps) && !$is_free_product; // Desabilita order bumps para produtos grátis
@@ -201,7 +229,7 @@ if (isset($payment_methods_config['ticket']['enabled']) && $payment_methods_conf
 // Variáveis de Resumo
 $main_price = floatval($produto['preco']);
 $main_name = !empty($checkout_config['summary']['product_name']) ? $checkout_config['summary']['product_name'] : $produto['nome'];
-$main_image = 'uploads/' . htmlspecialchars($produto['foto'] ?: 'placeholder.png');
+$main_image = resolve_product_image_url($produto['foto'] ?? '', 'uploads/') ?: '/uploads/placeholder.png';
 $formattedMainPrice = $is_free_product ? 'Grátis' : 'R$ ' . number_format($main_price, 2, ',', '.');
 $preco_anterior_raw = !empty($produto['preco_anterior']) ? floatval($produto['preco_anterior']) : null;
 $formattedPrecoAnterior = ($preco_anterior_raw && !$is_free_product) ? 'R$ ' . number_format($preco_anterior_raw, 2, ',', '.') : null;
@@ -282,7 +310,7 @@ function render_order_bumps_section($order_bumps_array) {
     if (empty($order_bumps_array)) return '';
     $html = "<div data-id='order_bump' class='space-y-6'>";
     foreach($order_bumps_array as $index => $bump) {
-        $ob_image = 'uploads/' . htmlspecialchars($bump['ob_foto'] ?: 'placeholder.png');
+        $ob_image = resolve_product_image_url($bump['ob_foto'] ?? '', 'uploads/') ?: '/uploads/placeholder.png';
         $ob_headline = htmlspecialchars($bump['headline']);
         $ob_description = htmlspecialchars($bump['description']);
         $ob_name = htmlspecialchars($bump['ob_nome']);
@@ -656,6 +684,9 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         $html .= "<div class='payment-method-container hidden' data-method-type='credit_card_stripe'>";
         $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
         $html .= "<div class='border-2 border-indigo-500 bg-indigo-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='credit-card' class='w-6 h-6 text-indigo-600'></i><span class='font-bold text-gray-800'>Cartão de Crédito (Stripe)</span></div><div class='w-5 h-5 rounded-full border-4 border-indigo-500'></div></div>";
+        $html .= "<div id='stripe-card-loading' class='flex flex-col items-center justify-center py-8 text-gray-500'><svg class='animate-spin h-8 w-8' style='color: {$accentColor};' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z'></path></svg><p class='mt-4 font-medium'>Carregando pagamento seguro...</p></div>";
+        $html .= "<div id='stripe-card-element' class='p-4 border border-gray-300 rounded-lg bg-white'></div>";
+        $html .= "<div id='stripe-card-error' class='mt-2 text-sm text-red-500 hidden'></div>";
         $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Aprovação imediata</p><p>• 100% Seguro e criptografado</p></div>";
         $html .= "<button type='button' id='btn-pagar-stripe-card' class='w-full bg-indigo-600 text-white font-bold py-4 rounded-lg hover:bg-indigo-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
         $html .= "</div></div>";
@@ -772,6 +803,14 @@ function render_sales_notification($config, $produto_nome_fallback) {
     <script src="https://sdk.mercadopago.com/js/v2"></script>
     <?php endif; ?>
     
+    <?php 
+    // Carregar Stripe v3 APENAS se houver métodos Stripe habilitados E tiver publishable_key
+    $has_stripe_methods_for_script = (($credit_card_stripe_enabled ?? false) || ($pix_stripe_enabled ?? false));
+    $should_load_stripe_script = $has_stripe_methods_for_script && !empty($stripe_publishable_key) && !isset($_GET['preview']);
+    if ($should_load_stripe_script): ?>
+    <script src="https://js.stripe.com/v3/"></script>
+    <?php endif; ?>
+
     <?php 
     // Carregar Beehive SDK APENAS se houver método Beehive habilitado E tiver public_key
     $should_load_beehive_script = $credit_card_beehive_enabled && !empty($beehive_public_key) && !isset($_GET['preview']);
@@ -927,14 +966,14 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     <section data-id="customer_info">
                         <div class="flex items-center gap-2.5 mb-4"><i data-lucide="clipboard-list" class="w-6 h-6 text-gray-700"></i><h2 class="text-xl font-semibold text-gray-800">Seus dados</h2></div>
                         <div class="space-y-4">
-                            <div><label for="name" class="block text-sm font-medium text-gray-700">Qual é o seu nome completo?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="user" class="w-5 h-5 text-gray-400"></i></div><input type="text" id="name" name="name" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="Nome da Silva"></div></div>
-                            <div><label for="email" class="block text-sm font-medium text-gray-700">Qual é o seu e-mail?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="mail" class="w-5 h-5 text-gray-400"></i></div><input type="email" id="email" name="email" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="Digite o e-mail que receberá o produto"></div></div>
+                            <div><label for="name" class="block text-sm font-medium text-gray-700">Qual é o seu nome completo?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="user" class="w-5 h-5 text-gray-400"></i></div><input type="text" id="name" name="name" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="Nome da Silva" value="<?php echo htmlspecialchars($prefill_name); ?>"></div></div>
+                            <div><label for="email" class="block text-sm font-medium text-gray-700">Qual é o seu e-mail?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="mail" class="w-5 h-5 text-gray-400"></i></div><input type="email" id="email" name="email" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="Digite o e-mail que receberá o produto" value="<?php echo htmlspecialchars($prefill_email); ?>"></div></div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <?php if (($customer_fields_config['enable_phone'] ?? true)): ?>
-                                <div><label for="phone" class="block text-sm font-medium text-gray-700">Qual é o número do seu celular?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="smartphone" class="w-5 h-5 text-gray-400"></i></div><input type="tel" id="phone" name="phone" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="(11) 99999-9999"></div></div>
-                                <?php else: ?><input type="hidden" id="phone" name="phone" value="(00) 00000-0000"><?php endif; ?>
+                                <div><label for="phone" class="block text-sm font-medium text-gray-700">Qual é o número do seu celular?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="smartphone" class="w-5 h-5 text-gray-400"></i></div><input type="tel" id="phone" name="phone" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="(11) 99999-9999" value="<?php echo htmlspecialchars($prefill_phone); ?>"></div></div>
+                                <?php else: ?><input type="hidden" id="phone" name="phone" value="<?php echo htmlspecialchars($prefill_phone !== '' ? $prefill_phone : '(00) 00000-0000'); ?>"><?php endif; ?>
                                 <?php if (($customer_fields_config['enable_cpf'] ?? true)): ?>
-                                <div><label for="cpf" class="block text-sm font-medium text-gray-700">Qual é o seu CPF/CNPJ?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="file-text" class="w-5 h-5 text-gray-400"></i></div><input type="text" id="cpf" name="cpf" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="Preencha seu CPF/CNPJ"></div></div>
+                                <div><label for="cpf" class="block text-sm font-medium text-gray-700">Qual é o seu CPF/CNPJ?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="file-text" class="w-5 h-5 text-gray-400"></i></div><input type="text" id="cpf" name="cpf" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="Preencha seu CPF/CNPJ" value="<?php echo htmlspecialchars($prefill_cpf); ?>"></div></div>
                                 <?php else: ?><input type="hidden" id="cpf" name="cpf" value="000.000.000-00"><?php endif; ?>
                             </div>
                             <div class="text-left">
@@ -1372,10 +1411,16 @@ function render_sales_notification($config, $produto_nome_fallback) {
             const infoprodutorId = <?php echo (int)$infoprodutor_id; ?>;
             const mainProductId = <?php echo (int)$produto['id']; ?>;
             const ofertaId = <?php echo isset($produto['oferta_id']) ? (int)$produto['oferta_id'] : 'null'; ?>;
+            const funnelMainPaymentId = <?php echo $funnel_main_payment_id ? json_encode($funnel_main_payment_id) : 'null'; ?>;
+            const funnelStepParam = <?php echo $funnel_step_param ? json_encode($funnel_step_param) : 'null'; ?>;
             const activeGateway = '<?php echo $gateway; ?>';
             let currentAmount = mainProductPrice;
             let acceptedOrderBumps = [];
             let selectedPaymentMethod = null; // Declarado aqui para evitar erro de referência
+            const stripePublishableKey = '<?php echo htmlspecialchars($stripe_publishable_key ?? '', ENT_QUOTES, 'UTF-8'); ?>';
+            let stripeInstance = null;
+            let stripeElements = null;
+            let stripeCardElement = null;
             
             // Configuração de desconto Pix
             const pixDiscountConfig = {
@@ -1618,11 +1663,13 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     updateSummaryAndTotal();
                     // Atualizar Payment Brick se método MP estiver selecionado
                     if (selectedPaymentMethod === 'credit_card' || selectedPaymentMethod === 'ticket' || selectedPaymentMethod === 'pix_mercadopago') {
-                        const currentEmail = emailInput.value;
-                        if (currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)) {
-                            initializePaymentBrickForMethod(selectedPaymentMethod, currentEmail, currentAmount);
-                        } else {
-                            initializePaymentBrickForMethod(selectedPaymentMethod, null, currentAmount);
+                        if (typeof initializePaymentBrickForMethod === 'function') {
+                            const currentEmail = emailInput.value;
+                            if (currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)) {
+                                initializePaymentBrickForMethod(selectedPaymentMethod, currentEmail, currentAmount);
+                            } else {
+                                initializePaymentBrickForMethod(selectedPaymentMethod, null, currentAmount);
+                            }
                         }
                     }
                 });
@@ -1668,7 +1715,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     cpf: cpfEl ? cpfEl.value : '',
                     product_id: mainProductId,
                     oferta_id: ofertaId,
-                    checkout_session_uuid: checkoutSessionUUID
+                    checkout_session_uuid: checkoutSessionUUID,
+                    funnel_main_payment_id: funnelMainPaymentId,
+                    funnel_step: funnelStepParam
                 };
 
                 if (!payerData.name || !payerData.email) { showAlert('Por favor, preencha o nome e o e-mail.'); return null; }
@@ -1678,6 +1727,57 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 if (isCpfActive && !payerData.cpf) { showAlert('Por favor, preencha o CPF/CNPJ.'); return null; }
                 
                 return payerData;
+            }
+
+            // --- LÓGICA STRIPE (cartão) ---
+            function initializeStripeCard() {
+                const loadingEl = document.getElementById('stripe-card-loading');
+                const errorEl = document.getElementById('stripe-card-error');
+                const cardEl = document.getElementById('stripe-card-element');
+                if (errorEl) { errorEl.classList.add('hidden'); errorEl.textContent = ''; }
+
+                if (!stripePublishableKey) {
+                    console.warn('Stripe publishable key ausente.');
+                    if (errorEl) { errorEl.textContent = 'Stripe não configurado.'; errorEl.classList.remove('hidden'); }
+                    if (loadingEl) loadingEl.classList.add('hidden');
+                    return;
+                }
+                if (typeof Stripe === 'undefined') {
+                    console.warn('Stripe.js não carregado.');
+                    if (errorEl) { errorEl.textContent = 'Falha ao carregar o Stripe.'; errorEl.classList.remove('hidden'); }
+                    if (loadingEl) loadingEl.classList.add('hidden');
+                    return;
+                }
+                if (!cardEl) {
+                    console.warn('Container do cartão Stripe não encontrado.');
+                    if (loadingEl) loadingEl.classList.add('hidden');
+                    return;
+                }
+
+                if (!stripeInstance) {
+                    stripeInstance = Stripe(stripePublishableKey);
+                    stripeElements = stripeInstance.elements();
+                }
+                if (!stripeCardElement) {
+                    stripeCardElement = stripeElements.create('card', {
+                        style: {
+                            base: {
+                                color: '#111827',
+                                fontFamily: 'Inter, sans-serif',
+                                fontSize: '16px',
+                                '::placeholder': { color: '#9ca3af' }
+                            }
+                        }
+                    });
+                    stripeCardElement.mount('#stripe-card-element');
+                    stripeCardElement.on('change', (event) => {
+                        if (errorEl) {
+                            errorEl.textContent = event.error ? event.error.message : '';
+                            errorEl.classList.toggle('hidden', !event.error);
+                        }
+                    });
+                }
+                if (loadingEl) loadingEl.classList.add('hidden');
             }
 
             // --- LÓGICA DE SELEÇÃO DE MÉTODOS DE PAGAMENTO ---
@@ -1720,13 +1820,24 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 // Atualizar total com desconto Pix se aplicável
                 updateSummaryAndTotal();
                 
-                // Se for método do Mercado Pago, inicializar Payment Brick
+                // Se for método do Mercado Pago, inicializar Payment Brick (com proteção)
                 if (methodType === 'credit_card' || methodType === 'ticket' || methodType === 'pix_mercadopago') {
-                    const currentEmail = emailInput.value;
-                    if (currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)) {
-                        initializePaymentBrickForMethod(methodType, currentEmail, currentAmount);
+                    if (typeof initializePaymentBrickForMethod === 'function') {
+                        const currentEmail = emailInput.value;
+                        if (currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)) {
+                            initializePaymentBrickForMethod(methodType, currentEmail, currentAmount);
+                        } else {
+                            initializePaymentBrickForMethod(methodType, null, currentAmount);
+                        }
                     } else {
-                        initializePaymentBrickForMethod(methodType, null, currentAmount);
+                        console.warn('initializePaymentBrickForMethod não disponível.');
+                    }
+                }
+
+                // Se for Stripe cartão, inicializar Stripe Elements
+                if (methodType === 'credit_card_stripe') {
+                    if (typeof initializeStripeCard === 'function') {
+                        initializeStripeCard();
                     }
                 }
                 
@@ -1760,6 +1871,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ 
                                 ...payerData,
+                                product_id: mainProductId,
                                 payment_method_id: 'pix', // Força Pix para PushinPay
                                 transaction_amount: parseFloat(currentAmount).toFixed(2),
                                 order_bump_product_ids: acceptedOrderBumps,
@@ -1780,7 +1892,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         const result = await response.json();
 
                         if (response.ok && result.status === 'pix_created') {
-                            showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'pushinpay');
+                            showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'pushinpay', result.redirect_url_after_approval || null);
                         } else {
                             showRejectedModal(result.error || 'Erro ao gerar Pix.');
                         }
@@ -1816,6 +1928,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ 
                                 ...payerData,
+                                product_id: mainProductId,
                                 payment_method_id: 'pix',
                                 transaction_amount: parseFloat(currentAmount).toFixed(2),
                                 order_bump_product_ids: acceptedOrderBumps,
@@ -1835,7 +1948,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         const result = await response.json();
 
                         if (response.ok && result.status === 'pix_created') {
-                            showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'efi');
+                            showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'efi', result.redirect_url_after_approval || null);
                         } else {
                             showAlert(result.error || 'Erro ao gerar Pix. Tente novamente mais tarde.');
                         }
@@ -1863,11 +1976,11 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         const response = await fetch('/process_payment', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ ...payerData, payment_method_id: 'pix', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: 'pagarme' })
+                            body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: 'pix', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: 'pagarme' })
                         });
                         const result = await response.json();
                         if (response.ok && result.status === 'pix_created') {
-                            showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'pagarme');
+                            showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'pagarme', result.redirect_url_after_approval || null);
                         } else {
                             showRejectedModal(result.error || 'Erro ao gerar Pix.');
                         }
@@ -1889,11 +2002,11 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         const response = await fetch('/process_payment', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ ...payerData, payment_method_id: 'pix', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: 'stripe' })
+                            body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: 'pix', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: 'stripe' })
                         });
                         const result = await response.json();
                         if (response.ok && result.status === 'pix_created') {
-                            showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'stripe');
+                            showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'stripe', result.redirect_url_after_approval || null);
                         } else if (response.ok && result.checkout_url) {
                             window.location.href = result.checkout_url;
                         } else {
@@ -1921,7 +2034,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             const response = await fetch('/process_payment', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ ...payerData, payment_method_id: gateway.includes('ticket') ? 'ticket' : 'credit_card', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: gateway })
+                                body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: gateway.includes('ticket') ? 'ticket' : 'credit_card', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: gateway })
                             });
                             const result = await response.json();
                             if (response.ok && result.checkout_url) window.location.href = result.checkout_url;
@@ -2009,6 +2122,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 ...payerData,
+                                product_id: mainProductId,
                                 card_token: cardToken,
                                 transaction_amount: parseFloat(currentAmount).toFixed(2),
                                 order_bump_product_ids: acceptedOrderBumps,
@@ -2114,6 +2228,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 ...payerData,
+                                product_id: mainProductId,
                                 card_token: cardToken,
                                 card_data: cardDataForApi,
                                 transaction_amount: parseFloat(currentAmount).toFixed(2),
@@ -2254,6 +2369,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
                                     ...payerData,
+                                    product_id: mainProductId,
                                     payment_token: paymentTokenValue,
                                     transaction_amount: parseFloat(currentAmount).toFixed(2),
                                     installments: 1,
@@ -2428,6 +2544,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                     body: JSON.stringify({ 
                                         ...formData, 
                                         ...payerData,
+                                        product_id: mainProductId,
                                         transaction_amount: parseFloat(currentAmount).toFixed(2),
                                         order_bump_product_ids: acceptedOrderBumps,
                                         utm_parameters: utmParameters,
@@ -2449,7 +2566,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                 } 
                                 // PRIORIDADE 2: PIX criado
                                 else if (response.ok && result.status === 'pix_created') {
-                                    showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'mercadopago');
+                                    showPixModal(result.pix_data.qr_code_base64, result.pix_data.qr_code, result.pix_data.payment_id, 'mercadopago', result.redirect_url_after_approval || null);
                                 } 
                                 // PRIORIDADE 3: Pagamento aprovado
                                 else if (response.ok && result.status === 'approved') {
@@ -2470,9 +2587,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                     const isPix = formData.payment_method_id === 'pix' || selectedPaymentMethod === 'pix_mercadopago';
                                     
                                     if (isPix && result.payment_id) {
-                                        // Para Pix, mostra modal do Pix com polling
-                                        startPaymentCheck(result.payment_id, infoprodutorId, 'mercadopago');
-                                        showPixModal(null, null, result.payment_id, 'mercadopago');
+                                        // Para Pix, mostra modal do Pix com polling (usa redirect do backend se existir)
+                                        startPaymentCheck(result.payment_id, infoprodutorId, 'mercadopago', result.redirect_url_after_approval || null);
+                                        showPixModal(null, null, result.payment_id, 'mercadopago', result.redirect_url_after_approval || null);
                                     } else {
                                         // Para Cartão, mostra modal de pagamento pendente
                                         showPendingModal();
@@ -2539,7 +2656,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 const currentEmail = emailInput.value;
                 if (currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)) {
                     if (selectedPaymentMethod === 'credit_card' || selectedPaymentMethod === 'ticket' || selectedPaymentMethod === 'pix_mercadopago') {
-                        initializePaymentBrickForMethod(selectedPaymentMethod, currentEmail, currentAmount);
+                        if (typeof initializePaymentBrickForMethod === 'function') {
+                            initializePaymentBrickForMethod(selectedPaymentMethod, currentEmail, currentAmount);
+                        }
                     }
                 }
             }); 
@@ -2596,7 +2715,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 setTimeout(() => { e.target.textContent = 'Copiar'; }, 2000);
             });
 
-            function showPixModal(qrCodeBase64, pixCode, paymentId, gatewayUsed) {
+            function showPixModal(qrCodeBase64, pixCode, paymentId, gatewayUsed, redirectUrlAfterApproval) {
                 if (notificationTimer) clearInterval(notificationTimer);
                 document.getElementById('sales-notification')?.classList.remove('show');
                 
@@ -2643,9 +2762,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     lucide.createIcons(); 
                 }, 10);
                 
-                // Inicia verificação de status se tiver payment_id
+                // Inicia verificação de status se tiver payment_id (usa URL do funil se enviada pelo backend)
                 if (paymentId) {
-                    startPaymentCheck(paymentId, infoprodutorId, gatewayUsed);
+                    startPaymentCheck(paymentId, infoprodutorId, gatewayUsed, redirectUrlAfterApproval);
                 }
             }
 
@@ -2805,7 +2924,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 };
             }
 
-            function startPaymentCheck(paymentId, sellerId, gatewayUsed) {
+            function startPaymentCheck(paymentId, sellerId, gatewayUsed, redirectUrlAfterApproval) {
                 if (paymentCheckInterval) clearInterval(paymentCheckInterval);
                 let attempts = 0;
                 paymentCheckInterval = setInterval(async () => {
@@ -2878,13 +2997,11 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             
                             lucide.createIcons();
                             
-                            // Usa a URL de redirecionamento personalizada ou fallback para obrigado
-                            const finalRedirectUrl = customRedirectUrl || `/obrigado?payment_id=${paymentId}`;
-                            const redirectWithPaymentId = finalRedirectUrl.includes('?') 
-                                ? `${finalRedirectUrl}&payment_id=${paymentId}` 
-                                : `${finalRedirectUrl}?payment_id=${paymentId}`;
-                            
-                            setTimeout(() => { window.location.href = redirectWithPaymentId; }, 2000);
+                            // Prioridade: URL do backend (funil), depois customRedirectUrl, depois obrigado (backend já envia URL com payment_id quando é funil)
+                            const redirectTo = redirectUrlAfterApproval
+                                || (customRedirectUrl ? (customRedirectUrl.includes('?') ? `${customRedirectUrl}&payment_id=${paymentId}` : `${customRedirectUrl}?payment_id=${paymentId}`) : null)
+                                || `/obrigado?payment_id=${paymentId}`;
+                            setTimeout(() => { window.location.href = redirectTo; }, 2000);
                         } else if (result.status === 'error') {
                             // Se houver erro, loga mas continua tentando
                             console.warn('Erro ao verificar status:', result.message || 'Erro desconhecido');
