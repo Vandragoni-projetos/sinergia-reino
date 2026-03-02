@@ -532,18 +532,9 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                                 <!-- IMAGEM (banner do módulo) -->
                                 <div class="relative aspect-[712/1080] bg-gray-700 overflow-hidden">
                                     <?php 
-                                    $module_img_url = '';
-                                    if (!empty($module['imagem_capa_url'])) {
-                                        $caminho_banco = trim($module['imagem_capa_url']);
-                                        if (filter_var($caminho_banco, FILTER_VALIDATE_URL)) {
-                                            $module_img_url = '/media?external=' . urlencode($caminho_banco) . '&produto_id=' . (int)$produto_id;
-                                        } else {
-                                            $file_path_absoluto = __DIR__ . '/../../' . $caminho_banco;
-                                            if (file_exists($file_path_absoluto)) {
-                                                $module_img_url = function_exists('getProtectedMediaUrl') ? getProtectedMediaUrl($caminho_banco, $produto_id) : ('/' . ltrim($caminho_banco, '/'));
-                                            }
-                                        }
-                                    }
+                                    $module_img_url = !empty($module['imagem_capa_url'])
+                                        ? resolve_product_image_url_protected($module['imagem_capa_url'], $upload_dir ?? 'uploads/', $produto_id)
+                                        : '';
                                     $locked_cap = $is_module_locked ? 'grayscale brightness-75 contrast-125' : '';
                                     ?>
                                     <?php if (!empty($module_img_url)): ?>
