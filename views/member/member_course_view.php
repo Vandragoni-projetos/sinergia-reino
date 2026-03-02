@@ -534,7 +534,7 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                                     <?php 
                                     $imagem_capa = '';
                                     if (!empty($module['imagem_capa_url'])) {
-                                        $caminho_banco = $module['imagem_capa_url'];
+                                        $caminho_banco = trim($module['imagem_capa_url']);
                                         if (filter_var($caminho_banco, FILTER_VALIDATE_URL)) {
                                             $imagem_capa = $caminho_banco;
                                         } else {
