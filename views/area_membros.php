@@ -2,6 +2,10 @@
 // Este arquivo é incluído a partir do index.php,
 // então a verificação de login e a conexão com o banco ($pdo) já existem.
 
+if (file_exists(__DIR__ . '/../helpers/image_helper.php')) {
+    require_once __DIR__ . '/../helpers/image_helper.php';
+}
+
 // Obter o ID do usuário logado
 $usuario_id_logado = $_SESSION['id'] ?? 0;
 
@@ -38,6 +42,7 @@ try {
 }
 
 $upload_dir = 'uploads/'; // Pasta onde as imagens estão salvas
+$placeholder_url = 'https://placehold.co/600x400/1f2937/9ca3af?text=Curso+Sem+Imagem';
 ?>
 
 <div class="container mx-auto">
@@ -61,8 +66,14 @@ $upload_dir = 'uploads/'; // Pasta onde as imagens estão salvas
                 <?php foreach ($cursos as $curso): ?>
                     <div class="group bg-dark-elevated rounded-lg overflow-hidden border border-dark-border hover:shadow-xl transition-shadow duration-300 flex flex-col" data-id="<?php echo (int)$curso['id']; ?>">
                         <div class="relative h-64 bg-dark-card">
-                             <?php if ($curso['foto']): ?>
-                                <img src="<?php echo $upload_dir . htmlspecialchars($curso['foto']); ?>" alt="<?php echo htmlspecialchars($curso['nome']); ?>" class="w-full h-full object-cover">
+                             <?php
+                             $course_image = '';
+                             if (!empty($curso['foto'])) {
+                                 $course_image = resolve_product_image_url($curso['foto'], $upload_dir);
+                             }
+                             ?>
+                             <?php if (!empty($course_image)): ?>
+                                <img src="<?php echo htmlspecialchars($course_image); ?>" alt="<?php echo htmlspecialchars($curso['nome']); ?>" class="w-full h-full object-cover" onerror="this.onerror=null; this.src='<?php echo $placeholder_url; ?>';">
                             <?php else: ?>
                                 <div class="w-full h-full flex items-center justify-center">
                                     <i data-lucide="image-off" class="text-gray-500 w-16 h-16"></i>
