@@ -40,6 +40,7 @@ if (($_SESSION['tipo'] ?? '') === 'admin') {
 $cliente_email = $_SESSION['usuario'] ?? '';
 $file_id = isset($_GET['file_id']) ? (int)$_GET['file_id'] : 0;
 $path = isset($_GET['path']) ? trim($_GET['path']) : '';
+$external = isset($_GET['external']) ? trim($_GET['external']) : '';
 $produto_id = isset($_GET['produto_id']) ? (int)$_GET['produto_id'] : 0;
 
 $path_canonical = null;
@@ -74,6 +75,12 @@ if ($file_id > 0 && $produto_id > 0) {
         logUnauthorized();
         sendUnauthorized();
     }
+} elseif (!empty($external)) {
+    // URL externa: será buscada via servidor após validar acesso
+    if (!filter_var($external, FILTER_VALIDATE_URL)) {
+        logUnauthorized();
+        sendUnauthorized();
+    }
 } else {
     logUnauthorized();
     sendUnauthorized();
@@ -93,6 +100,80 @@ if ($produto_id > 0) {
         logUnauthorized();
         sendUnauthorized();
     }
+}
+
+if (!empty($external)) {
+    $url_parts = parse_url($external);
+    $scheme = strtolower($url_parts['scheme'] ?? '');
+    $host = $url_parts['host'] ?? '';
+    if ($scheme !== 'http' && $scheme !== 'https') {
+        logUnauthorized();
+        sendUnauthorized();
+    }
+    if ($host === '' || !empty($url_parts['user']) || !empty($url_parts['pass'])) {
+        logUnauthorized();
+        sendUnauthorized();
+    }
+    $resolved_ip = gethostbyname($host);
+    if (!filter_var($resolved_ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+        logUnauthorized();
+        sendUnauthorized();
+    }
+
+    if (!function_exists('curl_init')) {
+        http_response_code(502);
+        echo json_encode(['error' => 'curl indisponível no servidor']);
+        exit;
+    }
+
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $external,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 3,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT => 12,
+        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+
+    $max_bytes = 5 * 1024 * 1024;
+    $downloaded = 0;
+    curl_setopt($ch, CURLOPT_NOPROGRESS, false);
+    curl_setopt($ch, CURLOPT_PROGRESSFUNCTION, function ($resource, $dl_size, $dl_now) use (&$downloaded, $max_bytes) {
+        $downloaded = (int)$dl_now;
+        if ($downloaded > $max_bytes) {
+            return 1;
+        }
+        return 0;
+    });
+
+    $body = curl_exec($ch);
+    $http_code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $content_type = curl_getinfo($ch, CURLINFO_CONTENT_TYPE) ?: 'application/octet-stream';
+    $curl_err = curl_error($ch);
+    curl_close($ch);
+
+    if ($body === false || $http_code >= 400 || $curl_err) {
+        http_response_code(502);
+        echo json_encode(['error' => 'Falha ao buscar imagem externa']);
+        exit;
+    }
+
+    if (stripos($content_type, 'image/') !== 0) {
+        http_response_code(415);
+        echo json_encode(['error' => 'Conteúdo externo não é imagem']);
+        exit;
+    }
+
+    header('Content-Type: ' . $content_type);
+    header('Content-Length: ' . strlen($body));
+    header('Cache-Control: private, max-age=300');
+    header('Content-Disposition: inline');
+    echo $body;
+    exit;
 }
 
 $base_dir = __DIR__ . '/';
