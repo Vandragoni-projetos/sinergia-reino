@@ -279,9 +279,15 @@ try {
             $should_redirect = true;
             $titulo_modulo = trim($_POST['titulo_modulo']);
             $release_days_modulo = (int)($_POST['release_days_modulo'] ?? 0); 
+            $imagem_capa_modulo_url = trim($_POST['imagem_capa_modulo_url'] ?? '');
             if (!empty($titulo_modulo)) {
-                $stmt = $pdo->prepare("INSERT INTO modulos (curso_id, titulo, release_days) VALUES (?, ?, ?)"); 
-                $stmt->execute([$curso_id, $titulo_modulo, $release_days_modulo]); 
+                if (!empty($imagem_capa_modulo_url) && filter_var($imagem_capa_modulo_url, FILTER_VALIDATE_URL)) {
+                    $stmt = $pdo->prepare("INSERT INTO modulos (curso_id, titulo, imagem_capa_url, release_days) VALUES (?, ?, ?, ?)");
+                    $stmt->execute([$curso_id, $titulo_modulo, $imagem_capa_modulo_url, $release_days_modulo]);
+                } else {
+                    $stmt = $pdo->prepare("INSERT INTO modulos (curso_id, titulo, release_days) VALUES (?, ?, ?)");
+                    $stmt->execute([$curso_id, $titulo_modulo, $release_days_modulo]);
+                }
                 $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Módulo adicionado!</div>";
             } else {
                 $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>O título do módulo não pode estar vazio.</div>";
@@ -294,6 +300,7 @@ try {
             $modulo_id_edit = $_POST['modulo_id'];
             $titulo_modulo_edit = trim($_POST['titulo_modulo']);
             $release_days_edit = (int)($_POST['release_days_modulo'] ?? 0); 
+            $imagem_capa_modulo_url = trim($_POST['imagem_capa_modulo_url'] ?? '');
 
             // Busca dados atuais do módulo para pegar o caminho da imagem antiga
             $stmt_old_mod = $pdo->prepare("SELECT imagem_capa_url FROM modulos WHERE id = ? AND curso_id = ?");
@@ -301,27 +308,36 @@ try {
             $old_module = $stmt_old_mod->fetch(PDO::FETCH_ASSOC);
 
             if ($old_module) {
-                $upload_result = handle_file_upload('imagem_capa_modulo', $upload_dir, $old_module['imagem_capa_url'], $allowed_image_extensions);
-                
-                if (is_array($upload_result) && isset($upload_result['error'])) {
-                    // Erro na validação do arquivo
-                    $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>" . htmlspecialchars($upload_result['error']) . "</div>";
-                } elseif (is_array($upload_result) && isset($upload_result['path'])) {
-                    // Nova imagem enviada com sucesso
-                    $stmt = $pdo->prepare("UPDATE modulos SET titulo = ?, imagem_capa_url = ?, release_days = ? WHERE id = ? AND curso_id = ?"); 
-                    $stmt->execute([$titulo_modulo_edit, $upload_result['path'], $release_days_edit, $modulo_id_edit, $curso_id]); 
-                    $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Módulo atualizado!</div>";
-                } else if (!empty($_POST['remove_imagem_capa_modulo'])) { // Lógica para remover a imagem de capa
-                    if ($old_module['imagem_capa_url'] && file_exists($old_module['imagem_capa_url']) && strpos($old_module['imagem_capa_url'], 'uploads/') === 0) {
+                if (!empty($imagem_capa_modulo_url) && filter_var($imagem_capa_modulo_url, FILTER_VALIDATE_URL)) {
+                    if ($old_module['imagem_capa_url'] && !filter_var($old_module['imagem_capa_url'], FILTER_VALIDATE_URL) && file_exists($old_module['imagem_capa_url']) && strpos($old_module['imagem_capa_url'], 'uploads/') === 0) {
                         unlink($old_module['imagem_capa_url']);
                     }
-                    $stmt = $pdo->prepare("UPDATE modulos SET titulo = ?, imagem_capa_url = NULL, release_days = ? WHERE id = ? AND curso_id = ?"); 
-                    $stmt->execute([$titulo_modulo_edit, $release_days_edit, $modulo_id_edit, $curso_id]); 
-                    $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Módulo e imagem de capa atualizados!</div>";
-                } else { // Se nenhuma imagem nova foi enviada e não foi pedido para remover, atualiza apenas o título
-                    $stmt = $pdo->prepare("UPDATE modulos SET titulo = ?, release_days = ? WHERE id = ? AND curso_id = ?"); 
-                    $stmt->execute([$titulo_modulo_edit, $release_days_edit, $modulo_id_edit, $curso_id]); 
-                     $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Título do módulo atualizado!</div>";
+                    $stmt = $pdo->prepare("UPDATE modulos SET titulo = ?, imagem_capa_url = ?, release_days = ? WHERE id = ? AND curso_id = ?");
+                    $stmt->execute([$titulo_modulo_edit, $imagem_capa_modulo_url, $release_days_edit, $modulo_id_edit, $curso_id]);
+                    $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Módulo atualizado!</div>";
+                } else {
+                    $upload_result = handle_file_upload('imagem_capa_modulo', $upload_dir, $old_module['imagem_capa_url'], $allowed_image_extensions);
+                
+                    if (is_array($upload_result) && isset($upload_result['error'])) {
+                        // Erro na validação do arquivo
+                        $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>" . htmlspecialchars($upload_result['error']) . "</div>";
+                    } elseif (is_array($upload_result) && isset($upload_result['path'])) {
+                        // Nova imagem enviada com sucesso
+                        $stmt = $pdo->prepare("UPDATE modulos SET titulo = ?, imagem_capa_url = ?, release_days = ? WHERE id = ? AND curso_id = ?"); 
+                        $stmt->execute([$titulo_modulo_edit, $upload_result['path'], $release_days_edit, $modulo_id_edit, $curso_id]); 
+                        $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Módulo atualizado!</div>";
+                    } else if (!empty($_POST['remove_imagem_capa_modulo'])) { // Lógica para remover a imagem de capa
+                        if ($old_module['imagem_capa_url'] && file_exists($old_module['imagem_capa_url']) && strpos($old_module['imagem_capa_url'], 'uploads/') === 0) {
+                            unlink($old_module['imagem_capa_url']);
+                        }
+                        $stmt = $pdo->prepare("UPDATE modulos SET titulo = ?, imagem_capa_url = NULL, release_days = ? WHERE id = ? AND curso_id = ?"); 
+                        $stmt->execute([$titulo_modulo_edit, $release_days_edit, $modulo_id_edit, $curso_id]); 
+                        $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Módulo e imagem de capa atualizados!</div>";
+                    } else { // Se nenhuma imagem nova foi enviada e não foi pedido para remover, atualiza apenas o título
+                        $stmt = $pdo->prepare("UPDATE modulos SET titulo = ?, release_days = ? WHERE id = ? AND curso_id = ?"); 
+                        $stmt->execute([$titulo_modulo_edit, $release_days_edit, $modulo_id_edit, $curso_id]); 
+                        $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Título do módulo atualizado!</div>";
+                    }
                 }
             } else {
                  $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>Módulo não encontrado para edição.</div>";
@@ -793,6 +809,11 @@ try {
                 <input type="number" id="release_days_modulo_add" name="release_days_modulo" value="0" min="0" class="form-input-style w-full px-4 py-3 bg-dark-elevated border border-dark-border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#32e768] text-white" placeholder="0 = Liberação imediata">
                 <p class="mt-1 text-xs text-gray-400">Defina quantos dias após a compra do curso este módulo será liberado para o aluno.</p>
             </div>
+            <div>
+                <label for="imagem_capa_modulo_url_add" class="block text-gray-300 text-sm font-semibold mb-2">Imagem de Capa do Módulo (URL)</label>
+                <input type="url" id="imagem_capa_modulo_url_add" name="imagem_capa_modulo_url" placeholder="https://seusite.com/imagem.jpg" class="form-input-style w-full px-4 py-3 bg-dark-elevated border border-dark-border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#32e768] text-white">
+                <p class="mt-1 text-xs text-gray-400">Use uma URL externa para evitar upload.</p>
+            </div>
             <div class="flex justify-end">
                 <button type="submit" name="adicionar_modulo" class="bg-[#32e768] text-white font-bold py-3 px-6 rounded-lg hover:bg-[#28d15e] transition duration-300 flex items-center space-x-2">
                     <i data-lucide="plus" class="w-5 h-5"></i>
@@ -815,8 +836,18 @@ try {
                 <div class="bg-dark-card rounded-lg shadow-md overflow-hidden border border-dark-border">
                     <div class="bg-dark-elevated p-4 flex justify-between items-center border-b border-dark-border">
                         <div class="flex items-center gap-4">
-                            <?php if (!empty($item['modulo']['imagem_capa_url']) && file_exists($item['modulo']['imagem_capa_url'])): ?>
-                                <img src="<?php echo htmlspecialchars($item['modulo']['imagem_capa_url']); ?>" alt="Capa do módulo" class="w-24 h-16 object-cover rounded-md border border-dark-border">
+                            <?php
+                                $module_image_src = '';
+                                if (!empty($item['modulo']['imagem_capa_url'])) {
+                                    if (filter_var($item['modulo']['imagem_capa_url'], FILTER_VALIDATE_URL)) {
+                                        $module_image_src = $item['modulo']['imagem_capa_url'];
+                                    } elseif (file_exists($item['modulo']['imagem_capa_url'])) {
+                                        $module_image_src = '/' . ltrim($item['modulo']['imagem_capa_url'], '/');
+                                    }
+                                }
+                            ?>
+                            <?php if (!empty($module_image_src)): ?>
+                                <img src="<?php echo htmlspecialchars($module_image_src); ?>" alt="Capa do módulo" class="w-24 h-16 object-cover rounded-md border border-dark-border">
                             <?php else: ?>
                                 <div class="w-24 h-16 bg-dark-card rounded-md flex items-center justify-center border border-dark-border">
                                     <i data-lucide="image-off" class="w-8 h-8 text-gray-500"></i>
@@ -837,7 +868,8 @@ try {
                             <button class="edit-module-btn p-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600 transition"
                                 data-modulo-id="<?php echo $item['modulo']['id']; ?>"
                                 data-modulo-titulo="<?php echo htmlspecialchars($item['modulo']['titulo']); ?>"
-                                data-imagem-url="<?php echo htmlspecialchars($item['modulo']['imagem_capa_url'] ?? ''); ?>"
+                                data-imagem-url="<?php echo htmlspecialchars($module_image_src); ?>"
+                                data-imagem-raw="<?php echo htmlspecialchars($item['modulo']['imagem_capa_url'] ?? ''); ?>"
                                 data-release-days="<?php echo htmlspecialchars($item['modulo']['release_days']); ?>">
                                 <i data-lucide="edit" class="w-5 h-5"></i>
                             </button>
@@ -1081,6 +1113,8 @@ try {
                     <label for="imagem_capa_modulo" class="block text-gray-300 text-sm font-semibold mb-2">Imagem de Capa do Módulo</label>
                     <img id="modal-imagem-preview" src="" alt="Preview da imagem" class="w-48 h-auto object-cover rounded-lg border border-dark-border mb-2 hidden">
                     <input type="file" id="imagem_capa_modulo" name="imagem_capa_modulo" class="w-full text-sm text-gray-300 bg-dark-elevated border border-dark-border rounded-lg px-4 py-2 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#32e768]/20 file:text-[#32e768] hover:file:bg-[#32e768]/30 file:cursor-pointer cursor-pointer" accept="image/*">
+                    <label for="imagem_capa_modulo_url" class="block text-gray-300 text-sm font-semibold mt-3 mb-2">Ou use URL externa</label>
+                    <input type="url" id="imagem_capa_modulo_url" name="imagem_capa_modulo_url" class="form-input-style" placeholder="https://seusite.com/imagem.jpg">
                     <label class="mt-2 flex items-center text-sm text-gray-400">
                         <input type="checkbox" name="remove_imagem_capa_modulo" value="1" id="remove_imagem_capa_modulo" class="h-4 w-4 mr-1 bg-dark-elevated border-dark-border text-[#32e768] focus:ring-[#32e768] focus:ring-2 rounded cursor-pointer"> Remover imagem de capa existente
                     </label>
@@ -1121,6 +1155,7 @@ try {
 #edit-lesson-modal textarea,
 #edit-lesson-modal select,
 #edit-module-modal input[type="text"],
+#edit-module-modal input[type="url"],
 #edit-module-modal input[type="number"],
 #edit-module-modal input[type="file"] {
     background-color: #0f1419 !important;
@@ -1461,12 +1496,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const editModuleModal = document.getElementById('edit-module-modal');
     const imgPreview = document.getElementById('modal-imagem-preview');
     const removeImageCheckbox = document.getElementById('remove_imagem_capa_modulo');
+    const moduleCoverUrlInput = document.getElementById('imagem_capa_modulo_url');
     document.querySelectorAll('.edit-module-btn').forEach(button => {
         button.addEventListener('click', function() {
             document.getElementById('modal-modulo-id-edit').value = this.dataset.moduloId;
             document.getElementById('modal-titulo-modulo-edit').value = this.dataset.moduloTitulo;
             document.getElementById('modal-release-days-modulo-edit').value = this.dataset.releaseDays; 
             const imageUrl = this.dataset.imageUrl;
+            const rawImageUrl = this.dataset.imagemRaw || '';
+            if (moduleCoverUrlInput) {
+                moduleCoverUrlInput.value = (rawImageUrl.startsWith('http://') || rawImageUrl.startsWith('https://')) ? rawImageUrl : '';
+            }
             if (imageUrl) {
                 imgPreview.src = imageUrl;
                 imgPreview.classList.remove('hidden');
