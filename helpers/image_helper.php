@@ -22,7 +22,10 @@ function resolve_product_image_url($path, $upload_dir = 'uploads/') {
     }
 
     $upload_dir = rtrim($upload_dir, '/') . '/';
-    return '/' . ltrim($upload_dir . ltrim($p, '/'), '/');
+    $normalized = ltrim($p, '/');
+    $upload_prefix = ltrim($upload_dir, '/');
+    $relative = (stripos($normalized, $upload_prefix) === 0) ? $normalized : ($upload_prefix . $normalized);
+    return '/' . ltrim($relative, '/');
 }
 
 /**
@@ -42,7 +45,9 @@ function resolve_product_image_url_protected($path, $upload_dir = 'uploads/', $p
         return $p;
     }
 
-    $relative = ltrim($upload_dir, '/') . ltrim($p, '/');
+    $normalized = ltrim($p, '/');
+    $upload_prefix = ltrim($upload_dir, '/');
+    $relative = (stripos($normalized, $upload_prefix) === 0) ? $normalized : ($upload_prefix . $normalized);
     if (function_exists('getProtectedMediaUrl')) {
         return getProtectedMediaUrl($relative, $produto_id);
     }
