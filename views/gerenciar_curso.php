@@ -839,10 +839,11 @@ try {
                             <?php
                                 $module_image_src = '';
                                 if (!empty($item['modulo']['imagem_capa_url'])) {
-                                    if (filter_var($item['modulo']['imagem_capa_url'], FILTER_VALIDATE_URL)) {
-                                        $module_image_src = $item['modulo']['imagem_capa_url'];
-                                    } elseif (file_exists($item['modulo']['imagem_capa_url'])) {
-                                        $module_image_src = '/' . ltrim($item['modulo']['imagem_capa_url'], '/');
+                                    $module_image_raw = trim($item['modulo']['imagem_capa_url']);
+                                    if (filter_var($module_image_raw, FILTER_VALIDATE_URL)) {
+                                        $module_image_src = $module_image_raw;
+                                    } elseif (file_exists($module_image_raw)) {
+                                        $module_image_src = '/' . ltrim($module_image_raw, '/');
                                     }
                                 }
                             ?>
