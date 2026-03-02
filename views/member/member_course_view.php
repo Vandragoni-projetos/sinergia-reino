@@ -535,15 +535,24 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                                     $imagem_capa = '';
                                     if (!empty($module['imagem_capa_url'])) {
                                         $caminho_banco = $module['imagem_capa_url'];
-                                        $file_path_absoluto = __DIR__ . '/../../' . $caminho_banco;
-                                        if (file_exists($file_path_absoluto)) {
-                                            $imagem_capa = '/' . $caminho_banco;
+                                        if (filter_var($caminho_banco, FILTER_VALIDATE_URL)) {
+                                            $imagem_capa = $caminho_banco;
+                                        } else {
+                                            $file_path_absoluto = __DIR__ . '/../../' . $caminho_banco;
+                                            if (file_exists($file_path_absoluto)) {
+                                                $imagem_capa = '/' . $caminho_banco;
+                                            }
                                         }
                                     }
                                     $locked_cap = $is_module_locked ? 'grayscale brightness-75 contrast-125' : '';
                                     ?>
                                     <?php if (!empty($imagem_capa)): ?>
-                                        <?php $module_img_url = function_exists('getProtectedMediaUrl') ? getProtectedMediaUrl($module['imagem_capa_url'], $produto_id) : ('/' . ltrim($module['imagem_capa_url'], '/')); ?>
+                                        <?php
+                                        $module_img_url = $imagem_capa;
+                                        if (!filter_var($imagem_capa, FILTER_VALIDATE_URL)) {
+                                            $module_img_url = function_exists('getProtectedMediaUrl') ? getProtectedMediaUrl($module['imagem_capa_url'], $produto_id) : ('/' . ltrim($module['imagem_capa_url'], '/'));
+                                        }
+                                        ?>
                                         <img src="<?php echo htmlspecialchars($module_img_url); ?>" alt="Capa do <?php echo htmlspecialchars($module['titulo']); ?>" class="absolute inset-0 w-full h-full object-cover transition-all duration-300 group-hover:scale-110 block <?php echo $locked_cap; ?>">
                                     <?php else: ?>
                                         <div class="absolute inset-0 bg-gray-700 flex items-center justify-center <?php echo $is_module_locked ? 'opacity-70' : ''; ?>">
