@@ -126,6 +126,35 @@
         </div>
     </div>
 
+    <!-- TAG/Categoria do Produto -->
+    <div>
+        <h2 class="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+            <i data-lucide="tag" class="w-5 h-5 text-[#32e768]"></i>
+            TAG / Categoria
+        </h2>
+        <div class="bg-dark-elevated p-6 rounded-lg border border-dark-border space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label for="product_type" class="block text-gray-300 text-sm font-semibold mb-2">Tipo/Categoria</label>
+                    <select id="product_type" name="product_type" class="form-input cursor-pointer">
+                        <option value="">— Nenhum —</option>
+                        <option value="PLR" <?php echo (($produto['product_type'] ?? '') === 'PLR') ? 'selected' : ''; ?>>🧩 PLR</option>
+                        <option value="QUIZ" <?php echo (($produto['product_type'] ?? '') === 'QUIZ') ? 'selected' : ''; ?>>🧠 QUIZ</option>
+                        <option value="ADS" <?php echo (($produto['product_type'] ?? '') === 'ADS') ? 'selected' : ''; ?>>📢 ADS</option>
+                        <option value="AUTOMACAO" <?php echo (($produto['product_type'] ?? '') === 'AUTOMACAO') ? 'selected' : ''; ?>>⚙️ AUTOMACAO</option>
+                        <option value="APP" <?php echo (($produto['product_type'] ?? '') === 'APP') ? 'selected' : ''; ?>>📱 APP</option>
+                        <option value="FUNIL" <?php echo (($produto['product_type'] ?? '') === 'FUNIL') ? 'selected' : ''; ?>>🔀 FUNIL</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="product_tagline" class="block text-gray-300 text-sm font-semibold mb-2">Tagline (até 40 caracteres)</label>
+                    <input type="text" id="product_tagline" name="product_tagline" maxlength="40" class="form-input" placeholder="Ex: Conteúdo para revenda, Quiz interativo" value="<?php echo htmlspecialchars($produto['product_tagline'] ?? ''); ?>">
+                    <p class="text-xs text-gray-400 mt-1">Exibido abaixo do título no card. Máx. 40 caracteres.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div>
         <h2 class="text-xl font-semibold mb-4 text-white flex items-center gap-2">
             <i data-lucide="truck" class="w-5 h-5 text-[#32e768]"></i>
