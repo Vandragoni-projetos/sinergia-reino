@@ -57,6 +57,8 @@ try {
             p.nome AS produto_nome,
             p.foto AS produto_foto,
             p.is_showcase AS produto_is_showcase,
+            p.product_type AS produto_type,
+            p.product_tagline AS produto_tagline,
             p.usuario_id AS usuario_id,
             c.id AS curso_id,
             c.titulo AS curso_titulo,
@@ -82,6 +84,8 @@ try {
             p.nome AS produto_nome,
             p.foto AS produto_foto,
             p.is_showcase AS produto_is_showcase,
+            p.product_type AS produto_type,
+            p.product_tagline AS produto_tagline,
             c.id AS curso_id,
             c.titulo AS curso_titulo,
             c.descricao AS curso_descricao,
@@ -508,6 +512,20 @@ if (!isset($feed_items_biblioteca)) {
                                     <h3 class="text-2xl font-bold text-white mb-3 line-clamp-2">
                                         <?php echo htmlspecialchars($curso['curso_titulo'] ?? $curso['produto_nome']); ?>
                                     </h3>
+                                    <?php
+                                    $tag_icons = ['PLR' => '🧩', 'QUIZ' => '🧠', 'ADS' => '📢', 'AUTOMACAO' => '⚙️', 'APP' => '📱', 'FUNIL' => '🔀'];
+                                    $ptype = $curso['produto_type'] ?? '';
+                                    $ptag = $curso['produto_tagline'] ?? '';
+                                    $tag_line = '';
+                                    if ($ptype && isset($tag_icons[$ptype])) {
+                                        $tag_line = $tag_icons[$ptype] . ' ' . $ptype . ($ptag ? ' • ' . mb_substr($ptag, 0, 40) : '');
+                                    } elseif ($ptag) {
+                                        $tag_line = mb_substr($ptag, 0, 40);
+                                    }
+                                    ?>
+                                    <?php if ($tag_line): ?>
+                                    <p class="text-xs text-gray-400 mb-2 truncate" title="<?php echo htmlspecialchars($tag_line); ?>"><?php echo htmlspecialchars($tag_line); ?></p>
+                                    <?php endif; ?>
                                     <p class="text-gray-400 text-sm mb-4 line-clamp-3 flex-grow">
                                         <?php echo htmlspecialchars($curso['curso_descricao'] ?? 'Acesse para ver mais detalhes.'); ?>
                                     </p>
@@ -836,6 +854,14 @@ if (!isset($feed_items_biblioteca)) {
                             const linkTarget = offer.custom_link ? 'target="_blank" rel="noopener noreferrer"' : '';
                             const buttonText = offer.custom_button_text ? offer.custom_button_text : `Comprar por ${productPrice}`;
                             const productDescription = offer.product_description || 'Oferta exclusiva para você.';
+                            const tagIcons = { PLR: '🧩', QUIZ: '🧠', ADS: '📢', AUTOMACAO: '⚙️', APP: '📱', FUNIL: '🔀' };
+                            let tagLine = '';
+                            if (offer.product_type && tagIcons[offer.product_type]) {
+                                tagLine = tagIcons[offer.product_type] + ' ' + offer.product_type + (offer.product_tagline ? ' • ' + String(offer.product_tagline).substring(0, 40) : '');
+                            } else if (offer.product_tagline) {
+                                tagLine = String(offer.product_tagline).substring(0, 40);
+                            }
+                            const tagHtml = tagLine ? `<p class="text-xs text-gray-400 mb-2 truncate" title="${escapeHtml(tagLine)}">${escapeHtml(tagLine)}</p>` : '';
                             return `<a href="${checkoutLink}" ${linkTarget} class="group bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-green-500 transition-all duration-300 hover:shadow-xl hover:shadow-green-500/10 flex flex-col h-full">
                                 <div class="relative overflow-hidden">
                                     <img src="${productPhoto}" alt="${escapeHtml(offer.product_name)}" class="w-full h-40 object-cover transition-all duration-300 group-hover:scale-105${lockedImgCls}" onerror="this.onerror=null;this.src='https://placehold.co/280x160/1f2937/d1d5db?text=Produto';">
@@ -845,6 +871,7 @@ if (!isset($feed_items_biblioteca)) {
                                 </div>
                                 <div class="p-4 flex flex-col flex-grow">
                                     <h3 class="text-lg font-bold text-white mb-2 line-clamp-2">${escapeHtml(offer.product_name)}</h3>
+                                    ${tagHtml}
                                     <p class="text-gray-400 text-sm mb-4 line-clamp-2 flex-grow">${escapeHtml(productDescription)}</p>
                                     <span class="mt-auto inline-flex items-center justify-center bg-green-600 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-green-700 transition duration-300 text-sm">${escapeHtml(buttonText)}</span>
                                 </div>
