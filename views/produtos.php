@@ -58,6 +58,9 @@ if (isset($_POST['salvar_produto'])) {
     $descricao = $_POST['descricao'];
     $preco = $_POST['preco'];
     $id_produto = $_POST['id_produto'];
+    $product_type = isset($_POST['product_type']) && in_array($_POST['product_type'], ['PLR', 'QUIZ', 'ADS', 'AUTOMACAO', 'APP', 'FUNIL'], true) ? $_POST['product_type'] : null;
+    $product_tagline = isset($_POST['product_tagline']) ? mb_substr(trim($_POST['product_tagline']), 0, 40) : null;
+    if ($product_tagline === '') $product_tagline = null;
     // Gateway padrão para novos produtos, mantém o existente ao editar
     $gateway = !empty($id_produto) ? ($_POST['gateway'] ?? 'mercadopago') : 'mercadopago';
     
@@ -141,19 +144,19 @@ if (isset($_POST['salvar_produto'])) {
                     $stmt_max->execute($max_params);
                     $nova_ordem = (int) $stmt_max->fetchColumn();
                     if ($has_community) {
-                        $stmt = $pdo->prepare("INSERT INTO produtos (nome, descricao, preco, foto, checkout_hash, tipo_entrega, conteudo_entrega, usuario_id, gateway, ordem, community_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$nome, $descricao, $preco, $nome_foto, $checkout_hash, $tipo_entrega, $conteudo_entrega, $usuario_id, $gateway, $nova_ordem, $community_id]);
+                        $stmt = $pdo->prepare("INSERT INTO produtos (nome, descricao, preco, foto, checkout_hash, tipo_entrega, conteudo_entrega, usuario_id, gateway, ordem, community_id, product_type, product_tagline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$nome, $descricao, $preco, $nome_foto, $checkout_hash, $tipo_entrega, $conteudo_entrega, $usuario_id, $gateway, $nova_ordem, $community_id, $product_type, $product_tagline]);
                     } else {
-                        $stmt = $pdo->prepare("INSERT INTO produtos (nome, descricao, preco, foto, checkout_hash, tipo_entrega, conteudo_entrega, usuario_id, gateway, ordem) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$nome, $descricao, $preco, $nome_foto, $checkout_hash, $tipo_entrega, $conteudo_entrega, $usuario_id, $gateway, $nova_ordem]);
+                        $stmt = $pdo->prepare("INSERT INTO produtos (nome, descricao, preco, foto, checkout_hash, tipo_entrega, conteudo_entrega, usuario_id, gateway, ordem, product_type, product_tagline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$nome, $descricao, $preco, $nome_foto, $checkout_hash, $tipo_entrega, $conteudo_entrega, $usuario_id, $gateway, $nova_ordem, $product_type, $product_tagline]);
                     }
                 } else {
                     if ($has_community) {
-                        $stmt = $pdo->prepare("INSERT INTO produtos (nome, descricao, preco, foto, checkout_hash, tipo_entrega, conteudo_entrega, usuario_id, gateway, community_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$nome, $descricao, $preco, $nome_foto, $checkout_hash, $tipo_entrega, $conteudo_entrega, $usuario_id, $gateway, $community_id]);
+                        $stmt = $pdo->prepare("INSERT INTO produtos (nome, descricao, preco, foto, checkout_hash, tipo_entrega, conteudo_entrega, usuario_id, gateway, community_id, product_type, product_tagline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$nome, $descricao, $preco, $nome_foto, $checkout_hash, $tipo_entrega, $conteudo_entrega, $usuario_id, $gateway, $community_id, $product_type, $product_tagline]);
                     } else {
-                        $stmt = $pdo->prepare("INSERT INTO produtos (nome, descricao, preco, foto, checkout_hash, tipo_entrega, conteudo_entrega, usuario_id, gateway) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$nome, $descricao, $preco, $nome_foto, $checkout_hash, $tipo_entrega, $conteudo_entrega, $usuario_id, $gateway]);
+                        $stmt = $pdo->prepare("INSERT INTO produtos (nome, descricao, preco, foto, checkout_hash, tipo_entrega, conteudo_entrega, usuario_id, gateway, product_type, product_tagline) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$nome, $descricao, $preco, $nome_foto, $checkout_hash, $tipo_entrega, $conteudo_entrega, $usuario_id, $gateway, $product_type, $product_tagline]);
                     }
                 }
 
@@ -187,8 +190,8 @@ if (isset($_POST['salvar_produto'])) {
             }
         } else {
             // Atualizar produto
-            $stmt = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, foto = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ? WHERE id = ? AND usuario_id = ?");
-            $stmt->execute([$nome, $descricao, $preco, $nome_foto, $tipo_entrega, $conteudo_entrega, $gateway, $id_produto, $usuario_id]);
+            $stmt = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, foto = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, product_type = ?, product_tagline = ? WHERE id = ? AND usuario_id = ?");
+            $stmt->execute([$nome, $descricao, $preco, $nome_foto, $tipo_entrega, $conteudo_entrega, $gateway, $product_type, $product_tagline, $id_produto, $usuario_id]);
             if ($stmt->rowCount() > 0) {
                  $mensagem = "<div class='animate-fade-in-down bg-green-900/20 border-l-4 border-green-500 text-green-300 p-4 rounded-md shadow-sm mb-6' role='alert'><div class='flex'><div class='py-1'><i data-lucide='check-circle' class='w-6 h-6 mr-3 text-green-400'></i></div><div><p class='font-bold text-white'>Sucesso</p><p class='text-sm text-green-200'>Produto atualizado com sucesso!</p></div></div></div>";
             } else {
@@ -452,6 +455,27 @@ $produtos = array_filter(array_map(function($item) {
                         <textarea id="descricao" name="descricao" rows="4" class="w-full px-4 py-3 bg-dark-elevated border border-dark-border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#32e768]/20 focus:border-[#32e768] transition-all text-white placeholder-gray-500" placeholder="Descreva os benefícios do seu produto..."><?php echo htmlspecialchars($produto_edit['descricao'] ?? ''); ?></textarea>
                     </div>
 
+                    <!-- TAG/Categoria do Produto -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label for="product_type" class="block text-gray-300 text-sm font-semibold mb-2">Tipo/Categoria</label>
+                            <select id="product_type" name="product_type" class="w-full px-4 py-3 bg-dark-elevated border border-dark-border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#32e768]/20 focus:border-[#32e768] transition-all cursor-pointer text-white">
+                                <option value="">— Nenhum —</option>
+                                <option value="PLR" <?php echo (($produto_edit['product_type'] ?? '') === 'PLR') ? 'selected' : ''; ?>>🧩 PLR</option>
+                                <option value="QUIZ" <?php echo (($produto_edit['product_type'] ?? '') === 'QUIZ') ? 'selected' : ''; ?>>🧠 QUIZ</option>
+                                <option value="ADS" <?php echo (($produto_edit['product_type'] ?? '') === 'ADS') ? 'selected' : ''; ?>>📢 ADS</option>
+                                <option value="AUTOMACAO" <?php echo (($produto_edit['product_type'] ?? '') === 'AUTOMACAO') ? 'selected' : ''; ?>>⚙️ AUTOMACAO</option>
+                                <option value="APP" <?php echo (($produto_edit['product_type'] ?? '') === 'APP') ? 'selected' : ''; ?>>📱 APP</option>
+                                <option value="FUNIL" <?php echo (($produto_edit['product_type'] ?? '') === 'FUNIL') ? 'selected' : ''; ?>>🔀 FUNIL</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="product_tagline" class="block text-gray-300 text-sm font-semibold mb-2">Tagline (até 40 caracteres)</label>
+                            <input type="text" id="product_tagline" name="product_tagline" maxlength="40" class="w-full px-4 py-3 bg-dark-elevated border border-dark-border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#32e768]/20 focus:border-[#32e768] transition-all text-white placeholder-gray-500" placeholder="Ex: Conteúdo para revenda, Quiz interativo" value="<?php echo htmlspecialchars($produto_edit['product_tagline'] ?? ''); ?>">
+                            <p class="text-xs text-gray-400 mt-1">Exibido abaixo do título no card. Máx. 40 caracteres.</p>
+                        </div>
+                    </div>
+
                     <!-- Configuração de Entrega -->
                     <div class="bg-dark-elevated p-6 rounded-xl border border-dark-border">
                         <h3 class="text-sm font-bold text-white uppercase tracking-wide mb-4 flex items-center">
@@ -622,7 +646,20 @@ $produtos = array_filter(array_map(function($item) {
                             <h3 class="font-bold text-white text-lg leading-snug mb-2 line-clamp-2 min-h-[3.5rem]" title="<?php echo htmlspecialchars($produto['nome']); ?>">
                                 <?php echo htmlspecialchars($produto['nome']); ?>
                             </h3>
-                            
+                            <?php
+                            $tag_icons = ['PLR' => '🧩', 'QUIZ' => '🧠', 'ADS' => '📢', 'AUTOMACAO' => '⚙️', 'APP' => '📱', 'FUNIL' => '🔀'];
+                            $ptype = $produto['product_type'] ?? '';
+                            $ptag = $produto['product_tagline'] ?? '';
+                            $tag_line = '';
+                            if ($ptype && isset($tag_icons[$ptype])) {
+                                $tag_line = $tag_icons[$ptype] . ' ' . $ptype . ($ptag ? ' • ' . mb_substr($ptag, 0, 40) : '');
+                            } elseif ($ptag) {
+                                $tag_line = mb_substr($ptag, 0, 40);
+                            }
+                            ?>
+                            <?php if ($tag_line): ?>
+                            <p class="text-xs text-gray-400 mb-2 truncate" title="<?php echo htmlspecialchars($tag_line); ?>"><?php echo htmlspecialchars($tag_line); ?></p>
+                            <?php endif; ?>
                             <div class="mt-auto flex items-end justify-between border-t border-dark-border pt-4">
                                 <div>
                                     <p class="text-xs text-gray-400 uppercase font-semibold">Preço</p>
