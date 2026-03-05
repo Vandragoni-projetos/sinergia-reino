@@ -949,9 +949,10 @@ if (!isset($feed_items_biblioteca)) {
                             const lockedBadgeHtml = isLocked ? '<span class="absolute top-2 right-2 bg-gray-900/90 text-gray-300 text-xs font-semibold px-2 py-1 rounded flex items-center gap-1.5 pointer-events-none"><i data-lucide="lock" class="w-3.5 h-3.5 flex-shrink-0"></i> Bloqueado</span>' : '';
                             const productPhoto = (offer.product_photo && (offer.product_photo.startsWith('http://') || offer.product_photo.startsWith('https://'))) ? offer.product_photo : (offer.product_photo ? uploadDir + offer.product_photo : 'https://placehold.co/280x160/1f2937/d1d5db?text=Produto');
                             const productPrice = formatCurrency(offer.product_price);
-                            const checkoutLink = offer.custom_link ? offer.custom_link : `/checkout?p=${offer.checkout_hash}`;
-                            const linkTarget = offer.custom_link ? 'target="_blank" rel="noopener noreferrer"' : '';
-                            const buttonText = offer.custom_button_text ? offer.custom_button_text : `Comprar por ${productPrice}`;
+                            const hasSalesPageUrl = offer.sales_page_url && String(offer.sales_page_url).trim().length > 0;
+                            const checkoutLink = hasSalesPageUrl ? String(offer.sales_page_url).trim() : (offer.custom_link ? offer.custom_link : `/checkout?p=${offer.checkout_hash}`);
+                            const linkTarget = (hasSalesPageUrl || offer.custom_link) ? 'target="_blank" rel="noopener noreferrer"' : '';
+                            const buttonText = hasSalesPageUrl ? 'Saiba Mais' : (offer.custom_button_text ? offer.custom_button_text : `Comprar por ${productPrice}`);
                             const productDescription = offer.product_description || 'Oferta exclusiva para você.';
                             const tagIcons = { PLR: '🧩', QUIZ: '🧠', ADS: '📢', AUTOMACAO: '⚙️', APP: '📱', FUNIL: '🔀' };
                             let tagLine = '';
