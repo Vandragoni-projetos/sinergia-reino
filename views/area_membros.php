@@ -86,7 +86,7 @@ $placeholder_url = 'https://placehold.co/600x400/1f2937/9ca3af?text=Curso+Sem+Im
                                     <?php echo htmlspecialchars($curso['nome']); ?>
                                 </h3>
                                 <?php
-                                $tag_icons = ['PLR' => '🧩', 'QUIZ' => '🧠', 'ADS' => '📢', 'AUTOMACAO' => '⚙️', 'APP' => '📱', 'FUNIL' => '🔀'];
+                                $tag_icons = getProductTypeIcons();
                                 $ptype = $curso['product_type'] ?? '';
                                 $ptag = $curso['product_tagline'] ?? '';
                                 $tag_line = '';
