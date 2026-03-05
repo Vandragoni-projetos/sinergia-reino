@@ -58,7 +58,7 @@ if (isset($_POST['salvar_produto'])) {
     $descricao = $_POST['descricao'];
     $preco = $_POST['preco'];
     $id_produto = $_POST['id_produto'];
-    $product_type = isset($_POST['product_type']) && in_array($_POST['product_type'], ['PLR', 'QUIZ', 'ADS', 'AUTOMACAO', 'APP', 'FUNIL'], true) ? $_POST['product_type'] : null;
+    $product_type = isset($_POST['product_type']) && in_array($_POST['product_type'], getValidProductTypes(), true) ? $_POST['product_type'] : null;
     $product_tagline = isset($_POST['product_tagline']) ? mb_substr(trim($_POST['product_tagline']), 0, 40) : null;
     if ($product_tagline === '') $product_tagline = null;
     // Gateway padrão para novos produtos, mantém o existente ao editar
@@ -461,12 +461,16 @@ $produtos = array_filter(array_map(function($item) {
                             <label for="product_type" class="block text-gray-300 text-sm font-semibold mb-2">Tipo/Categoria</label>
                             <select id="product_type" name="product_type" class="w-full px-4 py-3 bg-dark-elevated border border-dark-border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#32e768]/20 focus:border-[#32e768] transition-all cursor-pointer text-white">
                                 <option value="">— Nenhum —</option>
-                                <option value="PLR" <?php echo (($produto_edit['product_type'] ?? '') === 'PLR') ? 'selected' : ''; ?>>🧩 PLR</option>
-                                <option value="QUIZ" <?php echo (($produto_edit['product_type'] ?? '') === 'QUIZ') ? 'selected' : ''; ?>>🧠 QUIZ</option>
-                                <option value="ADS" <?php echo (($produto_edit['product_type'] ?? '') === 'ADS') ? 'selected' : ''; ?>>📢 ADS</option>
-                                <option value="AUTOMACAO" <?php echo (($produto_edit['product_type'] ?? '') === 'AUTOMACAO') ? 'selected' : ''; ?>>⚙️ AUTOMACAO</option>
-                                <option value="APP" <?php echo (($produto_edit['product_type'] ?? '') === 'APP') ? 'selected' : ''; ?>>📱 APP</option>
-                                <option value="FUNIL" <?php echo (($produto_edit['product_type'] ?? '') === 'FUNIL') ? 'selected' : ''; ?>>🔀 FUNIL</option>
+                                <?php
+                                $pt_current = $produto_edit['product_type'] ?? '';
+                                foreach (getProductTypeOptions() as $group => $items):
+                                    ?><optgroup label="— <?php echo htmlspecialchars($group); ?> —"><?php
+                                    foreach ($items as $value => $label):
+                                        ?><option value="<?php echo htmlspecialchars($value); ?>" <?php echo $pt_current === $value ? 'selected' : ''; ?>><?php echo htmlspecialchars($label); ?></option><?php
+                                    endforeach;
+                                    ?></optgroup><?php
+                                endforeach;
+                                ?>
                             </select>
                         </div>
                         <div>
@@ -647,7 +651,7 @@ $produtos = array_filter(array_map(function($item) {
                                 <?php echo htmlspecialchars($produto['nome']); ?>
                             </h3>
                             <?php
-                            $tag_icons = ['PLR' => '🧩', 'QUIZ' => '🧠', 'ADS' => '📢', 'AUTOMACAO' => '⚙️', 'APP' => '📱', 'FUNIL' => '🔀'];
+                            $tag_icons = getProductTypeIcons();
                             $ptype = $produto['product_type'] ?? '';
                             $ptag = $produto['product_tagline'] ?? '';
                             $tag_line = '';
