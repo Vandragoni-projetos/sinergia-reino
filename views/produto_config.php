@@ -156,6 +156,11 @@ if (isset($_POST['salvar_produto_config'])) {
                 }
             }
 
+            // TAG/Categoria
+            $product_type = isset($_POST['product_type']) && in_array($_POST['product_type'], ['PLR', 'QUIZ', 'ADS', 'AUTOMACAO', 'APP', 'FUNIL'], true) ? $_POST['product_type'] : null;
+            $product_tagline = isset($_POST['product_tagline']) ? mb_substr(trim($_POST['product_tagline']), 0, 40) : null;
+            if ($product_tagline === '') $product_tagline = null;
+
             // Atualizar dados básicos do produto
             $gera_licenca = isset($_POST['gera_licenca']) ? 1 : 0;
             $is_free = isset($_POST['is_free']) ? 1 : 0;
@@ -173,8 +178,8 @@ if (isset($_POST['salvar_produto_config'])) {
                 $stmt_unset_showcase->execute([$usuario_id, $id_produto]);
             }
             
-            $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, foto = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ? WHERE id = ? AND usuario_id = ?");
-            $result = $stmt_update->execute([$nome, $descricao, $preco, $nome_foto, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $id_produto, $usuario_id]);
+            $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, foto = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ?, product_type = ?, product_tagline = ? WHERE id = ? AND usuario_id = ?");
+            $result = $stmt_update->execute([$nome, $descricao, $preco, $nome_foto, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $product_type, $product_tagline, $id_produto, $usuario_id]);
             
             if (!$result) {
                 throw new Exception("Erro ao atualizar produto: " . implode(", ", $stmt_update->errorInfo()));
