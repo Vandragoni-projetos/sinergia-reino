@@ -306,18 +306,13 @@ if (!isset($feed_items_biblioteca)) {
                         <span class="text-sm text-gray-400 hidden sm:inline">Categoria</span>
                         <select id="category-filter" class="bg-gray-800 border border-gray-600 text-gray-200 text-sm rounded-lg pl-3 pr-8 py-2 focus:ring-2 focus:ring-green-500/50 focus:border-green-500 cursor-pointer appearance-none" title="Filtrar por categoria">
                             <option value="">Todas</option>
-                            <optgroup label="— Produtos Digitais —">
-                                <option value="ADS">📣 ADS</option>
-                                <option value="PLR">🧩 PLR</option>
-                                <option value="QUIZ">🧠 QUIZ</option>
+                            <?php foreach (getProductTypeOptions() as $group => $items): ?>
+                            <optgroup label="— <?php echo htmlspecialchars($group); ?> —">
+                                <?php foreach ($items as $value => $label): ?>
+                                <option value="<?php echo htmlspecialchars($value); ?>"><?php echo htmlspecialchars($label); ?></option>
+                                <?php endforeach; ?>
                             </optgroup>
-                            <optgroup label="— Ferramentas —">
-                                <option value="APP">📱 APP</option>
-                                <option value="AUTOMACAO">⚙️ AUTOMAÇÃO</option>
-                            </optgroup>
-                            <optgroup label="— Criativos —">
-                                <option value="FUNIL">🧲 FUNIL</option>
-                            </optgroup>
+                            <?php endforeach; ?>
                         </select>
                         <i data-lucide="chevron-down" class="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"></i>
                     </div>
@@ -542,7 +537,7 @@ if (!isset($feed_items_biblioteca)) {
                                         <?php echo htmlspecialchars($curso['curso_titulo'] ?? $curso['produto_nome']); ?>
                                     </h3>
                                     <?php
-                                    $tag_icons = ['PLR' => '🧩', 'QUIZ' => '🧠', 'ADS' => '📢', 'AUTOMACAO' => '⚙️', 'APP' => '📱', 'FUNIL' => '🔀'];
+                                    $tag_icons = getProductTypeIcons();
                                     $ptype = $curso['produto_type'] ?? '';
                                     $ptag = $curso['produto_tagline'] ?? '';
                                     $tag_line = '';
@@ -859,6 +854,7 @@ if (!isset($feed_items_biblioteca)) {
         document.addEventListener('DOMContentLoaded', function() {
             const uploadDir = '<?php echo $upload_dir; ?>';
             const blockedOffersGrayscale = <?php echo $blocked_offers_grayscale ? 'true' : 'false'; ?>;
+            const tagIcons = <?php echo json_encode(getProductTypeIcons()); ?>;
 
             const exclusiveOffersLoading = document.getElementById('exclusive-offers-loading');
             const exclusiveOffersEmpty = document.getElementById('exclusive-offers-empty');
@@ -960,7 +956,6 @@ if (!isset($feed_items_biblioteca)) {
                             const linkTarget = (hasSalesPageUrl || offer.custom_link) ? 'target="_blank" rel="noopener noreferrer"' : '';
                             const buttonText = hasSalesPageUrl ? 'Ver detalhes' : (offer.custom_button_text ? offer.custom_button_text : `Comprar por ${productPrice}`);
                             const productDescription = offer.product_description || 'Oferta exclusiva para você.';
-                            const tagIcons = { PLR: '🧩', QUIZ: '🧠', ADS: '📢', AUTOMACAO: '⚙️', APP: '📱', FUNIL: '🔀' };
                             let tagLine = '';
                             if (offer.product_type && tagIcons[offer.product_type]) {
                                 tagLine = tagIcons[offer.product_type] + ' ' + offer.product_type + (offer.product_tagline ? ' • ' + String(offer.product_tagline).substring(0, 40) : '');
