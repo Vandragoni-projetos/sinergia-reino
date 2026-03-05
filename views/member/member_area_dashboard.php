@@ -978,9 +978,9 @@ if (!isset($feed_items_biblioteca)) {
                             } else {
                                 priceHtml = `<div class="mb-2 text-lg font-semibold text-green-400">${productPrice}</div>`;
                             }
-                            return `<a href="${checkoutLink}" ${linkTarget} class="group bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-green-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-green-500/10 transition-all duration-200 ease-in-out flex flex-col h-full" data-product-type="${escapeHtml(productType)}">
+                            return `<a href="${checkoutLink}" ${linkTarget} class="group bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-green-500 hover:-translate-y-1 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.5),0_0_16px_rgba(74,222,128,0.12)] transition-all duration-[0.22s] ease-out flex flex-col h-full" data-product-type="${escapeHtml(productType)}">
                                 <div class="relative overflow-hidden">
-                                    <img src="${productPhoto}" alt="${escapeHtml(offer.product_name)}" class="w-full h-40 object-cover transition-transform duration-200 ease-in-out group-hover:scale-[1.03]${lockedImgCls}" onerror="this.onerror=null;this.src='https://placehold.co/280x160/1f2937/d1d5db?text=Produto';">
+                                    <img src="${productPhoto}" alt="${escapeHtml(offer.product_name)}" class="w-full h-40 object-cover transition-transform duration-[0.22s] ease-out group-hover:scale-[1.035]${lockedImgCls}" onerror="this.onerror=null;this.src='https://placehold.co/280x160/1f2937/d1d5db?text=Produto';">
                                     ${overlayHtml}
                                     ${lockedBadgeHtml}
                                     <span class="absolute top-2 left-2 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded-full uppercase">Exclusivo</span>
