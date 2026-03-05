@@ -1439,6 +1439,7 @@ try {
                             p_offer.product_type AS product_type,
                             p_offer.product_tagline AS product_tagline,
                             p_offer.checkout_hash,
+                            p_offer.sales_page_url AS sales_page_url,
                             MAX(peo.custom_link) AS custom_link,
                             MAX(peo.custom_button_text) AS custom_button_text,
                             u.nome AS infoprod_name
@@ -1455,7 +1456,7 @@ try {
                             AND peo.source_product_id IN ({$owned_product_ids_placeholder})
                             AND p_offer.tipo_entrega = 'area_membros'
                             AND p_offer.id NOT IN ({$owned_product_ids_placeholder})
-                        GROUP BY p_offer.id, p_offer.nome, p_offer.descricao, p_offer.foto, p_offer.preco, p_offer.product_type, p_offer.product_tagline, p_offer.checkout_hash, u.nome
+                        GROUP BY p_offer.id, p_offer.nome, p_offer.descricao, p_offer.foto, p_offer.preco, p_offer.product_type, p_offer.product_tagline, p_offer.checkout_hash, p_offer.sales_page_url, u.nome
                         LIMIT 50
                     ";
                     $params_offers = array_merge($owned_product_ids, $owned_product_ids);
