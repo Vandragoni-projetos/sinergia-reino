@@ -155,6 +155,22 @@
         </div>
     </div>
 
+    <!-- URL da Página de Vendas -->
+    <div>
+        <h2 class="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+            <i data-lucide="external-link" class="w-5 h-5 text-[#32e768]"></i>
+            URL da Página de Vendas
+        </h2>
+        <div class="bg-dark-elevated p-6 rounded-lg border border-dark-border">
+            <div>
+                <label for="sales_page_url" class="block text-gray-300 text-sm font-semibold mb-2">URL da Página de Vendas</label>
+                <input type="url" id="sales_page_url" name="sales_page_url" class="form-input" placeholder="https://seusite.com/pagina-de-vendas" value="<?php echo htmlspecialchars($produto['sales_page_url'] ?? ''); ?>">
+                <p class="text-xs text-gray-400 mt-1">Se preenchida, o botão do card será "Saiba Mais" e direcionará para esta página. Se estiver vazio, o comportamento continua sendo checkout direto.</p>
+                <p id="sales_page_url_error" class="text-xs text-red-400 mt-1 hidden">A URL deve começar com http:// ou https://</p>
+            </div>
+        </div>
+    </div>
+
     <div>
         <h2 class="text-xl font-semibold mb-4 text-white flex items-center gap-2">
             <i data-lucide="truck" class="w-5 h-5 text-[#32e768]"></i>
@@ -320,6 +336,28 @@ document.getElementById('conteudo_entrega_pdf')?.addEventListener('change', func
         display.classList.remove('hidden');
     } else if (display) {
         display.classList.add('hidden');
+    }
+});
+
+// Validação da URL da Página de Vendas
+document.addEventListener('DOMContentLoaded', function() {
+    var form = document.querySelector('form[action*="produto_config"]');
+    var salesUrlInput = document.getElementById('sales_page_url');
+    var salesUrlError = document.getElementById('sales_page_url_error');
+    if (form && salesUrlInput && salesUrlError) {
+        form.addEventListener('submit', function(e) {
+            var val = (salesUrlInput.value || '').trim();
+            if (val && !/^https?:\/\//i.test(val)) {
+                e.preventDefault();
+                salesUrlError.classList.remove('hidden');
+                salesUrlInput.focus();
+                return false;
+            }
+            salesUrlError.classList.add('hidden');
+        });
+        salesUrlInput.addEventListener('input', function() {
+            salesUrlError.classList.add('hidden');
+        });
     }
 });
 
