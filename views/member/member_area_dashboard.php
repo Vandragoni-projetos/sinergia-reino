@@ -302,6 +302,19 @@ if (!isset($feed_items_biblioteca)) {
                     <a href="/member_area_dashboard">
                         <img src="<?php echo htmlspecialchars($logo_url); ?>" alt="GatewayPro Logo" class="h-10">
                     </a>
+                    <div class="relative flex items-center gap-2">
+                        <span class="text-sm text-gray-400 hidden sm:inline">Categoria</span>
+                        <select id="category-filter" class="bg-gray-800 border border-gray-600 text-gray-200 text-sm rounded-lg pl-3 pr-8 py-2 focus:ring-2 focus:ring-green-500/50 focus:border-green-500 cursor-pointer appearance-none" title="Filtrar por categoria">
+                            <option value="">Todas</option>
+                            <option value="PLR">🧩 PLR</option>
+                            <option value="QUIZ">🧠 QUIZ</option>
+                            <option value="ADS">📣 ADS</option>
+                            <option value="AUTOMACAO">⚙️ AUTOMAÇÃO</option>
+                            <option value="APP">📱 APP</option>
+                            <option value="FUNIL">🧲 FUNIL</option>
+                        </select>
+                        <i data-lucide="chevron-down" class="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"></i>
+                    </div>
                 </div>
                 <div class="flex items-center space-x-5">
                     <!-- Dropdown do Perfil -->
@@ -475,13 +488,23 @@ if (!isset($feed_items_biblioteca)) {
                 <p class="mt-2 text-sm">Parece que você ainda não adquiriu nenhum produto. Explore nossa loja ou, se você acredita que isso é um erro, por favor, entre em contato com o suporte.</p>
             </div>
         <?php else: ?>
+            <!-- Empty state quando filtro não encontra cursos -->
+            <div id="biblioteca-filter-empty" class="hidden bg-gray-800 p-8 rounded-lg shadow-md text-center text-gray-400 border border-gray-700 mb-8">
+                <i data-lucide="folder-x" class="mx-auto w-16 h-16 text-gray-600 mb-4"></i>
+                <p class="text-lg font-semibold text-white">Nenhum curso encontrado nesta categoria</p>
+                <button type="button" id="biblioteca-reset-filter" class="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white font-medium rounded-lg transition-colors">
+                    Ver todos os cursos
+                </button>
+            </div>
+            <div id="biblioteca-content">
             <?php foreach ($segments_biblioteca as $seg): ?>
                 <?php if ($seg['type'] === 'courses'): ?>
                     <!-- Grid de cards de cursos (2 ou 3 por linha) -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-8">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-8 biblioteca-course-grid">
                         <?php foreach ($seg['items'] as $curso): ?>
                             <a href="/member_course_view?produto_id=<?php echo $curso['produto_id']; ?>"
-                               class="group bg-gray-800 rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] border border-gray-700/50 flex flex-col">
+                               class="group bg-gray-800 rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] border border-gray-700/50 flex flex-col biblioteca-course-card"
+                               data-product-type="<?php echo htmlspecialchars($curso['produto_type'] ?? ''); ?>">
                                 <div class="relative aspect-video overflow-hidden">
                                     <?php
                                     $image_path = null;
@@ -579,7 +602,7 @@ if (!isset($feed_items_biblioteca)) {
                     $banner_titulo = !empty($banner['titulo']) ? $banner['titulo'] : 'Promoção';
                     ?>
                     <!-- Banner em linha inteira (full-width) entre as linhas de cards -->
-                    <div class="w-full mb-8">
+                    <div class="w-full mb-8 biblioteca-banner" data-item-type="banner">
                         <?php if ($is_clickable): ?>
                         <a href="<?php echo htmlspecialchars($banner['click_url']); ?>" target="<?php echo $link_target; ?>" rel="noopener noreferrer"
                            class="block group rounded-2xl overflow-hidden border border-purple-500/50 shadow-lg transition-all duration-300 hover:shadow-2xl hover:opacity-95">
@@ -610,6 +633,7 @@ if (!isset($feed_items_biblioteca)) {
                     </div>
                 <?php endif; ?>
             <?php endforeach; ?>
+            </div><!-- #biblioteca-content -->
         <?php endif; ?>
 
         <!-- 
@@ -640,6 +664,81 @@ if (!isset($feed_items_biblioteca)) {
 
     <script>
         lucide.createIcons();
+        
+        // Filtro de categorias (localStorage + aplicação)
+        const CATEGORY_FILTER_KEY = 'member_dashboard_category_filter';
+        function getCategoryFilter() {
+            try {
+                return localStorage.getItem(CATEGORY_FILTER_KEY) || '';
+            } catch (_) { return ''; }
+        }
+        function setCategoryFilter(value) {
+            try {
+                localStorage.setItem(CATEGORY_FILTER_KEY, value);
+            } catch (_) {}
+        }
+        function applyCategoryFilter() {
+            const filterVal = document.getElementById('category-filter')?.value || '';
+            const filterSelect = document.getElementById('category-filter');
+            if (filterSelect) filterSelect.value = filterVal;
+            const showAll = !filterVal;
+            const courseCards = document.querySelectorAll('.biblioteca-course-card');
+            const banners = document.querySelectorAll('.biblioteca-banner');
+            const offerCards = document.querySelectorAll('#exclusive-offers-grid [data-product-type]');
+            const exclusiveBanners = document.querySelectorAll('.exclusive-offer-banner');
+            const emptyState = document.getElementById('biblioteca-filter-empty');
+            const bibliotecaContent = document.getElementById('biblioteca-content');
+            let visibleCount = 0;
+            courseCards.forEach(function(card) {
+                const pt = (card.getAttribute('data-product-type') || '').trim();
+                const match = showAll || pt === filterVal;
+                card.style.display = match ? '' : 'none';
+                if (match) visibleCount++;
+            });
+            banners.forEach(function(b) {
+                b.classList.toggle('hidden', !showAll);
+            });
+            exclusiveBanners.forEach(function(b) {
+                b.style.display = showAll ? '' : 'none';
+            });
+            offerCards.forEach(function(card) {
+                const pt = (card.getAttribute('data-product-type') || '').trim();
+                const match = showAll || pt === filterVal;
+                const wrapper = card.closest('#exclusive-offers-grid > div') || card.parentElement;
+                if (wrapper) wrapper.style.display = match ? '' : 'none';
+            });
+            if (emptyState && bibliotecaContent) {
+                const hasCourses = courseCards.length > 0;
+                if (hasCourses && !showAll && visibleCount === 0) {
+                    emptyState.classList.remove('hidden');
+                    bibliotecaContent.classList.add('hidden');
+                } else {
+                    emptyState.classList.add('hidden');
+                    bibliotecaContent.classList.remove('hidden');
+                }
+            }
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+            const catFilter = document.getElementById('category-filter');
+            const resetBtn = document.getElementById('biblioteca-reset-filter');
+            if (catFilter) {
+                catFilter.value = getCategoryFilter();
+                catFilter.addEventListener('change', function() {
+                    setCategoryFilter(this.value);
+                    applyCategoryFilter();
+                });
+                applyCategoryFilter();
+            }
+            if (resetBtn) {
+                resetBtn.addEventListener('click', function() {
+                    if (catFilter) {
+                        catFilter.value = '';
+                        setCategoryFilter('');
+                        applyCategoryFilter();
+                    }
+                });
+            }
+        });
         
         // Dropdown do Perfil
         function toggleProfileDropdown() {
@@ -862,7 +961,8 @@ if (!isset($feed_items_biblioteca)) {
                                 tagLine = String(offer.product_tagline).substring(0, 40);
                             }
                             const tagHtml = tagLine ? `<p class="text-xs text-gray-400 mb-2 truncate" title="${escapeHtml(tagLine)}">${escapeHtml(tagLine)}</p>` : '';
-                            return `<a href="${checkoutLink}" ${linkTarget} class="group bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-green-500 transition-all duration-300 hover:shadow-xl hover:shadow-green-500/10 flex flex-col h-full">
+                            const productType = (offer.product_type || '').trim();
+                            return `<a href="${checkoutLink}" ${linkTarget} class="group bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-green-500 transition-all duration-300 hover:shadow-xl hover:shadow-green-500/10 flex flex-col h-full" data-product-type="${escapeHtml(productType)}">
                                 <div class="relative overflow-hidden">
                                     <img src="${productPhoto}" alt="${escapeHtml(offer.product_name)}" class="w-full h-40 object-cover transition-all duration-300 group-hover:scale-105${lockedImgCls}" onerror="this.onerror=null;this.src='https://placehold.co/280x160/1f2937/d1d5db?text=Produto';">
                                     ${overlayHtml}
@@ -882,7 +982,7 @@ if (!isset($feed_items_biblioteca)) {
                             items.forEach(it => {
                                 if (it.type === 'banner') {
                                     const cell = document.createElement('div');
-                                    cell.className = 'col-span-full w-full mb-6';
+                                    cell.className = 'col-span-full w-full mb-6 exclusive-offer-banner';
                                     cell.innerHTML = renderBannerHtml(it.data);
                                     exclusiveOffersGrid.appendChild(cell);
                                 } else {
@@ -894,7 +994,7 @@ if (!isset($feed_items_biblioteca)) {
                         } else {
                             banners.forEach(banner => {
                                 const cell = document.createElement('div');
-                                cell.className = 'col-span-full w-full mb-6';
+                                cell.className = 'col-span-full w-full mb-6 exclusive-offer-banner';
                                 cell.innerHTML = renderBannerHtml(banner);
                                 exclusiveOffersGrid.appendChild(cell);
                             });
@@ -908,6 +1008,7 @@ if (!isset($feed_items_biblioteca)) {
                         exclusiveOffersLoading.style.display = 'none';
                         exclusiveOffersGrid.style.display = 'grid';
                         lucide.createIcons();
+                        if (typeof applyCategoryFilter === 'function') applyCategoryFilter();
                     } else {
                         exclusiveOffersLoading.style.display = 'none';
                         exclusiveOffersEmpty.style.display = 'block';
