@@ -306,12 +306,18 @@ if (!isset($feed_items_biblioteca)) {
                         <span class="text-sm text-gray-400 hidden sm:inline">Categoria</span>
                         <select id="category-filter" class="bg-gray-800 border border-gray-600 text-gray-200 text-sm rounded-lg pl-3 pr-8 py-2 focus:ring-2 focus:ring-green-500/50 focus:border-green-500 cursor-pointer appearance-none" title="Filtrar por categoria">
                             <option value="">Todas</option>
-                            <option value="PLR">🧩 PLR</option>
-                            <option value="QUIZ">🧠 QUIZ</option>
-                            <option value="ADS">📣 ADS</option>
-                            <option value="AUTOMACAO">⚙️ AUTOMAÇÃO</option>
-                            <option value="APP">📱 APP</option>
-                            <option value="FUNIL">🧲 FUNIL</option>
+                            <optgroup label="— Produtos Digitais —">
+                                <option value="ADS">📣 ADS</option>
+                                <option value="PLR">🧩 PLR</option>
+                                <option value="QUIZ">🧠 QUIZ</option>
+                            </optgroup>
+                            <optgroup label="— Ferramentas —">
+                                <option value="APP">📱 APP</option>
+                                <option value="AUTOMACAO">⚙️ AUTOMAÇÃO</option>
+                            </optgroup>
+                            <optgroup label="— Criativos —">
+                                <option value="FUNIL">🧲 FUNIL</option>
+                            </optgroup>
                         </select>
                         <i data-lucide="chevron-down" class="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"></i>
                     </div>
