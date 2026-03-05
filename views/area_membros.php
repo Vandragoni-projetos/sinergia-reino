@@ -28,7 +28,7 @@ try {
 }
 try {
     $stmt = $pdo->prepare("
-        SELECT id, nome, foto 
+        SELECT id, nome, foto, product_type, product_tagline 
         FROM produtos 
         WHERE tipo_entrega = 'area_membros'
         AND usuario_id = ? 
@@ -82,9 +82,23 @@ $placeholder_url = 'https://placehold.co/600x400/1f2937/9ca3af?text=Curso+Sem+Im
                         </div>
                         <div class="p-4 flex-grow flex flex-col justify-between">
                             <div>
-                                <h3 class="font-bold text-lg text-white mb-4 truncate" title="<?php echo htmlspecialchars($curso['nome']); ?>">
+                                <h3 class="font-bold text-lg text-white mb-2 truncate" title="<?php echo htmlspecialchars($curso['nome']); ?>">
                                     <?php echo htmlspecialchars($curso['nome']); ?>
                                 </h3>
+                                <?php
+                                $tag_icons = ['PLR' => '🧩', 'QUIZ' => '🧠', 'ADS' => '📢', 'AUTOMACAO' => '⚙️', 'APP' => '📱', 'FUNIL' => '🔀'];
+                                $ptype = $curso['product_type'] ?? '';
+                                $ptag = $curso['product_tagline'] ?? '';
+                                $tag_line = '';
+                                if ($ptype && isset($tag_icons[$ptype])) {
+                                    $tag_line = $tag_icons[$ptype] . ' ' . $ptype . ($ptag ? ' • ' . mb_substr($ptag, 0, 40) : '');
+                                } elseif ($ptag) {
+                                    $tag_line = mb_substr($ptag, 0, 40);
+                                }
+                                ?>
+                                <?php if ($tag_line): ?>
+                                <p class="text-xs text-gray-400 mb-2 truncate" title="<?php echo htmlspecialchars($tag_line); ?>"><?php echo htmlspecialchars($tag_line); ?></p>
+                                <?php endif; ?>
                             </div>
                             <div class="mt-2 flex flex-col gap-2"> <!-- Alterado para flex-col e gap-2 para empilhar botões -->
                                 <a href="/curso_preview?produto_id=<?php echo $curso['id']; ?>" target="_blank" class="flex-1 text-center bg-dark-card text-gray-300 font-bold py-2 px-3 rounded-lg hover:bg-dark-elevated hover:text-white transition duration-300 flex items-center justify-center space-x-2 text-sm border border-dark-border">
