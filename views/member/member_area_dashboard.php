@@ -952,7 +952,7 @@ if (!isset($feed_items_biblioteca)) {
                             const hasSalesPageUrl = offer.sales_page_url && String(offer.sales_page_url).trim().length > 0;
                             const checkoutLink = hasSalesPageUrl ? String(offer.sales_page_url).trim() : (offer.custom_link ? offer.custom_link : `/checkout?p=${offer.checkout_hash}`);
                             const linkTarget = (hasSalesPageUrl || offer.custom_link) ? 'target="_blank" rel="noopener noreferrer"' : '';
-                            const buttonText = hasSalesPageUrl ? 'Saiba Mais' : (offer.custom_button_text ? offer.custom_button_text : `Comprar por ${productPrice}`);
+                            const buttonText = hasSalesPageUrl ? 'Ver detalhes' : (offer.custom_button_text ? offer.custom_button_text : `Comprar por ${productPrice}`);
                             const productDescription = offer.product_description || 'Oferta exclusiva para você.';
                             const tagIcons = { PLR: '🧩', QUIZ: '🧠', ADS: '📢', AUTOMACAO: '⚙️', APP: '📱', FUNIL: '🔀' };
                             let tagLine = '';
@@ -969,7 +969,7 @@ if (!isset($feed_items_biblioteca)) {
                             const hasPreviousPrice = !isFree && !isNaN(prevPrice) && prevPrice > 0 && prevPrice > currentPriceNum;
                             const prevPriceFormatted = hasPreviousPrice ? formatCurrency(prevPrice) : '';
                             const discountPercent = hasPreviousPrice ? Math.round(((prevPrice - currentPriceNum) / prevPrice) * 100) : 0;
-                            const discountSuffix = hasPreviousPrice && discountPercent > 0 ? ` <span class="text-green-400 font-medium">(-${discountPercent}%)</span>` : '';
+                            const discountSuffix = hasPreviousPrice && discountPercent > 0 ? ` <span class="text-[0.7rem] text-gray-500 font-normal">(-${discountPercent}%)</span>` : '';
                             let priceHtml;
                             if (isFree) {
                                 priceHtml = '<div class="mb-2"><span class="text-lg font-semibold text-green-400">Grátis</span></div>';
