@@ -80,6 +80,7 @@ require_once __DIR__ . '/../helpers/plugin_loader.php';
 require_once __DIR__ . '/../helpers/community_helper.php';
 require_once __DIR__ . '/../helpers/security_helper.php';
 require_once __DIR__ . '/../helpers/image_helper.php';
+require_once __DIR__ . '/../helpers/product_helper.php';
 
 $redirect_session_error = function ($error_key, $message_pt) {
     $req_uri = $_SERVER['REQUEST_URI'] ?? '';
