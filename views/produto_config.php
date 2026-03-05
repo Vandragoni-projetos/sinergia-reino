@@ -161,6 +161,16 @@ if (isset($_POST['salvar_produto_config'])) {
             $product_tagline = isset($_POST['product_tagline']) ? mb_substr(trim($_POST['product_tagline']), 0, 40) : null;
             if ($product_tagline === '') $product_tagline = null;
 
+            // URL da Página de Vendas
+            $sales_page_url_raw = isset($_POST['sales_page_url']) ? trim($_POST['sales_page_url']) : '';
+            $sales_page_url = ($sales_page_url_raw === '') ? null : mb_substr($sales_page_url_raw, 0, 512);
+            $sales_page_url_valid = true;
+            if ($sales_page_url !== null && !preg_match('#^https?://#i', $sales_page_url)) {
+                $mensagem = "<div class='bg-red-900/20 border-l-4 border-red-500 text-red-300 p-4 rounded-md shadow-sm mb-6' role='alert'>A URL da Página de Vendas deve começar com http:// ou https://</div>";
+                $sales_page_url_valid = false;
+                $sales_page_url = $produto['sales_page_url'] ?? null;
+            }
+
             // Atualizar dados básicos do produto
             $gera_licenca = isset($_POST['gera_licenca']) ? 1 : 0;
             $is_free = isset($_POST['is_free']) ? 1 : 0;
@@ -178,11 +188,12 @@ if (isset($_POST['salvar_produto_config'])) {
                 $stmt_unset_showcase->execute([$usuario_id, $id_produto]);
             }
             
-            $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, foto = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ?, product_type = ?, product_tagline = ? WHERE id = ? AND usuario_id = ?");
-            $result = $stmt_update->execute([$nome, $descricao, $preco, $nome_foto, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $product_type, $product_tagline, $id_produto, $usuario_id]);
-            
-            if (!$result) {
-                throw new Exception("Erro ao atualizar produto: " . implode(", ", $stmt_update->errorInfo()));
+            if ($sales_page_url_valid) {
+                $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, foto = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ?, product_type = ?, product_tagline = ?, sales_page_url = ? WHERE id = ? AND usuario_id = ?");
+                $result = $stmt_update->execute([$nome, $descricao, $preco, $nome_foto, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $product_type, $product_tagline, $sales_page_url, $id_produto, $usuario_id]);
+                if (!$result) {
+                    throw new Exception("Erro ao atualizar produto: " . implode(", ", $stmt_update->errorInfo()));
+                }
             }
 
             // Se o gateway mudou, atualizar current_gateway
