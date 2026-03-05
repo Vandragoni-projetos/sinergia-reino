@@ -974,7 +974,7 @@ if (!isset($feed_items_biblioteca)) {
                             if (isFree) {
                                 priceHtml = '<div class="mb-2"><span class="text-lg font-semibold text-green-400">Grátis</span></div>';
                             } else if (hasPreviousPrice) {
-                                priceHtml = `<div class="mb-2"><span class="text-xs text-gray-500 line-through">De ${prevPriceFormatted}</span><br><span class="text-lg font-semibold text-green-400">Por ${productPrice}</span>${discountLine}</div>`;
+                                priceHtml = `<div class="mb-2"><span class="text-xs text-gray-500">De </span><span class="text-xs text-gray-500 line-through">${prevPriceFormatted}</span><span class="text-xs text-gray-500"> por </span><span class="text-lg font-semibold text-green-400">${productPrice}</span>${discountLine}</div>`;
                             } else {
                                 priceHtml = `<div class="mb-2 text-lg font-semibold text-green-400">${productPrice}</div>`;
                             }
