@@ -157,7 +157,7 @@ if (isset($_POST['salvar_produto_config'])) {
             }
 
             // TAG/Categoria
-            $product_type = isset($_POST['product_type']) && in_array($_POST['product_type'], ['PLR', 'QUIZ', 'ADS', 'AUTOMACAO', 'APP', 'FUNIL'], true) ? $_POST['product_type'] : null;
+            $product_type = isset($_POST['product_type']) && in_array($_POST['product_type'], getValidProductTypes(), true) ? $_POST['product_type'] : null;
             $product_tagline = isset($_POST['product_tagline']) ? mb_substr(trim($_POST['product_tagline']), 0, 40) : null;
             if ($product_tagline === '') $product_tagline = null;
 
