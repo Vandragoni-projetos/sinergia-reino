@@ -963,6 +963,19 @@ if (!isset($feed_items_biblioteca)) {
                             }
                             const tagHtml = tagLine ? `<p class="text-xs text-gray-400 mb-2 truncate" title="${escapeHtml(tagLine)}">${escapeHtml(tagLine)}</p>` : '';
                             const productType = (offer.product_type || '').trim();
+                            const currentPriceNum = parseFloat(offer.product_price);
+                            const isFree = !isNaN(currentPriceNum) && currentPriceNum === 0;
+                            const prevPrice = parseFloat(offer.product_previous_price);
+                            const hasPreviousPrice = !isFree && !isNaN(prevPrice) && prevPrice > 0 && prevPrice > currentPriceNum;
+                            const prevPriceFormatted = hasPreviousPrice ? formatCurrency(prevPrice) : '';
+                            let priceHtml;
+                            if (isFree) {
+                                priceHtml = '<div class="mb-2"><span class="text-lg font-semibold text-green-400">Grátis</span></div>';
+                            } else if (hasPreviousPrice) {
+                                priceHtml = `<div class="mb-2"><span class="text-xs text-gray-500 line-through">De ${prevPriceFormatted}</span><br><span class="text-lg font-semibold text-green-400">Por ${productPrice}</span></div>`;
+                            } else {
+                                priceHtml = `<div class="mb-2 text-lg font-semibold text-green-400">${productPrice}</div>`;
+                            }
                             return `<a href="${checkoutLink}" ${linkTarget} class="group bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-green-500 transition-all duration-300 hover:shadow-xl hover:shadow-green-500/10 flex flex-col h-full" data-product-type="${escapeHtml(productType)}">
                                 <div class="relative overflow-hidden">
                                     <img src="${productPhoto}" alt="${escapeHtml(offer.product_name)}" class="w-full h-40 object-cover transition-all duration-300 group-hover:scale-105${lockedImgCls}" onerror="this.onerror=null;this.src='https://placehold.co/280x160/1f2937/d1d5db?text=Produto';">
@@ -974,6 +987,7 @@ if (!isset($feed_items_biblioteca)) {
                                     <h3 class="text-lg font-bold text-white mb-2 line-clamp-2">${escapeHtml(offer.product_name)}</h3>
                                     ${tagHtml}
                                     <p class="text-gray-400 text-sm mb-4 line-clamp-2 flex-grow">${escapeHtml(productDescription)}</p>
+                                    ${priceHtml}
                                     <span class="mt-auto inline-flex items-center justify-center bg-green-600 text-white font-semibold py-2.5 px-4 rounded-lg hover:bg-green-700 transition duration-300 text-sm">${escapeHtml(buttonText)}</span>
                                 </div>
                             </a>`;
