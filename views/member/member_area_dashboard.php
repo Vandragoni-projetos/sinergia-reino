@@ -969,12 +969,12 @@ if (!isset($feed_items_biblioteca)) {
                             const hasPreviousPrice = !isFree && !isNaN(prevPrice) && prevPrice > 0 && prevPrice > currentPriceNum;
                             const prevPriceFormatted = hasPreviousPrice ? formatCurrency(prevPrice) : '';
                             const discountPercent = hasPreviousPrice ? Math.round(((prevPrice - currentPriceNum) / prevPrice) * 100) : 0;
-                            const discountLine = hasPreviousPrice && discountPercent > 0 ? `<p class="text-[0.85em] font-medium text-[#4ade80] mt-1">💰 Economize ${discountPercent}%</p>` : '';
+                            const discountLine = hasPreviousPrice && discountPercent > 0 ? `<p class="text-[0.8em] font-normal text-[#4ade80]/90 mt-1">💰 Economize ${discountPercent}%</p>` : '';
                             let priceHtml;
                             if (isFree) {
                                 priceHtml = '<div class="mb-2"><span class="text-lg font-semibold text-green-400">Grátis</span></div>';
                             } else if (hasPreviousPrice) {
-                                priceHtml = `<div class="mb-2"><span class="text-xs text-gray-500">De </span><span class="text-xs text-gray-500 line-through">${prevPriceFormatted}</span><span class="text-xs text-gray-500"> por </span><span class="text-lg font-semibold text-green-400">${productPrice}</span>${discountLine}</div>`;
+                                priceHtml = `<div class="mb-2 text-[0.82em] font-normal text-gray-400"><span>De </span><span class="line-through">${prevPriceFormatted}</span><span> por </span><span class="text-green-500/90">${productPrice}</span>${discountLine}</div>`;
                             } else {
                                 priceHtml = `<div class="mb-2 text-lg font-semibold text-green-400">${productPrice}</div>`;
                             }
