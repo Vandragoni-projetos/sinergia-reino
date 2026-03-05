@@ -138,12 +138,16 @@
                     <label for="product_type" class="block text-gray-300 text-sm font-semibold mb-2">Tipo/Categoria</label>
                     <select id="product_type" name="product_type" class="form-input cursor-pointer">
                         <option value="">— Nenhum —</option>
-                        <option value="PLR" <?php echo (($produto['product_type'] ?? '') === 'PLR') ? 'selected' : ''; ?>>🧩 PLR</option>
-                        <option value="QUIZ" <?php echo (($produto['product_type'] ?? '') === 'QUIZ') ? 'selected' : ''; ?>>🧠 QUIZ</option>
-                        <option value="ADS" <?php echo (($produto['product_type'] ?? '') === 'ADS') ? 'selected' : ''; ?>>📢 ADS</option>
-                        <option value="AUTOMACAO" <?php echo (($produto['product_type'] ?? '') === 'AUTOMACAO') ? 'selected' : ''; ?>>⚙️ AUTOMACAO</option>
-                        <option value="APP" <?php echo (($produto['product_type'] ?? '') === 'APP') ? 'selected' : ''; ?>>📱 APP</option>
-                        <option value="FUNIL" <?php echo (($produto['product_type'] ?? '') === 'FUNIL') ? 'selected' : ''; ?>>🔀 FUNIL</option>
+                        <?php
+                        $pt_current = $produto['product_type'] ?? '';
+                        foreach (getProductTypeOptions() as $group => $items):
+                            ?><optgroup label="— <?php echo htmlspecialchars($group); ?> —"><?php
+                            foreach ($items as $value => $label):
+                                ?><option value="<?php echo htmlspecialchars($value); ?>" <?php echo $pt_current === $value ? 'selected' : ''; ?>><?php echo htmlspecialchars($label); ?></option><?php
+                            endforeach;
+                            ?></optgroup><?php
+                        endforeach;
+                        ?>
                     </select>
                 </div>
                 <div>
