@@ -969,18 +969,18 @@ if (!isset($feed_items_biblioteca)) {
                             const hasPreviousPrice = !isFree && !isNaN(prevPrice) && prevPrice > 0 && prevPrice > currentPriceNum;
                             const prevPriceFormatted = hasPreviousPrice ? formatCurrency(prevPrice) : '';
                             const discountPercent = hasPreviousPrice ? Math.round(((prevPrice - currentPriceNum) / prevPrice) * 100) : 0;
-                            const discountHtml = hasPreviousPrice && discountPercent > 0 ? `<p class="text-xs text-green-400 mt-0.5">💰 Economize ${discountPercent}%</p>` : '';
+                            const discountSuffix = hasPreviousPrice && discountPercent > 0 ? ` <span class="text-green-400 font-medium">(-${discountPercent}%)</span>` : '';
                             let priceHtml;
                             if (isFree) {
                                 priceHtml = '<div class="mb-2"><span class="text-lg font-semibold text-green-400">Grátis</span></div>';
                             } else if (hasPreviousPrice) {
-                                priceHtml = `<div class="mb-2"><span class="text-xs text-gray-500 line-through">De ${prevPriceFormatted}</span><br><span class="text-lg font-semibold text-green-400">Por ${productPrice}</span>${discountHtml}</div>`;
+                                priceHtml = `<div class="mb-2"><span class="text-xs text-gray-500 line-through">De ${prevPriceFormatted}</span>${discountSuffix}<br><span class="text-lg font-semibold text-green-400">Por ${productPrice}</span></div>`;
                             } else {
                                 priceHtml = `<div class="mb-2 text-lg font-semibold text-green-400">${productPrice}</div>`;
                             }
-                            return `<a href="${checkoutLink}" ${linkTarget} class="group bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-green-500 transition-all duration-300 hover:shadow-xl hover:shadow-green-500/10 flex flex-col h-full" data-product-type="${escapeHtml(productType)}">
+                            return `<a href="${checkoutLink}" ${linkTarget} class="group bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-green-500 hover:-translate-y-1 hover:shadow-2xl hover:shadow-green-500/10 transition-all duration-200 ease-in-out flex flex-col h-full" data-product-type="${escapeHtml(productType)}">
                                 <div class="relative overflow-hidden">
-                                    <img src="${productPhoto}" alt="${escapeHtml(offer.product_name)}" class="w-full h-40 object-cover transition-all duration-300 group-hover:scale-105${lockedImgCls}" onerror="this.onerror=null;this.src='https://placehold.co/280x160/1f2937/d1d5db?text=Produto';">
+                                    <img src="${productPhoto}" alt="${escapeHtml(offer.product_name)}" class="w-full h-40 object-cover transition-transform duration-200 ease-in-out group-hover:scale-[1.03]${lockedImgCls}" onerror="this.onerror=null;this.src='https://placehold.co/280x160/1f2937/d1d5db?text=Produto';">
                                     ${overlayHtml}
                                     ${lockedBadgeHtml}
                                     <span class="absolute top-2 left-2 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded-full uppercase">Exclusivo</span>
