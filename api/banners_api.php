@@ -79,6 +79,11 @@ try {
             get_badges($pdo);
             break;
             
+        case 'get_products':
+            // Listar produtos do infoprodutor para vincular ao banner
+            get_products_for_banner($pdo, $usuario_id);
+            break;
+            
         default:
             http_response_code(404);
             echo json_encode(['success' => false, 'error' => 'Ação não encontrada']);
@@ -87,6 +92,24 @@ try {
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+}
+
+/**
+ * Listar produtos do infoprodutor para dropdown de vínculo com banner
+ */
+function get_products_for_banner($pdo, $usuario_id) {
+    $cf_where = '';
+    $cf_param = null;
+    if (function_exists('getCommunityFilter')) {
+        list($cf_where, $cf_param) = getCommunityFilter('produtos');
+    }
+    $sql = "SELECT id, nome FROM produtos WHERE usuario_id = ?" . $cf_where . " ORDER BY nome ASC";
+    $stmt = $pdo->prepare($sql);
+    $params = [$usuario_id];
+    if ($cf_param !== null) $params[] = $cf_param;
+    $stmt->execute($params);
+    $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    echo json_encode(['success' => true, 'products' => $products]);
 }
 
 /**
@@ -167,8 +190,20 @@ function create_banner($pdo, $usuario_id, $community_id) {
         }
     }
     
+    $product_id = null;
+    if (!empty($data['product_id']) && is_numeric($data['product_id'])) {
+        $pid = (int)$data['product_id'];
+        $chk_p = $pdo->prepare("SELECT id FROM produtos WHERE id = ? AND usuario_id = ?");
+        $chk_p->execute([$pid, $usuario_id]);
+        if ($chk_p->fetch()) {
+            $product_id = $pid;
+        }
+    }
+    
     $chk_col = $pdo->query("SHOW COLUMNS FROM banners LIKE 'badge_id'");
     $has_badge_col = $chk_col && $chk_col->rowCount() > 0;
+    $chk_product_col = $pdo->query("SHOW COLUMNS FROM banners LIKE 'product_id'");
+    $has_product_col = $chk_product_col && $chk_product_col->rowCount() > 0;
     
     $cols = "community_id, usuario_id, titulo";
     $placeholders = "?, ?, ?";
@@ -181,6 +216,11 @@ function create_banner($pdo, $usuario_id, $community_id) {
     $cols .= ", image_path, image_url, click_url, open_new_tab, is_active, show_in_products_grid, show_in_member_dashboard, show_in_offers_section";
     $placeholders .= ", ?, ?, ?, ?, ?, ?, ?, ?";
     $vals = array_merge($vals, [$image_path, $image_url, $click_url, $open_new_tab, $is_active, $show_in_products_grid, $show_in_member_dashboard, $show_in_offers_section]);
+    if ($has_product_col) {
+        $cols .= ", product_id";
+        $placeholders .= ", ?";
+        $vals[] = $product_id;
+    }
     
     $sql = "INSERT INTO banners ($cols) VALUES ($placeholders)";
     $stmt = $pdo->prepare($sql);
@@ -259,14 +299,32 @@ function update_banner($pdo, $usuario_id, $community_id) {
         }
     }
     
+    $product_id = null;
+    if (isset($data['product_id'])) {
+        if (!empty($data['product_id']) && is_numeric($data['product_id'])) {
+            $pid = (int)$data['product_id'];
+            $chk_p = $pdo->prepare("SELECT id FROM produtos WHERE id = ? AND usuario_id = ?");
+            $chk_p->execute([$pid, $usuario_id]);
+            if ($chk_p->fetch()) {
+                $product_id = $pid;
+            }
+        }
+    }
+    
     $chk_col = $pdo->query("SHOW COLUMNS FROM banners LIKE 'badge_id'");
     $has_badge_col = $chk_col && $chk_col->rowCount() > 0;
+    $chk_product_col = $pdo->query("SHOW COLUMNS FROM banners LIKE 'product_id'");
+    $has_product_col = $chk_product_col && $chk_product_col->rowCount() > 0;
     
     $sql = "UPDATE banners SET titulo = ?, image_path = ?, image_url = ?, click_url = ?, open_new_tab = ?, is_active = ?, show_in_products_grid = ?, show_in_member_dashboard = ?, show_in_offers_section = ?";
     $params = [$titulo, $image_path, $image_url, $click_url, $open_new_tab, $is_active, $show_in_products_grid, $show_in_member_dashboard, $show_in_offers_section];
     if ($has_badge_col) {
         $sql .= ", badge_id = ?";
         $params[] = $badge_id;
+    }
+    if ($has_product_col) {
+        $sql .= ", product_id = ?";
+        $params[] = $product_id;
     }
     $sql .= " WHERE id = ? AND usuario_id = ?";
     $params[] = $banner_id;
