@@ -101,6 +101,18 @@
                 </div>
             </div>
 
+            <!-- Produto Vinculado (Ocultar banner se cliente já comprou) -->
+            <div>
+                <label for="banner-product-id" class="block text-gray-300 text-sm font-semibold mb-2 flex items-center">
+                    Produto Vinculado
+                    <span class="text-gray-500 font-normal ml-2">(Opcional - se o cliente comprar este produto, o banner não será mais exibido)</span>
+                </label>
+                <select id="banner-product-id" name="product_id" class="w-full px-4 py-3 bg-dark-elevated border border-dark-border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#32e768]/20 focus:border-[#32e768] transition-all text-white cursor-pointer">
+                    <option value="">— Nenhum —</option>
+                    <!-- Opções carregadas via JS -->
+                </select>
+            </div>
+
             <!-- Configurações de Exibição -->
             <div class="bg-dark-elevated p-6 rounded-xl border border-dark-border">
                 <h3 class="text-sm font-bold text-white uppercase tracking-wide mb-4 flex items-center">
@@ -183,6 +195,29 @@
         });
     }
 
+    function carregarProdutosDropdown(selectedId) {
+        var sel = document.getElementById('banner-product-id');
+        if (!sel) return Promise.resolve();
+        return fetch('/api/banners_api?action=get_products', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                sel.innerHTML = '<option value="">— Nenhum —</option>';
+                if (data.success && data.products && data.products.length) {
+                    data.products.forEach(function(p) {
+                        var opt = document.createElement('option');
+                        opt.value = p.id;
+                        opt.textContent = (p.nome || 'Produto #' + p.id);
+                        sel.appendChild(opt);
+                    });
+                }
+                sel.value = selectedId || '';
+            })
+            .catch(function() {
+                sel.innerHTML = '<option value="">— Nenhum —</option>';
+                sel.value = '';
+            });
+    }
+
     window.abrirBannerModal = function(bannerId) {
         if (bannerId === undefined) bannerId = null;
         console.log('🎯 abrirBannerModal chamada! Banner ID:', bannerId);
@@ -196,6 +231,7 @@
             document.getElementById('banner-id').value = '';
             document.getElementById('banner-modal-title').innerHTML = '<i data-lucide="image" class="w-6 h-6 mr-3 text-[#32e768]"></i>Novo Banner Publicitário';
             limparPreview();
+            carregarProdutosDropdown('');
             // Popular dropdown de badges inline (evita dependência de closure)
             var selBadge = document.getElementById('banner-badge');
             if (selBadge) {
@@ -342,8 +378,11 @@
                     document.getElementById('banner-show-products').checked = banner.show_in_products_grid == 1;
                     document.getElementById('banner-show-member-dashboard').checked = banner.show_in_member_dashboard == 1;
                     document.getElementById('banner-show-offers').checked = banner.show_in_offers_section == 1;
+                    var productSel = document.getElementById('banner-product-id');
+                    if (productSel) productSel.value = banner.product_id || '';
 
                     popularDropdownBadges(banner.badge_id || '');
+                    carregarProdutosDropdown(banner.product_id || '');
 
                     if (banner.image_url) {
                         tabUrl.click();
@@ -413,6 +452,8 @@
             // Preparar dados do banner
             const badgeSel = document.getElementById('banner-badge');
             const badgeIdVal = badgeSel && badgeSel.value ? badgeSel.value : '';
+            const productSel = document.getElementById('banner-product-id');
+            const productIdVal = productSel && productSel.value ? parseInt(productSel.value, 10) : null;
             const bannerData = {
                 id: document.getElementById('banner-id').value || null,
                 titulo: document.getElementById('banner-titulo').value.trim() || null,
@@ -424,7 +465,8 @@
                 is_active: document.getElementById('banner-active').checked ? 1 : 0,
                 show_in_products_grid: document.getElementById('banner-show-products').checked ? 1 : 0,
                 show_in_member_dashboard: document.getElementById('banner-show-member-dashboard').checked ? 1 : 0,
-                show_in_offers_section: document.getElementById('banner-show-offers').checked ? 1 : 0
+                show_in_offers_section: document.getElementById('banner-show-offers').checked ? 1 : 0,
+                product_id: productIdVal || null
             };
 
             // Criar ou atualizar banner
