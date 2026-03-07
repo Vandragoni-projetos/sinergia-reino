@@ -1,6 +1,6 @@
 // Service Worker para PWA - Cache e Notificações Push
-const CACHE_NAME = 'pwa-cache-v1';
-const RUNTIME_CACHE = 'pwa-runtime-v1';
+const CACHE_NAME = 'pwa-cache-v3';
+const RUNTIME_CACHE = 'pwa-runtime-v3';
 
 const STATIC_CACHE_URLS = ['/', '/style.css', '/index.php', '/dashboard.php'];
 
