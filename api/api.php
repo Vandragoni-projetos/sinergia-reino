@@ -1496,7 +1496,17 @@ try {
                         : "SELECT * FROM banners b WHERE {$banners_where}";
                     $stmt_b = $pdo->prepare($banners_sql);
                     $stmt_b->execute($banners_params);
-                    $banners_offers = $stmt_b->fetchAll(PDO::FETCH_ASSOC);
+                    $banners_raw = $stmt_b->fetchAll(PDO::FETCH_ASSOC);
+                    // Filtrar banners vinculados a produto que o cliente já possui
+                    $owned_ids = array_map('intval', $owned_product_ids);
+                    $banners_offers = [];
+                    foreach ($banners_raw as $bn) {
+                        if (!empty($bn['product_id'])) {
+                            $pid = (int)$bn['product_id'];
+                            if (in_array($pid, $owned_ids, true)) continue;
+                        }
+                        $banners_offers[] = $bn;
+                    }
                     foreach ($banners_offers as &$bn) {
                         $bn['_feed_order'] = isset($feed_order_banner[(int)$bn['id']]) ? $feed_order_banner[(int)$bn['id']] : 99999;
                     }
