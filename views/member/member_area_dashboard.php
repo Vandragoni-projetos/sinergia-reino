@@ -303,6 +303,7 @@ if (!isset($feed_items_biblioteca)) {
     </style>
 </head>
 <body class="bg-gray-900 text-gray-200 antialiased">
+    <!-- member-dashboard-v3 -->
     <?php include __DIR__ . '/../includes/session_heartbeat.php'; ?>
     <!-- Cabeçalho Premium Fixo (voltando para paleta 'gray') -->
     <header class="sticky top-0 z-50 w-full border-b border-gray-700/50 bg-gray-900/70 backdrop-blur-sm">
@@ -457,11 +458,11 @@ if (!isset($feed_items_biblioteca)) {
         </div>
     </div>
 
-    <main class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8 member-protected-content">
+    <main class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 member-protected-content">
         <?php if (isset($mensagem_erro)) echo $mensagem_erro; ?>
 
         <!-- Novo Título Premium -->
-        <div class_id="intro-header" class="mb-10">
+        <div id="intro-header" class="mb-6">
             <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-green-500 mb-2">
                 Sua Biblioteca de Cursos
             </h1>
@@ -622,9 +623,9 @@ if (!isset($feed_items_biblioteca)) {
                         <?php endif; ?>
                             <?php $bi = !empty($banner['badge_icon']) ? $banner['badge_icon'] : '🔔'; $bl = !empty($banner['badge_label']) ? $banner['badge_label'] : 'Aviso'; ?>
                             <div class="banner-badge bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-t-2xl text-center truncate max-w-full" title="<?php echo htmlspecialchars($bi . ' ' . $bl); ?>"><?php echo htmlspecialchars($bi . ' ' . $bl); ?></div>
-                            <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center min-h-[180px] p-3 md:p-4" style="aspect-ratio: 3/2;">
+                            <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center min-h-[160px]" style="aspect-ratio: 16/9;">
                                 <img src="<?php echo htmlspecialchars($banner_img); ?>" alt="<?php echo htmlspecialchars($banner_titulo); ?>"
-                                     class="max-w-full max-h-full w-auto h-auto object-contain transition-transform duration-300 group-hover:scale-105"
+                                     class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                                      onerror="this.onerror=null; this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
                             </div>
                             <?php if ($is_clickable): ?>
@@ -931,8 +932,8 @@ if (!isset($feed_items_biblioteca)) {
                             if (isClickable) {
                                 return `<a href="${link}" ${linkTarget} class="banner-card block group rounded-2xl overflow-hidden border border-purple-500/50 shadow-lg transition-all duration-300 hover:shadow-2xl hover:border-purple-500">
                                     <div class="banner-badge bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-t-2xl text-center truncate max-w-full" title="${badgeText}">${badgeText}</div>
-                                    <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center min-h-[180px] p-3 md:p-4" style="aspect-ratio: 3/2;">
-                                        <img src="${bannerImg}" alt="${titulo}" class="max-w-full max-h-full w-auto h-auto object-contain transition-transform duration-300 group-hover:scale-105" onerror="this.onerror=null;this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
+                                    <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center min-h-[160px]" style="aspect-ratio: 16/9;">
+                                        <img src="${bannerImg}" alt="${titulo}" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" onerror="this.onerror=null;this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
                                     </div>
                                     ${ctaHtml}
                                     <div class="bg-gray-800/80 px-4 py-2.5">
@@ -942,8 +943,8 @@ if (!isset($feed_items_biblioteca)) {
                             }
                             return `<div class="banner-card block rounded-2xl overflow-hidden border border-purple-500/50 shadow-lg">
                                 <div class="banner-badge bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-t-2xl text-center truncate max-w-full" title="${badgeText}">${badgeText}</div>
-                                <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center min-h-[180px] p-3 md:p-4" style="aspect-ratio: 3/2;">
-                                    <img src="${bannerImg}" alt="${titulo}" class="max-w-full max-h-full w-auto h-auto object-contain" onerror="this.onerror=null;this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
+                                <div class="banner-image w-full overflow-hidden bg-gray-900 min-h-[160px]" style="aspect-ratio: 16/9;">
+                                    <img src="${bannerImg}" alt="${titulo}" class="w-full h-full object-cover" onerror="this.onerror=null;this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
                                 </div>
                                 <div class="bg-gray-800/80 px-4 py-2.5">
                                     <h3 class="banner-title-effect text-lg font-bold text-white">${titulo}</h3>
