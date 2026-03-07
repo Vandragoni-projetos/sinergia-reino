@@ -622,10 +622,9 @@ if (!isset($feed_items_biblioteca)) {
                         <?php endif; ?>
                             <?php $bi = !empty($banner['badge_icon']) ? $banner['badge_icon'] : '🔔'; $bl = !empty($banner['badge_label']) ? $banner['badge_label'] : 'Aviso'; ?>
                             <div class="banner-badge bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-t-2xl text-center truncate max-w-full" title="<?php echo htmlspecialchars($bi . ' ' . $bl); ?>"><?php echo htmlspecialchars($bi . ' ' . $bl); ?></div>
-                            <div class="banner-image w-full overflow-hidden bg-gray-900">
+                            <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center" style="aspect-ratio: 2/1; min-height: 120px;">
                                 <img src="<?php echo htmlspecialchars($banner_img); ?>" alt="<?php echo htmlspecialchars($banner_titulo); ?>"
-                                     class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                                     style="aspect-ratio: 2/1; min-height: 120px;"
+                                     class="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105"
                                      onerror="this.onerror=null; this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
                             </div>
                             <?php if ($is_clickable): ?>
@@ -932,8 +931,8 @@ if (!isset($feed_items_biblioteca)) {
                             if (isClickable) {
                                 return `<a href="${link}" ${linkTarget} class="banner-card block group rounded-2xl overflow-hidden border border-purple-500/50 shadow-lg transition-all duration-300 hover:shadow-2xl hover:border-purple-500">
                                     <div class="banner-badge bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-t-2xl text-center truncate max-w-full" title="${badgeText}">${badgeText}</div>
-                                    <div class="banner-image w-full overflow-hidden bg-gray-900">
-                                        <img src="${bannerImg}" alt="${titulo}" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" style="aspect-ratio: 2/1; min-height: 120px;" onerror="this.onerror=null;this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
+                                    <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center" style="aspect-ratio: 2/1; min-height: 120px;">
+                                        <img src="${bannerImg}" alt="${titulo}" class="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105" onerror="this.onerror=null;this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
                                     </div>
                                     ${ctaHtml}
                                     <div class="bg-gray-800/80 px-4 py-3">
@@ -943,8 +942,8 @@ if (!isset($feed_items_biblioteca)) {
                             }
                             return `<div class="banner-card block rounded-2xl overflow-hidden border border-purple-500/50 shadow-lg">
                                 <div class="banner-badge bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-t-2xl text-center truncate max-w-full" title="${badgeText}">${badgeText}</div>
-                                <div class="banner-image w-full overflow-hidden bg-gray-900">
-                                    <img src="${bannerImg}" alt="${titulo}" class="w-full h-full object-cover" style="aspect-ratio: 2/1; min-height: 120px;" onerror="this.onerror=null;this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
+                                <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center" style="aspect-ratio: 2/1; min-height: 120px;">
+                                    <img src="${bannerImg}" alt="${titulo}" class="w-full h-full object-contain" onerror="this.onerror=null;this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
                                 </div>
                                 <div class="bg-gray-800/80 px-4 py-3">
                                     <h3 class="banner-title-effect text-lg font-bold text-white">${titulo}</h3>
