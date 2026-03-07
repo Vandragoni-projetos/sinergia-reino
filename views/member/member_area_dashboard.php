@@ -511,7 +511,7 @@ if (!isset($feed_items_biblioteca)) {
             <?php foreach ($segments_biblioteca as $seg): ?>
                 <?php if ($seg['type'] === 'courses'): ?>
                     <!-- Grid de cards de cursos (2 ou 3 por linha) -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-8 biblioteca-course-grid">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6 biblioteca-course-grid">
                         <?php foreach ($seg['items'] as $curso): ?>
                             <a href="/member_course_view?produto_id=<?php echo $curso['produto_id']; ?>"
                                class="group bg-gray-800 rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] border border-gray-700/50 flex flex-col biblioteca-course-card"
@@ -613,7 +613,7 @@ if (!isset($feed_items_biblioteca)) {
                     $banner_titulo = !empty($banner['titulo']) ? $banner['titulo'] : 'Promoção';
                     ?>
                     <!-- Banner em linha inteira (full-width) entre as linhas de cards - layout: badge acima, imagem, CTA abaixo -->
-                    <div class="w-full mb-12 biblioteca-banner" data-item-type="banner">
+                    <div class="w-full mb-6 biblioteca-banner" data-item-type="banner">
                         <?php if ($is_clickable): ?>
                         <a href="<?php echo htmlspecialchars($banner['click_url']); ?>" target="<?php echo $link_target; ?>" rel="noopener noreferrer"
                            class="banner-card block group rounded-2xl overflow-hidden border border-purple-500/50 shadow-lg transition-all duration-300 hover:shadow-2xl hover:opacity-95">
@@ -621,19 +621,19 @@ if (!isset($feed_items_biblioteca)) {
                         <div class="banner-card block rounded-2xl overflow-hidden border border-purple-500/50 shadow-lg">
                         <?php endif; ?>
                             <?php $bi = !empty($banner['badge_icon']) ? $banner['badge_icon'] : '🔔'; $bl = !empty($banner['badge_label']) ? $banner['badge_label'] : 'Aviso'; ?>
-                            <div class="banner-badge bg-purple-600 text-white text-xs font-bold px-3 py-2.5 rounded-t-2xl text-center truncate max-w-full" title="<?php echo htmlspecialchars($bi . ' ' . $bl); ?>"><?php echo htmlspecialchars($bi . ' ' . $bl); ?></div>
-                            <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center min-h-[200px] p-6 md:p-10" style="aspect-ratio: 3/2;">
+                            <div class="banner-badge bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-t-2xl text-center truncate max-w-full" title="<?php echo htmlspecialchars($bi . ' ' . $bl); ?>"><?php echo htmlspecialchars($bi . ' ' . $bl); ?></div>
+                            <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center min-h-[180px] p-3 md:p-4" style="aspect-ratio: 3/2;">
                                 <img src="<?php echo htmlspecialchars($banner_img); ?>" alt="<?php echo htmlspecialchars($banner_titulo); ?>"
                                      class="max-w-full max-h-full w-auto h-auto object-contain transition-transform duration-300 group-hover:scale-105"
                                      onerror="this.onerror=null; this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
                             </div>
                             <?php if ($is_clickable): ?>
-                            <div class="banner-cta flex items-center justify-center gap-2 bg-gray-900/90 text-green-400 text-sm font-semibold px-4 py-6">
+                            <div class="banner-cta flex items-center justify-center gap-2 bg-gray-900/90 text-green-400 text-sm font-semibold px-4 py-2.5">
                                 <i data-lucide="external-link" class="w-4 h-4"></i>
                                 <span>Ver oferta</span>
                             </div>
                             <?php endif; ?>
-                            <div class="bg-gray-800/80 px-6 py-5">
+                            <div class="bg-gray-800/80 px-4 py-2.5">
                                 <h3 class="banner-title-effect text-lg font-bold text-white"><?php echo htmlspecialchars($banner_titulo); ?></h3>
                             </div>
                         <?php if ($is_clickable): ?>
@@ -650,7 +650,7 @@ if (!isset($feed_items_biblioteca)) {
         <!-- 
             SEÇÃO DE OFERTAS EXCLUSIVAS (GRID 4 COLUNAS)
         -->
-        <h2 class="text-3xl font-extrabold text-gray-100 mb-8 mt-12">Ofertas Exclusivas para Você</h2>
+        <h2 class="text-3xl font-extrabold text-gray-100 mb-6 mt-8">Ofertas Exclusivas para Você</h2>
         
         <div id="exclusive-offers-loading" class="bg-gray-800 p-8 rounded-lg shadow-md text-center text-gray-400 border border-gray-700" style="display: block;">
             <svg class="animate-spin h-8 w-8 text-green-500 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -667,7 +667,7 @@ if (!isset($feed_items_biblioteca)) {
         </div>
 
         <!-- Grid de Ofertas Exclusivas (4 por linha) -->
-        <div id="exclusive-offers-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6" style="display: none;">
+        <div id="exclusive-offers-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" style="display: none;">
             <!-- Offers will be loaded here by JavaScript -->
         </div>
 
@@ -927,25 +927,25 @@ if (!isset($feed_items_biblioteca)) {
                             const badgeIcon = (banner.badge_icon && String(banner.badge_icon).trim()) ? banner.badge_icon : '🔔';
                             const badgeLabel = (banner.badge_label && String(banner.badge_label).trim()) ? banner.badge_label : 'Aviso';
                             const badgeText = escapeHtml(badgeIcon + ' ' + badgeLabel);
-                            const ctaHtml = isClickable ? `<div class="banner-cta flex items-center justify-center gap-2 bg-gray-900/90 text-green-400 text-sm font-semibold px-4 py-6 rounded-b-2xl"><i data-lucide="external-link" class="w-4 h-4"></i><span>Ver oferta</span></div>` : '';
+                            const ctaHtml = isClickable ? `<div class="banner-cta flex items-center justify-center gap-2 bg-gray-900/90 text-green-400 text-sm font-semibold px-4 py-2.5 rounded-b-2xl"><i data-lucide="external-link" class="w-4 h-4"></i><span>Ver oferta</span></div>` : '';
                             if (isClickable) {
                                 return `<a href="${link}" ${linkTarget} class="banner-card block group rounded-2xl overflow-hidden border border-purple-500/50 shadow-lg transition-all duration-300 hover:shadow-2xl hover:border-purple-500">
-                                    <div class="banner-badge bg-purple-600 text-white text-xs font-bold px-3 py-2.5 rounded-t-2xl text-center truncate max-w-full" title="${badgeText}">${badgeText}</div>
-                                    <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center min-h-[200px] p-6 md:p-10" style="aspect-ratio: 3/2;">
+                                    <div class="banner-badge bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-t-2xl text-center truncate max-w-full" title="${badgeText}">${badgeText}</div>
+                                    <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center min-h-[180px] p-3 md:p-4" style="aspect-ratio: 3/2;">
                                         <img src="${bannerImg}" alt="${titulo}" class="max-w-full max-h-full w-auto h-auto object-contain transition-transform duration-300 group-hover:scale-105" onerror="this.onerror=null;this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
                                     </div>
                                     ${ctaHtml}
-                                    <div class="bg-gray-800/80 px-6 py-5">
+                                    <div class="bg-gray-800/80 px-4 py-2.5">
                                         <h3 class="banner-title-effect text-lg font-bold text-white">${titulo}</h3>
                                     </div>
                                 </a>`;
                             }
                             return `<div class="banner-card block rounded-2xl overflow-hidden border border-purple-500/50 shadow-lg">
-                                <div class="banner-badge bg-purple-600 text-white text-xs font-bold px-3 py-2.5 rounded-t-2xl text-center truncate max-w-full" title="${badgeText}">${badgeText}</div>
-                                <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center min-h-[200px] p-6 md:p-10" style="aspect-ratio: 3/2;">
+                                <div class="banner-badge bg-purple-600 text-white text-xs font-bold px-3 py-1.5 rounded-t-2xl text-center truncate max-w-full" title="${badgeText}">${badgeText}</div>
+                                <div class="banner-image w-full overflow-hidden bg-gray-900 flex items-center justify-center min-h-[180px] p-3 md:p-4" style="aspect-ratio: 3/2;">
                                     <img src="${bannerImg}" alt="${titulo}" class="max-w-full max-h-full w-auto h-auto object-contain" onerror="this.onerror=null;this.src='https://placehold.co/1200x400/4c1d95/9ca3af?text=Banner';">
                                 </div>
-                                <div class="bg-gray-800/80 px-6 py-5">
+                                <div class="bg-gray-800/80 px-4 py-2.5">
                                     <h3 class="banner-title-effect text-lg font-bold text-white">${titulo}</h3>
                                 </div>
                             </div>`;
@@ -1008,7 +1008,7 @@ if (!isset($feed_items_biblioteca)) {
                             items.forEach(it => {
                                 if (it.type === 'banner') {
                                     const cell = document.createElement('div');
-                                    cell.className = 'col-span-full w-full mb-12 exclusive-offer-banner';
+                                    cell.className = 'col-span-full w-full mb-6 exclusive-offer-banner';
                                     cell.innerHTML = renderBannerHtml(it.data);
                                     exclusiveOffersGrid.appendChild(cell);
                                 } else {
@@ -1020,7 +1020,7 @@ if (!isset($feed_items_biblioteca)) {
                         } else {
                             banners.forEach(banner => {
                                 const cell = document.createElement('div');
-                                cell.className = 'col-span-full w-full mb-12 exclusive-offer-banner';
+                                cell.className = 'col-span-full w-full mb-6 exclusive-offer-banner';
                                 cell.innerHTML = renderBannerHtml(banner);
                                 exclusiveOffersGrid.appendChild(cell);
                             });
