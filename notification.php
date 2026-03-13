@@ -349,18 +349,74 @@ try {
     }
     
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $raw_input = file_get_contents('php://input');
         $is_json = stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
         $data = [];
         $action = $_GET['action'] ?? '';
 
         if ($is_json) {
-            $input = file_get_contents('php://input');
-            $data = json_decode($input, true) ?? [];
+            $data = json_decode($raw_input, true) ?? [];
         } else {
             $data = $_POST;
-            if (empty($data)) {
-                $input = file_get_contents('php://input');
-                parse_str($input, $data);
+            if (empty($data) && !empty($raw_input)) {
+                parse_str($raw_input, $data);
+            }
+        }
+
+        $payment_id = null;
+        $gateway_detected = null;
+
+        // --- WEBHOOK STRIPE (prioridade - requer verificação de assinatura) ---
+        $stripe_sig = $_SERVER['HTTP_STRIPE_SIGNATURE'] ?? '';
+        if (!empty($stripe_sig) && !empty($raw_input) && !empty($data)) {
+            require_once __DIR__ . '/gateways/stripe.php';
+            $stmt_usuarios = $pdo->query("SELECT id, stripe_webhook_secret FROM usuarios WHERE stripe_webhook_secret IS NOT NULL AND stripe_webhook_secret != ''");
+            while ($row = $stmt_usuarios->fetch(PDO::FETCH_ASSOC)) {
+                $event_id = verify_stripe_webhook($raw_input, $stripe_sig, $row['stripe_webhook_secret']);
+                if ($event_id) {
+                    $event_obj = (object)[
+                        'type' => $data['type'] ?? '',
+                        'data' => (object)['object' => (object)($data['data']['object'] ?? [])]
+                    ];
+                    $extracted = stripe_extract_payment_id($event_obj);
+                    if ($extracted && in_array($data['type'] ?? '', ['checkout.session.completed', 'payment_intent.succeeded'])) {
+                        log_webhook("Stripe webhook verificado. Event: " . ($data['type'] ?? '') . ", payment_id: " . $extracted);
+                        $payment_id = $extracted;
+                        $gateway_detected = 'stripe';
+                        break;
+                    }
+                }
+            }
+        }
+
+        // --- WEBHOOK PAYPAL (event_type no payload, com verificação de assinatura) ---
+        if (!$payment_id && !empty($data['event_type']) && strpos($data['event_type'], 'PAYMENT') !== false) {
+            require_once __DIR__ . '/gateways/paypal.php';
+            $resource = $data['resource'] ?? [];
+            $order_id = $resource['supplementary_data']['related_ids']['order_id'] ?? $resource['id'] ?? $data['id'] ?? null;
+            if ($order_id && in_array($data['event_type'], ['PAYMENT.CAPTURE.COMPLETED', 'CHECKOUT.ORDER.APPROVED'])) {
+                $stmt_paypal = $pdo->prepare("SELECT v.id, p.usuario_id FROM vendas v JOIN produtos p ON v.produto_id = p.id WHERE v.transacao_id = ? AND v.metodo_pagamento LIKE '%PayPal%' LIMIT 1");
+                $stmt_paypal->execute([$order_id]);
+                $paypal_sale = $stmt_paypal->fetch(PDO::FETCH_ASSOC);
+                if ($paypal_sale) {
+                    $stmt_creds = $pdo->prepare("SELECT paypal_client_id, paypal_client_secret, paypal_webhook_secret FROM usuarios WHERE id = ?");
+                    $stmt_creds->execute([$paypal_sale['usuario_id'] ?? 0]);
+                    $paypal_creds = $stmt_creds->fetch(PDO::FETCH_ASSOC);
+                    $webhook_id = $paypal_creds['paypal_webhook_secret'] ?? '';
+                    $verified = false;
+                    if (!empty($webhook_id) && !empty($paypal_creds['paypal_client_id']) && !empty($paypal_creds['paypal_client_secret'])) {
+                        $headers = function_exists('getallheaders') ? getallheaders() : [];
+                        $sandbox = (strpos($paypal_creds['paypal_client_id'], 'sb') !== false);
+                        $verified = verify_paypal_webhook($headers, $raw_input, $webhook_id, $paypal_creds['paypal_client_id'], $paypal_creds['paypal_client_secret'], $sandbox);
+                    }
+                    if ($verified || empty($webhook_id)) {
+                        $payment_id = $order_id;
+                        $gateway_detected = 'paypal';
+                        log_webhook("PayPal webhook " . ($verified ? "verificado" : "sem verificação") . ". Event: " . ($data['event_type'] ?? '') . ", order_id: " . $order_id);
+                    } else {
+                        log_webhook("PayPal webhook REJEITADO: assinatura inválida");
+                    }
+                }
             }
         }
 
@@ -386,9 +442,8 @@ try {
         // Log do webhook recebido para debug
         log_webhook("Webhook recebido: " . json_encode($data));
         
-        // Tenta extrair payment_id de diferentes formatos (Mercado Pago, PushinPay, Efí, Beehive, Hypercash)
-        $payment_id = null;
-        $gateway_detected = null;
+        // Tenta extrair payment_id de diferentes formatos (Stripe já definido acima; Mercado Pago, PushinPay, Efí, Beehive, Hypercash)
+        if (!$payment_id) {
         
         // Formato Efí Cartão - charge_id (prioridade para detectar gateway de cartão)
         if (isset($data['data']['charge_id'])) {
@@ -463,6 +518,7 @@ try {
                 }
             }
         }
+        } // fim if (!$payment_id) - extração para gateways não-Stripe
         
         log_webhook("Payment ID final extraído: " . ($payment_id ?: 'NÃO ENCONTRADO') . " | Gateway detectado: " . ($gateway_detected ?: 'NÃO DETECTADO'));
 
@@ -483,6 +539,18 @@ try {
                 
                 // Tenta extrair status do webhook (diferentes formatos)
                 $new_status = null;
+                
+                // Formato Stripe - checkout.session.completed e payment_intent.succeeded = pagamento aprovado
+                if ($gateway_detected === 'stripe') {
+                    $new_status = 'approved';
+                    log_webhook("Stripe: Status definido como approved");
+                }
+                
+                // Formato PayPal - PAYMENT.CAPTURE.COMPLETED = pagamento aprovado
+                if ($gateway_detected === 'paypal') {
+                    $new_status = 'approved';
+                    log_webhook("PayPal: Status definido como approved");
+                }
                 
                 // Formato Mercado Pago
                 // O webhook do Mercado Pago NÃO envia o status, apenas o ID do pagamento
