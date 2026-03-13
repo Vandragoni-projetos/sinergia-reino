@@ -1408,6 +1408,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
             const pixModalOverlay = document.getElementById('pix-modal-overlay');
             const pixModalContent = document.getElementById('pix-modal-content');
             const mainProductPrice = <?php echo (float)$produto['preco']; ?>;
+            const mainProductPriceUsd = <?php echo (!empty($produto['price_usd']) && $produto['price_usd'] > 0) ? (float)$produto['price_usd'] : 'null'; ?>;
+            const productCurrency = '<?php echo (!empty($produto['price_usd']) && $produto['price_usd'] > 0) ? 'usd' : 'brl'; ?>';
+            const checkoutHash = '<?php echo htmlspecialchars($checkout_hash ?? '', ENT_QUOTES, 'UTF-8'); ?>';
             const infoprodutorId = <?php echo (int)$infoprodutor_id; ?>;
             const mainProductId = <?php echo (int)$produto['id']; ?>;
             const ofertaId = <?php echo isset($produto['oferta_id']) ? (int)$produto['oferta_id'] : 'null'; ?>;
@@ -2002,7 +2005,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         const response = await fetch('/process_payment', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: 'pix', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: 'stripe' })
+                            body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: 'pix', transaction_amount: parseFloat(productCurrency === 'usd' && mainProductPriceUsd ? mainProductPriceUsd : currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: 'stripe', currency: productCurrency, checkout_hash: checkoutHash })
                         });
                         const result = await response.json();
                         if (response.ok && result.status === 'pix_created') {
@@ -2034,7 +2037,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             const response = await fetch('/process_payment', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: gateway.includes('ticket') ? 'ticket' : 'credit_card', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: gateway })
+                                body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: gateway.includes('ticket') ? 'ticket' : 'credit_card', transaction_amount: parseFloat((gateway === 'stripe_card' || gateway === 'stripe') && productCurrency === 'usd' && mainProductPriceUsd ? mainProductPriceUsd : currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: gateway, currency: (gateway === 'stripe_card' || gateway === 'stripe') ? productCurrency : undefined, checkout_hash: (gateway === 'stripe_card' || gateway === 'stripe' || gateway === 'paypal') ? checkoutHash : undefined })
                             });
                             const result = await response.json();
                             if (response.ok && result.checkout_url) window.location.href = result.checkout_url;
