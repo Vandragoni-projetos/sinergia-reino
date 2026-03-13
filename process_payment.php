@@ -140,7 +140,7 @@ $main_product_id = $data['product_id'];
 $gateway_choice = $data['gateway'] ?? 'mercadopago';
 
 try {
-    $stmt_prod = $pdo->prepare("SELECT usuario_id, nome FROM produtos WHERE id = ?");
+    $stmt_prod = $pdo->prepare("SELECT usuario_id, nome, preco, price_usd FROM produtos WHERE id = ?");
     $stmt_prod->execute([$main_product_id]);
     $product_info = $stmt_prod->fetch(PDO::FETCH_ASSOC);
     if (!$product_info) throw new Exception("Produto não encontrado.");
@@ -149,14 +149,14 @@ try {
     $main_product_name = $product_info['nome'];
 
     try {
-        $stmt_user = $pdo->prepare("SELECT mp_access_token, pushinpay_token, efi_client_id, efi_client_secret, efi_certificate_path, efi_pix_key, efi_payee_code, beehive_secret_key, beehive_public_key, hypercash_secret_key, hypercash_public_key, pagarme_api_key, pagarme_api_secret, paypal_client_id, paypal_client_secret, stripe_publishable_key, stripe_secret_key FROM usuarios WHERE id = ?");
+        $stmt_user = $pdo->prepare("SELECT mp_access_token, pushinpay_token, efi_client_id, efi_client_secret, efi_certificate_path, efi_pix_key, efi_payee_code, beehive_secret_key, beehive_public_key, hypercash_secret_key, hypercash_public_key, pagarme_api_key, pagarme_api_secret, paypal_client_id, paypal_client_secret, stripe_publishable_key, stripe_secret_key, stripe_webhook_secret FROM usuarios WHERE id = ?");
         $stmt_user->execute([$usuario_id]);
         $credentials = $stmt_user->fetch(PDO::FETCH_ASSOC);
     } catch (PDOException $e) {
         $stmt_user = $pdo->prepare("SELECT mp_access_token, pushinpay_token, efi_client_id, efi_client_secret, efi_certificate_path, efi_pix_key, efi_payee_code, beehive_secret_key, beehive_public_key, hypercash_secret_key, hypercash_public_key FROM usuarios WHERE id = ?");
         $stmt_user->execute([$usuario_id]);
         $credentials = $stmt_user->fetch(PDO::FETCH_ASSOC);
-        $credentials['pagarme_api_key'] = $credentials['pagarme_api_secret'] = $credentials['paypal_client_id'] = $credentials['paypal_client_secret'] = $credentials['stripe_publishable_key'] = $credentials['stripe_secret_key'] = null;
+        $credentials['pagarme_api_key'] = $credentials['pagarme_api_secret'] = $credentials['paypal_client_id'] = $credentials['paypal_client_secret'] = $credentials['stripe_publishable_key'] = $credentials['stripe_secret_key'] = $credentials['stripe_webhook_secret'] = null;
     }
     
     // URL Webhook
@@ -667,22 +667,146 @@ try {
         returnJsonSuccess($response_data);
 
     // ==========================================================
-    // FLUXO PAGAR.ME / PAYPAL / STRIPE (em desenvolvimento)
+    // FLUXO STRIPE CHECKOUT
     // ==========================================================
-    } elseif (in_array($gateway_choice, ['pagarme', 'pagarme_card', 'pagarme_ticket', 'paypal', 'stripe', 'stripe_card'])) {
-        $gw_name = (strpos($gateway_choice, 'pagarme') !== false) ? 'Pagar.me' : (strpos($gateway_choice, 'paypal') !== false ? 'PayPal' : 'Stripe');
-        $creds_ok = false;
-        if (strpos($gateway_choice, 'pagarme') !== false) {
-            $creds_ok = !empty($credentials['pagarme_api_key'] ?? '') && !empty($credentials['pagarme_api_secret'] ?? '');
-        } elseif (strpos($gateway_choice, 'paypal') !== false) {
-            $creds_ok = !empty($credentials['paypal_client_id'] ?? '') && !empty($credentials['paypal_client_secret'] ?? '');
+    } elseif (in_array($gateway_choice, ['stripe', 'stripe_card'])) {
+        $stripe_secret = trim($credentials['stripe_secret_key'] ?? '');
+        if (empty($stripe_secret)) {
+            throw new Exception("Credenciais Stripe não configuradas. Configure em Integrações.");
+        }
+        require_once __DIR__ . '/gateways/stripe.php';
+
+        $currency = strtolower($data['currency'] ?? 'brl');
+        $amount = (float)($data['transaction_amount'] ?? 0);
+        if ($amount <= 0) {
+            throw new Exception("Valor inválido para pagamento.");
+        }
+
+        if ($currency === 'usd') {
+            $currency = 'usd';
         } else {
-            $creds_ok = !empty($credentials['stripe_publishable_key'] ?? '') && !empty($credentials['stripe_secret_key'] ?? '');
+            $currency = 'brl';
         }
+
+        $base_url = 'https://' . $domainName . ($path ? $path . '/' : '/');
+        $obrigado_base = rtrim($redirect_url_after_approval, '?');
+        $success_url = $obrigado_base . (strpos($obrigado_base, '?') !== false ? '&' : '?') . 'payment_id={CHECKOUT_SESSION_ID}';
+        $cancel_hash = $data['checkout_hash'] ?? '';
+        $cancel_url = $base_url . 'checkout' . ($cancel_hash ? '?p=' . urlencode($cancel_hash) . '&' : '?') . 'canceled=1';
+
+        $stripe_params = [
+            'secret_key' => $stripe_secret,
+            'amount' => $amount,
+            'currency' => $currency,
+            'product_name' => $main_product_name,
+            'success_url' => $success_url,
+            'cancel_url' => $cancel_url,
+            'customer_email' => $data['email'],
+            'metadata' => [
+                'produto_id' => (string)$main_product_id,
+                'email_cliente' => $data['email'],
+                'checkout_session_uuid' => $checkout_session_uuid,
+            ],
+            'test_mode' => (strpos($stripe_secret, 'sk_test_') === 0),
+        ];
+
+        $stripe_result = create_stripe_checkout_session($stripe_params);
+        if (!$stripe_result || empty($stripe_result['checkout_url'])) {
+            log_process("Stripe: Falha ao criar sessão - " . json_encode($stripe_result));
+            throw new Exception("Erro ao criar sessão de pagamento Stripe. Tente novamente.");
+        }
+
+        $stripe_session_id = $stripe_result['session_id'];
+        save_sales($pdo, $data, $main_product_id, $stripe_session_id, 'pending', 'Cartão Stripe', $checkout_session_uuid, $utm_parameters);
+
+        if (function_exists('trigger_utmfy_integrations')) {
+            $event_data_utmfy = [
+                'transacao_id' => $stripe_session_id,
+                'valor_total_compra' => $amount,
+                'comprador' => ['nome' => $data['name'], 'email' => $data['email'], 'telefone' => $data['phone'], 'cpf' => $data['cpf']],
+                'metodo_pagamento' => 'Cartão Stripe',
+                'produtos_comprados' => [['produto_id' => $main_product_id, 'nome' => $main_product_name, 'valor' => $amount]],
+                'utm_parameters' => $utm_parameters,
+                'data_venda' => date('Y-m-d H:i:s')
+            ];
+            trigger_utmfy_integrations($usuario_id, $event_data_utmfy, 'pending', $main_product_id);
+        }
+
+        returnJsonSuccess([
+            'checkout_url' => $stripe_result['checkout_url'],
+            'session_id' => $stripe_session_id,
+        ]);
+
+    // ==========================================================
+    // FLUXO PAYPAL
+    // ==========================================================
+    } elseif ($gateway_choice === 'paypal') {
+        $paypal_client = trim($credentials['paypal_client_id'] ?? '');
+        $paypal_secret = trim($credentials['paypal_client_secret'] ?? '');
+        if (empty($paypal_client) || empty($paypal_secret)) {
+            throw new Exception("Credenciais PayPal não configuradas. Configure em Integrações.");
+        }
+        require_once __DIR__ . '/gateways/paypal.php';
+
+        $currency = strtoupper($data['currency'] ?? 'brl');
+        $amount = (float)($data['transaction_amount'] ?? 0);
+        if ($amount <= 0) throw new Exception("Valor inválido para pagamento.");
+
+        if ($currency !== 'USD') $currency = 'BRL';
+
+        $base_url = 'https://' . $domainName . ($path ? $path . '/' : '/');
+        $return_url = $base_url . 'paypal_return.php';
+        $cancel_hash = $data['checkout_hash'] ?? '';
+        $cancel_url = $base_url . 'checkout' . ($cancel_hash ? '?p=' . urlencode($cancel_hash) . '&' : '?') . 'canceled=1';
+
+        $paypal_params = [
+            'client_id' => $paypal_client,
+            'client_secret' => $paypal_secret,
+            'amount' => $amount,
+            'currency' => $currency,
+            'product_name' => $main_product_name,
+            'return_url' => $return_url,
+            'cancel_url' => $cancel_url,
+            'metadata' => ['checkout_session_uuid' => $checkout_session_uuid],
+            'sandbox' => (strpos($paypal_client, 'sb') !== false || strpos($paypal_client, 'sandbox') !== false),
+        ];
+
+        $paypal_result = create_paypal_order($paypal_params);
+        if (!$paypal_result || empty($paypal_result['approval_url'])) {
+            log_process("PayPal: Falha ao criar ordem");
+            throw new Exception("Erro ao criar ordem PayPal. Tente novamente.");
+        }
+
+        $order_id = $paypal_result['order_id'];
+        save_sales($pdo, $data, $main_product_id, $order_id, 'pending', 'PayPal', $checkout_session_uuid, $utm_parameters);
+
+        if (function_exists('trigger_utmfy_integrations')) {
+            $event_data_utmfy = [
+                'transacao_id' => $order_id,
+                'valor_total_compra' => $amount,
+                'comprador' => ['nome' => $data['name'], 'email' => $data['email'], 'telefone' => $data['phone'], 'cpf' => $data['cpf']],
+                'metodo_pagamento' => 'PayPal',
+                'produtos_comprados' => [['produto_id' => $main_product_id, 'nome' => $main_product_name, 'valor' => $amount]],
+                'utm_parameters' => $utm_parameters,
+                'data_venda' => date('Y-m-d H:i:s')
+            ];
+            trigger_utmfy_integrations($usuario_id, $event_data_utmfy, 'pending', $main_product_id);
+        }
+
+        returnJsonSuccess([
+            'checkout_url' => $paypal_result['approval_url'],
+            'order_id' => $order_id,
+        ]);
+
+    // ==========================================================
+    // FLUXO PAGAR.ME (em desenvolvimento)
+    // ==========================================================
+    } elseif (in_array($gateway_choice, ['pagarme', 'pagarme_card', 'pagarme_ticket'])) {
+        $creds_ok = !empty($credentials['pagarme_api_key'] ?? '') && !empty($credentials['pagarme_api_secret'] ?? '');
         if (!$creds_ok) {
-            throw new Exception("Credenciais {$gw_name} não configuradas. Configure em Integrações.");
+            throw new Exception("Credenciais Pagar.me não configuradas. Configure em Integrações.");
         }
-        throw new Exception("Gateway {$gw_name} em desenvolvimento. Use Mercado Pago, Efí ou PushinPay temporariamente.");
+        throw new Exception("Gateway Pagar.me em desenvolvimento. Use Mercado Pago, Efí, PushinPay, Stripe ou PayPal.");
 
     // ==========================================================
     // FLUXO MERCADO PAGO
