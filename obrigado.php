@@ -214,7 +214,7 @@ if ($payment_id) {
                 error_log("Obrigado.php: Status no BD é '" . $sale_details['status_pagamento'] . "'. Verificando na API...");
                 
                 // Busca token do gateway
-                $stmt_gateway = $pdo->prepare("SELECT u.mp_access_token, u.pushinpay_token, p.gateway FROM produtos p LEFT JOIN usuarios u ON p.usuario_id = u.id WHERE p.id = ?");
+                $stmt_gateway = $pdo->prepare("SELECT u.mp_access_token, u.pushinpay_token, u.paypal_client_id, u.paypal_client_secret, p.gateway FROM produtos p LEFT JOIN usuarios u ON p.usuario_id = u.id WHERE p.id = ?");
                 $stmt_gateway->execute([$sale_details['produto_id']]);
                 $gateway_info = $stmt_gateway->fetch(PDO::FETCH_ASSOC);
                 
@@ -270,6 +270,17 @@ if ($payment_id) {
                                     break;
                                 }
                             }
+                        }
+                    }
+                    // Verifica PayPal - captura a ordem se ainda pendente
+                    elseif (!empty($gateway_info['paypal_client_id']) && !empty($gateway_info['paypal_client_secret']) && stripos($sale_details['metodo_pagamento'], 'PayPal') !== false) {
+                        require_once __DIR__ . '/gateways/paypal.php';
+                        $sandbox = (strpos($gateway_info['paypal_client_id'], 'sb') !== false);
+                        $capture = capture_paypal_order($payment_id, $gateway_info['paypal_client_id'], $gateway_info['paypal_client_secret'], $sandbox);
+                        if ($capture && ($capture['status'] === 'COMPLETED' || $capture['status'] === 'completed')) {
+                            $status_aprovado = true;
+                            $pdo->prepare("UPDATE vendas SET status_pagamento = 'approved' WHERE transacao_id = ?")->execute([$payment_id]);
+                            error_log("Obrigado.php: PayPal capturado e status atualizado para approved");
                         }
                     }
                 }
