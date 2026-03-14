@@ -80,6 +80,20 @@
                     <input type="text" id="preco_anterior" name="preco_anterior" class="form-input" placeholder="Ex: 99,90" value="<?php echo !empty($produto['preco_anterior']) ? htmlspecialchars(number_format($produto['preco_anterior'], 2, ',', '.')) : ''; ?>">
                     <p class="text-xs text-gray-400 mt-1">Deixe em branco para não exibir o preço cortado.</p>
                 </div>
+                <div class="md:col-span-2">
+                    <label for="price_usd" class="block text-gray-300 text-sm font-semibold mb-2">Preço USD (US$) – Checkout internacional</label>
+                    <input type="number" step="0.01" id="price_usd" name="price_usd" class="form-input w-full max-w-xs" placeholder="Ex: 19.99" value="<?php echo !empty($produto['price_usd']) ? htmlspecialchars($produto['price_usd']) : ''; ?>">
+                    <p id="price-usd-preview" class="text-xs text-gray-400 mt-1" data-usd-rate="<?php echo htmlspecialchars(function_exists('getSystemSetting') ? getSystemSetting('usd_rate', '5.00') : '5.00'); ?>"><?php
+                        $usd_rate = (float)(function_exists('getSystemSetting') ? getSystemSetting('usd_rate', '5.00') : '5.00');
+                        $preco_brl = (float)($produto['preco'] ?? 0);
+                        if ($preco_brl > 0 && $usd_rate > 0 && empty($produto['price_usd'])) {
+                            $aprox_usd = $preco_brl / $usd_rate;
+                            echo 'Aproximado: US$ ' . number_format($aprox_usd, 2, '.', ',') . ' (taxa ' . number_format($usd_rate, 2) . ' BRL/USD). Preencha para usar USD no Stripe.';
+                        } else {
+                            echo 'Opcional. Se preenchido, clientes internacionais verão o valor em USD no checkout Stripe.';
+                        }
+                    ?></p>
+                </div>
             </div>
         </div>
     </div>
@@ -370,6 +384,26 @@ document.addEventListener('DOMContentLoaded', function() {
     togglePriceFields();
     var isFree = document.getElementById('is_free');
     if (isFree) updateIsFreeToggle(isFree);
+    // Preview dinâmico de conversão BRL -> USD
+    var precoInput = document.getElementById('preco');
+    var priceUsdInput = document.getElementById('price_usd');
+    var previewEl = document.getElementById('price-usd-preview');
+    if (precoInput && previewEl && priceUsdInput) {
+        function updateUsdPreview() {
+            var rate = parseFloat(previewEl.getAttribute('data-usd-rate')) || 5;
+            var brl = parseFloat(precoInput.value) || 0;
+            if (brl > 0 && rate > 0 && !priceUsdInput.value) {
+                var aprox = brl / rate;
+                previewEl.textContent = 'Aproximado: US$ ' + aprox.toFixed(2).replace('.', ',') + ' (taxa ' + rate.toFixed(2) + ' BRL/USD). Preencha para usar USD no Stripe.';
+            } else if (!priceUsdInput.value) {
+                previewEl.textContent = 'Opcional. Se preenchido, clientes internacionais verão o valor em USD no checkout Stripe.';
+            } else {
+                previewEl.textContent = 'Preço internacional em USD será usado no checkout Stripe.';
+            }
+        }
+        precoInput.addEventListener('input', updateUsdPreview);
+        priceUsdInput.addEventListener('input', updateUsdPreview);
+    }
 });
 </script>
 
