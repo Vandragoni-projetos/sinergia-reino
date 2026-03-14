@@ -107,6 +107,8 @@ if (isset($_POST['salvar_produto_config'])) {
             $descricao = $_POST['descricao'] ?? $produto['descricao'];
             $preco = $_POST['preco'] ?? $produto['preco'];
             $preco_anterior = !empty($_POST['preco_anterior']) ? floatval(str_replace(',', '.', $_POST['preco_anterior'])) : null;
+            $price_usd = !empty($_POST['price_usd']) && is_numeric($_POST['price_usd']) ? floatval($_POST['price_usd']) : null;
+            if ($price_usd !== null && $price_usd <= 0) $price_usd = null;
             $gateway = $_POST['gateway'] ?? $current_gateway;
             $tipo_entrega = $_POST['tipo_entrega'] ?? $produto['tipo_entrega'];
 
@@ -180,6 +182,7 @@ if (isset($_POST['salvar_produto_config'])) {
             if ($is_free) {
                 $preco = 0;
                 $preco_anterior = null;
+                $price_usd = null;
             }
             
             // Se marcou como vitrine, desmarca outros produtos vitrine do mesmo usuário
@@ -189,8 +192,8 @@ if (isset($_POST['salvar_produto_config'])) {
             }
             
             if ($sales_page_url_valid) {
-                $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, foto = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ?, product_type = ?, product_tagline = ?, sales_page_url = ? WHERE id = ? AND usuario_id = ?");
-                $result = $stmt_update->execute([$nome, $descricao, $preco, $nome_foto, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $product_type, $product_tagline, $sales_page_url, $id_produto, $usuario_id]);
+                $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, price_usd = ?, foto = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ?, product_type = ?, product_tagline = ?, sales_page_url = ? WHERE id = ? AND usuario_id = ?");
+                $result = $stmt_update->execute([$nome, $descricao, $preco, $price_usd, $nome_foto, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $product_type, $product_tagline, $sales_page_url, $id_produto, $usuario_id]);
                 if (!$result) {
                     throw new Exception("Erro ao atualizar produto: " . implode(", ", $stmt_update->errorInfo()));
                 }
