@@ -636,12 +636,9 @@ $produtos = array_filter(array_map(function($item) {
                                 </a>
                                 
                                 <!-- Botão de Excluir -->
-                                <form method="post" action="/index?pagina=produtos" onsubmit="return confirm('Tem certeza que deseja excluir este produto? Esta ação não pode ser desfeita.');">
-                                    <input type="hidden" name="id_produto" value="<?php echo $produto['id']; ?>">
-                                    <button type="submit" name="deletar_produto" class="bg-white/90 hover:bg-white text-red-600 p-2 rounded-lg shadow-md transition-all duration-200 hover:shadow-lg backdrop-blur-sm w-full" title="Excluir Produto">
-                                        <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                    </button>
-                                </form>
+                                <button type="button" onclick="openDeleteProdutoModal(<?php echo (int)$produto['id']; ?>, <?php echo json_encode($produto['nome'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>)" class="bg-white/90 hover:bg-white text-red-600 p-2 rounded-lg shadow-md transition-all duration-200 hover:shadow-lg backdrop-blur-sm w-full" title="Excluir Produto">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
                             </div>
                         </div>
 
@@ -764,6 +761,42 @@ $produtos = array_filter(array_map(function($item) {
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
+    </div>
+</div>
+
+<!-- Modal de confirmação de exclusão de produto -->
+<div id="delete-produto-modal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="delete-produto-modal-title" role="dialog" aria-modal="true">
+    <div class="flex min-h-screen items-center justify-center p-4">
+        <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity" onclick="closeDeleteProdutoModal()"></div>
+        <div class="relative bg-dark-card rounded-xl shadow-xl border border-dark-border max-w-md w-full p-6">
+            <div class="flex items-start gap-4">
+                <div class="flex-shrink-0 w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+                    <i data-lucide="alert-triangle" class="h-6 w-6 text-red-500"></i>
+                </div>
+                <div class="flex-1">
+                    <h3 class="text-lg font-semibold text-white" id="delete-produto-modal-title">Excluir Produto</h3>
+                    <p class="mt-2 text-sm text-gray-400">
+                        Tem certeza que deseja excluir o produto <strong id="delete-produto-nome" class="text-white"></strong>?
+                    </p>
+                    <p class="mt-2 text-sm text-amber-400/90">
+                        Esta ação é <strong>irreversível</strong>. Se o produto tiver curso associado (área de membros), todos os módulos e aulas serão perdidos.
+                    </p>
+                    <form id="delete-produto-form" method="post" action="/index?pagina=produtos" class="mt-4">
+                        <input type="hidden" name="id_produto" id="delete-produto-id">
+                        <input type="hidden" name="deletar_produto" value="1">
+                        <div class="flex gap-3">
+                            <button type="button" onclick="confirmDeleteProduto()" class="flex-1 inline-flex justify-center items-center gap-2 rounded-lg px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium text-sm transition-colors">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                Sim, excluir
+                            </button>
+                            <button type="button" onclick="closeDeleteProdutoModal()" class="flex-1 inline-flex justify-center items-center gap-2 rounded-lg px-4 py-2.5 bg-dark-elevated hover:bg-dark-border text-gray-300 font-medium text-sm border border-dark-border transition-colors">
+                                Cancelar
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -1054,4 +1087,18 @@ $produtos = array_filter(array_map(function($item) {
     
     // Tornar função global para ser acessível pelos botões inline
     window.excluirBanner = excluirBanner;
+
+    // Modal de exclusão de produto
+    window.openDeleteProdutoModal = function(produtoId, produtoNome) {
+        document.getElementById('delete-produto-id').value = produtoId;
+        document.getElementById('delete-produto-nome').textContent = produtoNome;
+        document.getElementById('delete-produto-modal').classList.remove('hidden');
+        lucide.createIcons();
+    };
+    window.closeDeleteProdutoModal = function() {
+        document.getElementById('delete-produto-modal').classList.add('hidden');
+    };
+    window.confirmDeleteProduto = function() {
+        document.getElementById('delete-produto-form').submit();
+    };
 </script>
