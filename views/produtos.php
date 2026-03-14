@@ -636,7 +636,7 @@ $produtos = array_filter(array_map(function($item) {
                                 </a>
                                 
                                 <!-- Botão de Excluir -->
-                                <button type="button" onclick="openDeleteProdutoModal(<?php echo (int)$produto['id']; ?>, <?php echo json_encode($produto['nome'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>)" class="bg-white/90 hover:bg-white text-red-600 p-2 rounded-lg shadow-md transition-all duration-200 hover:shadow-lg backdrop-blur-sm w-full" title="Excluir Produto">
+                                <button type="button" class="delete-produto-btn bg-white/90 hover:bg-white text-red-600 p-2 rounded-lg shadow-md transition-all duration-200 hover:shadow-lg backdrop-blur-sm w-full" title="Excluir Produto" data-produto-id="<?php echo (int)$produto['id']; ?>" data-produto-nome="<?php echo htmlspecialchars($produto['nome'], ENT_QUOTES, 'UTF-8'); ?>">
                                     <i data-lucide="trash-2" class="w-4 h-4"></i>
                                 </button>
                             </div>
@@ -765,7 +765,7 @@ $produtos = array_filter(array_map(function($item) {
 </div>
 
 <!-- Modal de confirmação de exclusão de produto -->
-<div id="delete-produto-modal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="delete-produto-modal-title" role="dialog" aria-modal="true">
+<div id="delete-produto-modal" class="fixed inset-0 z-[9999] hidden overflow-y-auto" aria-labelledby="delete-produto-modal-title" role="dialog" aria-modal="true">
     <div class="flex min-h-screen items-center justify-center p-4">
         <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity" onclick="closeDeleteProdutoModal()"></div>
         <div class="relative bg-dark-card rounded-xl shadow-xl border border-dark-border max-w-md w-full p-6">
@@ -1090,15 +1090,37 @@ $produtos = array_filter(array_map(function($item) {
 
     // Modal de exclusão de produto
     window.openDeleteProdutoModal = function(produtoId, produtoNome) {
-        document.getElementById('delete-produto-id').value = produtoId;
-        document.getElementById('delete-produto-nome').textContent = produtoNome;
-        document.getElementById('delete-produto-modal').classList.remove('hidden');
-        lucide.createIcons();
+        var modal = document.getElementById('delete-produto-modal');
+        var idInput = document.getElementById('delete-produto-id');
+        var nomeEl = document.getElementById('delete-produto-nome');
+        if (modal && idInput && nomeEl) {
+            idInput.value = String(produtoId);
+            nomeEl.textContent = produtoNome || '';
+            modal.classList.remove('hidden');
+            lucide.createIcons();
+        }
     };
     window.closeDeleteProdutoModal = function() {
-        document.getElementById('delete-produto-modal').classList.add('hidden');
+        var modal = document.getElementById('delete-produto-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
     };
     window.confirmDeleteProduto = function() {
-        document.getElementById('delete-produto-form').submit();
+        var form = document.getElementById('delete-produto-form');
+        if (form) form.submit();
     };
+
+    // Delegar clique nos botões de excluir produto (evita problemas com caracteres especiais no nome)
+    document.addEventListener('DOMContentLoaded', function() {
+        document.body.addEventListener('click', function(e) {
+            var btn = e.target.closest('.delete-produto-btn');
+            if (btn) {
+                e.preventDefault();
+                var id = btn.getAttribute('data-produto-id');
+                var nome = btn.getAttribute('data-produto-nome') || '';
+                if (id) openDeleteProdutoModal(id, nome);
+            }
+        });
+    });
 </script>
