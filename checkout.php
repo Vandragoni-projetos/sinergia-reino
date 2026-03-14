@@ -679,15 +679,12 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         $html .= "</div></div>";
     }
     
-    // Container Cartão Stripe
+    // Container Cartão Stripe (usa Stripe Checkout Session - redirecionamento)
     if (isset($credit_card_stripe_enabled) && $credit_card_stripe_enabled) {
         $html .= "<div class='payment-method-container hidden' data-method-type='credit_card_stripe'>";
         $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
         $html .= "<div class='border-2 border-indigo-500 bg-indigo-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='credit-card' class='w-6 h-6 text-indigo-600'></i><span class='font-bold text-gray-800'>Cartão de Crédito (Stripe)</span></div><div class='w-5 h-5 rounded-full border-4 border-indigo-500'></div></div>";
-        $html .= "<div id='stripe-card-loading' class='flex flex-col items-center justify-center py-8 text-gray-500'><svg class='animate-spin h-8 w-8' style='color: {$accentColor};' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z'></path></svg><p class='mt-4 font-medium'>Carregando pagamento seguro...</p></div>";
-        $html .= "<div id='stripe-card-element' class='p-4 border border-gray-300 rounded-lg bg-white'></div>";
-        $html .= "<div id='stripe-card-error' class='mt-2 text-sm text-red-500 hidden'></div>";
-        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Aprovação imediata</p><p>• 100% Seguro e criptografado</p></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Aprovação imediata</p><p>• 100% Seguro e criptografado</p><p class='mt-2 text-indigo-600 font-medium'>Clique no botão abaixo para ser redirecionado à página segura do Stripe.</p></div>";
         $html .= "<button type='button' id='btn-pagar-stripe-card' class='w-full bg-indigo-600 text-white font-bold py-4 rounded-lg hover:bg-indigo-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
         $html .= "</div></div>";
     }
@@ -1420,10 +1417,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
             let currentAmount = mainProductPrice;
             let acceptedOrderBumps = [];
             let selectedPaymentMethod = null; // Declarado aqui para evitar erro de referência
-            const stripePublishableKey = '<?php echo htmlspecialchars($stripe_publishable_key ?? '', ENT_QUOTES, 'UTF-8'); ?>';
-            let stripeInstance = null;
-            let stripeElements = null;
-            let stripeCardElement = null;
+            // Stripe usa Checkout Session (redirecionamento) - Stripe.js carregado apenas para pix_stripe se necessário
             
             // Configuração de desconto Pix
             const pixDiscountConfig = {
@@ -1732,57 +1726,6 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 return payerData;
             }
 
-            // --- LÓGICA STRIPE (cartão) ---
-            function initializeStripeCard() {
-                const loadingEl = document.getElementById('stripe-card-loading');
-                const errorEl = document.getElementById('stripe-card-error');
-                const cardEl = document.getElementById('stripe-card-element');
-                if (errorEl) { errorEl.classList.add('hidden'); errorEl.textContent = ''; }
-
-                if (!stripePublishableKey) {
-                    console.warn('Stripe publishable key ausente.');
-                    if (errorEl) { errorEl.textContent = 'Stripe não configurado.'; errorEl.classList.remove('hidden'); }
-                    if (loadingEl) loadingEl.classList.add('hidden');
-                    return;
-                }
-                if (typeof Stripe === 'undefined') {
-                    console.warn('Stripe.js não carregado.');
-                    if (errorEl) { errorEl.textContent = 'Falha ao carregar o Stripe.'; errorEl.classList.remove('hidden'); }
-                    if (loadingEl) loadingEl.classList.add('hidden');
-                    return;
-                }
-                if (!cardEl) {
-                    console.warn('Container do cartão Stripe não encontrado.');
-                    if (loadingEl) loadingEl.classList.add('hidden');
-                    return;
-                }
-
-                if (!stripeInstance) {
-                    stripeInstance = Stripe(stripePublishableKey);
-                    stripeElements = stripeInstance.elements();
-                }
-                if (!stripeCardElement) {
-                    stripeCardElement = stripeElements.create('card', {
-                        style: {
-                            base: {
-                                color: '#111827',
-                                fontFamily: 'Inter, sans-serif',
-                                fontSize: '16px',
-                                '::placeholder': { color: '#9ca3af' }
-                            }
-                        }
-                    });
-                    stripeCardElement.mount('#stripe-card-element');
-                    stripeCardElement.on('change', (event) => {
-                        if (errorEl) {
-                            errorEl.textContent = event.error ? event.error.message : '';
-                            errorEl.classList.toggle('hidden', !event.error);
-                        }
-                    });
-                }
-                if (loadingEl) loadingEl.classList.add('hidden');
-            }
-
             // --- LÓGICA DE SELEÇÃO DE MÉTODOS DE PAGAMENTO ---
             let paymentBrickControllers = {};
             
@@ -1837,12 +1780,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     }
                 }
 
-                // Se for Stripe cartão, inicializar Stripe Elements
-                if (methodType === 'credit_card_stripe') {
-                    if (typeof initializeStripeCard === 'function') {
-                        initializeStripeCard();
-                    }
-                }
+                // Stripe cartão usa Checkout Session (redirecionamento) - não precisa de Elements
                 
                 // Recriar ícones Lucide
                 lucide.createIcons();
@@ -2020,7 +1958,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 });
             }
 
-            // --- LÓGICA PAGAR.ME CARTÃO / BOLETO / PAYPAL / STRIPE CARTÃO (placeholder - chama process_payment) ---
+            // --- LÓGICA PAGAR.ME CARTÃO / BOLETO / PAYPAL / STRIPE CARTÃO (redirect flow) ---
             ['btn-pagar-pagarme-card','btn-pagar-paypal','btn-pagar-stripe-card','btn-pagar-pagarme-ticket'].forEach(btnId => {
                 const btn = document.getElementById(btnId);
                 if (btn) {
@@ -2039,12 +1977,28 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: gateway.includes('ticket') ? 'ticket' : 'credit_card', transaction_amount: parseFloat((gateway === 'stripe_card' || gateway === 'stripe') && productCurrency === 'usd' && mainProductPriceUsd ? mainProductPriceUsd : currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: gateway, currency: (gateway === 'stripe_card' || gateway === 'stripe') ? productCurrency : undefined, checkout_hash: (gateway === 'stripe_card' || gateway === 'stripe' || gateway === 'paypal') ? checkoutHash : undefined })
                             });
-                            const result = await response.json();
-                            if (response.ok && result.checkout_url) window.location.href = result.checkout_url;
-                            else if (response.ok && result.redirect_url) window.location.href = result.redirect_url;
-                            else showRejectedModal(result.error || 'Erro ao processar pagamento.');
-                        } catch (e) { showRejectedModal('Erro de conexão. Tente novamente.'); }
-                        finally { btn.disabled = false; btn.innerHTML = origHtml; lucide.createIcons(); }
+                            const contentType = response.headers.get('content-type') || '';
+                            let result = {};
+                            try {
+                                result = contentType.includes('application/json') ? await response.json() : {};
+                            } catch (_) { result = {}; }
+                            if (response.ok && result.checkout_url) {
+                                window.location.href = result.checkout_url;
+                                return;
+                            }
+                            if (response.ok && result.redirect_url) {
+                                window.location.href = result.redirect_url;
+                                return;
+                            }
+                            showRejectedModal(result.error || 'Erro ao processar pagamento.');
+                        } catch (e) {
+                            console.error('Checkout fetch error:', e);
+                            showRejectedModal('Erro de conexão. Tente novamente.');
+                        } finally {
+                            btn.disabled = false;
+                            btn.innerHTML = origHtml;
+                            lucide.createIcons();
+                        }
                     });
                 }
             });
