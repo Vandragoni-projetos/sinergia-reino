@@ -447,7 +447,7 @@ function render_free_product_section($accentColor) {
     return $html;
 }
 
-function render_payment_section($gateway, $accentColor, $payment_methods_config, $pix_pushinpay_enabled = null, $pix_mercadopago_enabled = null, $pix_efi_enabled = null, $credit_card_enabled = null, $ticket_enabled = null, $credit_card_beehive_enabled = null, $credit_card_mercadopago_enabled = null, $credit_card_hypercash_enabled = null, $credit_card_efi_enabled = null, $pix_pagarme_enabled = null, $pix_stripe_enabled = null, $credit_card_pagarme_enabled = null, $credit_card_paypal_enabled = null, $credit_card_stripe_enabled = null, $ticket_pagarme_enabled = null) {
+function render_payment_section($gateway, $accentColor, $payment_methods_config, $pix_pushinpay_enabled = null, $pix_mercadopago_enabled = null, $pix_efi_enabled = null, $credit_card_enabled = null, $ticket_enabled = null, $credit_card_beehive_enabled = null, $credit_card_mercadopago_enabled = null, $credit_card_hypercash_enabled = null, $credit_card_efi_enabled = null, $pix_pagarme_enabled = null, $pix_stripe_enabled = null, $credit_card_pagarme_enabled = null, $credit_card_paypal_enabled = null, $credit_card_stripe_enabled = null, $ticket_pagarme_enabled = null, $mp_configured = true, $stripe_configured = true) {
     $html = "<div data-id='payment'>";
     $html .= "<div id='payment_section_wrapper'>";
     
@@ -528,6 +528,18 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         $credit_card_mercadopago_enabled = false;
     }
     
+    // Mercado Pago não configurado: não renderizar containers MP; fallback para Stripe no cartão se disponível
+    if (!$mp_configured) {
+        $pix_mercadopago_enabled = false;
+        if ($credit_card_mercadopago_enabled && $stripe_configured) {
+            $credit_card_stripe_enabled = true;
+            $credit_card_mercadopago_enabled = false;
+        } else {
+            $credit_card_mercadopago_enabled = false;
+        }
+        $ticket_enabled = ($ticket_pagarme_enabled ?? false) ? $ticket_enabled : false;
+    }
+    
     // Renderizar seletor de métodos de pagamento
     $html .= render_payment_methods_selector($pix_pushinpay_enabled, $pix_mercadopago_enabled, $pix_efi_enabled, $credit_card_enabled, $ticket_enabled, $accentColor, $credit_card_beehive_enabled, $credit_card_mercadopago_enabled, $credit_card_hypercash_enabled, $credit_card_efi_enabled ?? false, $pix_pagarme_enabled ?? false, $pix_stripe_enabled ?? false, $credit_card_pagarme_enabled ?? false, $credit_card_paypal_enabled ?? false, $credit_card_stripe_enabled ?? false, $ticket_pagarme_enabled ?? false);
     
@@ -556,8 +568,8 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         $html .= "</div>";
     }
     
-    // Container Mercado Pago Pix
-    if ($pix_mercadopago_enabled) {
+    // Container Mercado Pago Pix (só renderizar se MP configurado)
+    if ($pix_mercadopago_enabled && $mp_configured) {
         $enabled_payment_methods = ['bankTransfer' => 'all'];
         $json_config = htmlspecialchars(json_encode($enabled_payment_methods), ENT_QUOTES, 'UTF-8');
         
@@ -623,7 +635,7 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
                               (isset($credit_card_paypal_enabled) && $credit_card_paypal_enabled) ||
                               (isset($credit_card_stripe_enabled) && $credit_card_stripe_enabled);
     $is_mp_card_config = ($card_gw_from_config === 'mercadopago' || $card_gw_from_config === null);
-    $render_mp_card = $is_mp_card_config && ($credit_card_mercadopago_enabled || ($credit_card_enabled && !$has_other_card_gateway));
+    $render_mp_card = $mp_configured && $is_mp_card_config && ($credit_card_mercadopago_enabled || ($credit_card_enabled && !$has_other_card_gateway));
     if ($render_mp_card) {
         $enabled_payment_methods = ['creditCard' => 'all'];
         $json_config = htmlspecialchars(json_encode($enabled_payment_methods), ENT_QUOTES, 'UTF-8');
@@ -1030,7 +1042,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         <?php if ($is_free_product): ?>
                             <?php echo render_free_product_section($accentColor); ?>
                         <?php else: ?>
-                            <?php echo render_payment_section($gateway, $accentColor, $payment_methods_config, $pix_pushinpay_enabled, $pix_mercadopago_enabled, $pix_efi_enabled, $credit_card_enabled, $ticket_enabled, $credit_card_beehive_enabled, $credit_card_mercadopago_enabled, $credit_card_hypercash_enabled, $credit_card_efi_enabled, $pix_pagarme_enabled, $pix_stripe_enabled, $credit_card_pagarme_enabled, $credit_card_paypal_enabled, $credit_card_stripe_enabled, $ticket_pagarme_enabled); ?>
+                            <?php echo render_payment_section($gateway, $accentColor, $payment_methods_config, $pix_pushinpay_enabled, $pix_mercadopago_enabled, $pix_efi_enabled, $credit_card_enabled, $ticket_enabled, $credit_card_beehive_enabled, $credit_card_mercadopago_enabled, $credit_card_hypercash_enabled, $credit_card_efi_enabled, $pix_pagarme_enabled, $pix_stripe_enabled, $credit_card_pagarme_enabled, $credit_card_paypal_enabled, $credit_card_stripe_enabled, $ticket_pagarme_enabled, !empty($public_key), !empty($stripe_publishable_key)); ?>
                         <?php endif; ?>
                     </section>
                     <hr class="border-gray-200">
