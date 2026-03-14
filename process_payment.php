@@ -618,7 +618,13 @@ try {
         
         if (!$payment_result || (isset($payment_result['error']) && $payment_result['error'])) {
             log_process("Efí Cartão: Erro retornado - " . json_encode($payment_result));
-            throw new Exception($payment_result['message'] ?? 'Erro ao processar pagamento Efí.');
+            $err_msg = $payment_result['message'] ?? 'Erro ao processar pagamento Efí.';
+            if (is_array($err_msg)) {
+                $err_msg = implode(', ', array_map(function ($v) {
+                    return is_array($v) && isset($v['message']) ? $v['message'] : (is_string($v) ? $v : json_encode($v));
+                }, isset($err_msg[0]) ? $err_msg : [$err_msg])) ?: 'Erro ao processar pagamento Efí.';
+            }
+            throw new Exception($err_msg);
         }
         
         $status = $payment_result['status'];
