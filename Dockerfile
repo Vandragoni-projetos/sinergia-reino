@@ -1,9 +1,19 @@
-﻿FROM node:18-alpine
+FROM php:8.2-apache
 
-WORKDIR /app
+RUN apt-get update && apt-get install -y \
+    git \
+    unzip \
+    curl \
+    libzip-dev
 
-RUN echo "const http=require('http');http.createServer((req,res)=>res.end('SinergIACore online')).listen(3000);" > server.js
+RUN docker-php-ext-install pdo pdo_mysql zip
 
-EXPOSE 3000
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-CMD ["node", "server.js"]
+WORKDIR /var/www/html
+
+COPY . .
+
+RUN composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+
+RUN chown -R www-data:www-data /var/www/html
