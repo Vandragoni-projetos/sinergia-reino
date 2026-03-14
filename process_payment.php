@@ -929,7 +929,10 @@ try {
 } catch (Error $e) {
     log_process("Erro Fatal: " . $e->getMessage());
     log_process("Stack trace: " . $e->getTraceAsString());
-    returnJsonError('Erro interno do servidor', 500);
+    $msg = trim($e->getMessage());
+    // Exibe mensagem real para diagnóstico (evita caminhos absolutos)
+    $msg = preg_replace('#[A-Za-z]:[/\\\\][^\s]+#', '[path]', $msg);
+    returnJsonError($msg ?: 'Erro interno do servidor', 500);
 }
 
 function save_sales($pdo, $data, $main_id, $payment_id, $status, $metodo, $uuid, $utm_params) {
