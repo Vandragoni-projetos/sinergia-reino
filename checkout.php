@@ -164,15 +164,17 @@ $redirectUrlConfig = $checkout_config['redirectUrl'] ?? '';
 // Ler paymentMethods com retrocompatibilidade
 $payment_methods_config = $checkout_config['paymentMethods'] ?? [];
 if (empty($payment_methods_config) || !isset($payment_methods_config['pix']['gateway'])) {
-    // Estrutura antiga - migrar para nova estrutura
+    // Estrutura antiga - migrar para nova estrutura (respeitar gateway do produto)
     $old_payment_methods = $checkout_config['paymentMethods'] ?? ['credit_card' => true, 'pix' => true, 'ticket' => true];
+    $pix_gw = in_array($gateway, ['pushinpay', 'efi', 'stripe', 'pagarme']) ? $gateway : 'mercadopago';
+    $card_gw = in_array($gateway, ['stripe', 'paypal', 'pagarme', 'beehive', 'hypercash', 'efi']) ? $gateway : 'mercadopago';
     $payment_methods_config = [
         'pix' => [
-            'gateway' => ($gateway === 'pushinpay') ? 'pushinpay' : 'mercadopago',
+            'gateway' => $pix_gw,
             'enabled' => $old_payment_methods['pix'] ?? true
         ],
         'credit_card' => [
-            'gateway' => 'mercadopago',
+            'gateway' => $card_gw,
             'enabled' => $old_payment_methods['credit_card'] ?? true
         ],
         'ticket' => [
@@ -196,6 +198,12 @@ $credit_card_mercadopago_enabled = false;
 $credit_card_efi_enabled = false;
 $ticket_enabled = false;
 
+$credit_card_stripe_enabled = false;
+$credit_card_pagarme_enabled = false;
+$credit_card_paypal_enabled = false;
+$pix_stripe_enabled = false;
+$pix_pagarme_enabled = false;
+
 // Ler nova estrutura com gateway por método
 if (isset($payment_methods_config['pix']['gateway'])) {
     if ($payment_methods_config['pix']['gateway'] === 'pushinpay' && ($payment_methods_config['pix']['enabled'] ?? false)) {
@@ -204,14 +212,23 @@ if (isset($payment_methods_config['pix']['gateway'])) {
         $pix_mercadopago_enabled = true;
     } elseif ($payment_methods_config['pix']['gateway'] === 'efi' && ($payment_methods_config['pix']['enabled'] ?? false)) {
         $pix_efi_enabled = true;
+    } elseif ($payment_methods_config['pix']['gateway'] === 'stripe' && ($payment_methods_config['pix']['enabled'] ?? false)) {
+        $pix_stripe_enabled = true;
+    } elseif ($payment_methods_config['pix']['gateway'] === 'pagarme' && ($payment_methods_config['pix']['enabled'] ?? false)) {
+        $pix_pagarme_enabled = true;
     }
 }
-
 if (isset($payment_methods_config['credit_card']['enabled']) && $payment_methods_config['credit_card']['enabled']) {
     $credit_card_enabled = true;
     // Verificar qual gateway está configurado para cartão
     $credit_card_gateway = $payment_methods_config['credit_card']['gateway'] ?? 'mercadopago';
-    if ($credit_card_gateway === 'hypercash') {
+    if ($credit_card_gateway === 'stripe') {
+        $credit_card_stripe_enabled = true;
+    } elseif ($credit_card_gateway === 'paypal') {
+        $credit_card_paypal_enabled = true;
+    } elseif ($credit_card_gateway === 'pagarme') {
+        $credit_card_pagarme_enabled = true;
+    } elseif ($credit_card_gateway === 'hypercash') {
         $credit_card_hypercash_enabled = true;
     } elseif ($credit_card_gateway === 'beehive') {
         $credit_card_beehive_enabled = true;
@@ -222,8 +239,11 @@ if (isset($payment_methods_config['credit_card']['enabled']) && $payment_methods
     }
 }
 
+$ticket_pagarme_enabled = false;
 if (isset($payment_methods_config['ticket']['enabled']) && $payment_methods_config['ticket']['enabled']) {
     $ticket_enabled = true;
+    $ticket_gateway = $payment_methods_config['ticket']['gateway'] ?? 'mercadopago';
+    $ticket_pagarme_enabled = ($ticket_gateway === 'pagarme');
 }
 
 // Variáveis de Resumo
@@ -427,7 +447,7 @@ function render_free_product_section($accentColor) {
     return $html;
 }
 
-function render_payment_section($gateway, $accentColor, $payment_methods_config, $pix_pushinpay_enabled = null, $pix_mercadopago_enabled = null, $pix_efi_enabled = null, $credit_card_enabled = null, $ticket_enabled = null, $credit_card_beehive_enabled = null, $credit_card_mercadopago_enabled = null, $credit_card_hypercash_enabled = null, $credit_card_efi_enabled = null) {
+function render_payment_section($gateway, $accentColor, $payment_methods_config, $pix_pushinpay_enabled = null, $pix_mercadopago_enabled = null, $pix_efi_enabled = null, $credit_card_enabled = null, $ticket_enabled = null, $credit_card_beehive_enabled = null, $credit_card_mercadopago_enabled = null, $credit_card_hypercash_enabled = null, $credit_card_efi_enabled = null, $pix_pagarme_enabled = null, $pix_stripe_enabled = null, $credit_card_pagarme_enabled = null, $credit_card_paypal_enabled = null, $credit_card_stripe_enabled = null, $ticket_pagarme_enabled = null) {
     $html = "<div data-id='payment'>";
     $html .= "<div id='payment_section_wrapper'>";
     
@@ -489,6 +509,23 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
             $ticket_gateway = $payment_methods_config['ticket']['gateway'] ?? 'mercadopago';
             $ticket_pagarme_enabled = ($ticket_gateway === 'pagarme');
         }
+    } else {
+        // Valores passados do escopo global - garantir defaults para os que podem ser null
+        $pix_pagarme_enabled = $pix_pagarme_enabled ?? false;
+        $pix_stripe_enabled = $pix_stripe_enabled ?? false;
+        $credit_card_pagarme_enabled = $credit_card_pagarme_enabled ?? false;
+        $credit_card_paypal_enabled = $credit_card_paypal_enabled ?? false;
+        $credit_card_stripe_enabled = $credit_card_stripe_enabled ?? false;
+        $ticket_pagarme_enabled = $ticket_pagarme_enabled ?? false;
+    }
+    
+    // Forçar Stripe quando config diz stripe (evita bug de variáveis não passadas)
+    if (($payment_methods_config['pix']['gateway'] ?? '') === 'stripe' && ($payment_methods_config['pix']['enabled'] ?? false)) {
+        $pix_stripe_enabled = true;
+    }
+    if (($payment_methods_config['credit_card']['gateway'] ?? '') === 'stripe' && ($payment_methods_config['credit_card']['enabled'] ?? false)) {
+        $credit_card_stripe_enabled = true;
+        $credit_card_mercadopago_enabled = false;
     }
     
     // Renderizar seletor de métodos de pagamento
@@ -568,7 +605,7 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
     }
     
     // Container Pix Stripe
-    if (isset($pix_stripe_enabled) && $pix_stripe_enabled) {
+    if ($pix_stripe_enabled) {
         $html .= "<div class='payment-method-container hidden' data-method-type='pix_stripe'>";
         $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
         $html .= "<div class='border-2 border-indigo-500 bg-indigo-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><img src='/assets/pix.svg' class='h-6 w-auto' alt='Pix'><span class='font-bold text-gray-800'>Pix (Stripe)</span></div><div class='w-5 h-5 rounded-full border-4 border-indigo-500'></div></div>";
@@ -577,14 +614,17 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         $html .= "</div></div>";
     }
     
-    // Container Cartão de Crédito Mercado Pago
+    // Container Cartão de Crédito Mercado Pago (NUNCA renderizar se Stripe/PayPal/Pagar.me estiverem no config)
+    $card_gw_from_config = $payment_methods_config['credit_card']['gateway'] ?? 'mercadopago';
     $has_other_card_gateway = (isset($credit_card_beehive_enabled) && $credit_card_beehive_enabled) || 
                               (isset($credit_card_hypercash_enabled) && $credit_card_hypercash_enabled) || 
                               (isset($credit_card_efi_enabled) && $credit_card_efi_enabled) ||
                               (isset($credit_card_pagarme_enabled) && $credit_card_pagarme_enabled) ||
                               (isset($credit_card_paypal_enabled) && $credit_card_paypal_enabled) ||
                               (isset($credit_card_stripe_enabled) && $credit_card_stripe_enabled);
-    if ($credit_card_mercadopago_enabled || ($credit_card_enabled && !$has_other_card_gateway)) {
+    $is_mp_card_config = ($card_gw_from_config === 'mercadopago' || $card_gw_from_config === null);
+    $render_mp_card = $is_mp_card_config && ($credit_card_mercadopago_enabled || ($credit_card_enabled && !$has_other_card_gateway));
+    if ($render_mp_card) {
         $enabled_payment_methods = ['creditCard' => 'all'];
         $json_config = htmlspecialchars(json_encode($enabled_payment_methods), ENT_QUOTES, 'UTF-8');
         
@@ -680,7 +720,7 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
     }
     
     // Container Cartão Stripe (usa Stripe Checkout Session - redirecionamento)
-    if (isset($credit_card_stripe_enabled) && $credit_card_stripe_enabled) {
+    if ($credit_card_stripe_enabled) {
         $html .= "<div class='payment-method-container hidden' data-method-type='credit_card_stripe'>";
         $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
         $html .= "<div class='border-2 border-indigo-500 bg-indigo-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='credit-card' class='w-6 h-6 text-indigo-600'></i><span class='font-bold text-gray-800'>Cartão de Crédito (Stripe)</span></div><div class='w-5 h-5 rounded-full border-4 border-indigo-500'></div></div>";
@@ -990,7 +1030,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         <?php if ($is_free_product): ?>
                             <?php echo render_free_product_section($accentColor); ?>
                         <?php else: ?>
-                            <?php echo render_payment_section($gateway, $accentColor, $payment_methods_config, $pix_pushinpay_enabled, $pix_mercadopago_enabled, $pix_efi_enabled, $credit_card_enabled, $ticket_enabled, $credit_card_beehive_enabled, $credit_card_mercadopago_enabled, $credit_card_hypercash_enabled, $credit_card_efi_enabled); ?>
+                            <?php echo render_payment_section($gateway, $accentColor, $payment_methods_config, $pix_pushinpay_enabled, $pix_mercadopago_enabled, $pix_efi_enabled, $credit_card_enabled, $ticket_enabled, $credit_card_beehive_enabled, $credit_card_mercadopago_enabled, $credit_card_hypercash_enabled, $credit_card_efi_enabled, $pix_pagarme_enabled, $pix_stripe_enabled, $credit_card_pagarme_enabled, $credit_card_paypal_enabled, $credit_card_stripe_enabled, $ticket_pagarme_enabled); ?>
                         <?php endif; ?>
                     </section>
                     <hr class="border-gray-200">
@@ -2431,6 +2471,18 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     loadingSpinner.classList.remove('hidden');
                 }
                 
+                // Timeout: se o Payment Brick não carregar em 8s, esconde loading e mostra mensagem
+                const loadTimeout = setTimeout(() => {
+                    if (loadingSpinner && !loadingSpinner.classList.contains('hidden')) {
+                        loadingSpinner.classList.add('hidden');
+                        const errDiv = document.createElement('div');
+                        errDiv.className = 'p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm';
+                        errDiv.innerHTML = '<p class="font-medium">Não foi possível carregar o formulário de pagamento.</p><p class="mt-1">Verifique se o Mercado Pago está configurado nas integrações do produto. Se quiser usar Stripe, altere o gateway de cartão para Stripe na configuração do produto.</p>';
+                        const wrapper = document.getElementById(configWrapperId);
+                        if (wrapper) wrapper.appendChild(errDiv);
+                    }
+                }, 8000);
+                
                 // Recupera config do HTML
                 const configEl = document.getElementById(configWrapperId);
                 const paymentMethods = configEl ? JSON.parse(configEl.dataset.mpConfig || '{}') : {};
@@ -2446,6 +2498,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         },
                         callbacks: {
                             onReady: () => { 
+                                clearTimeout(loadTimeout);
                                 if (loadingSpinner) {
                                     loadingSpinner.classList.add('hidden');
                                 }
@@ -2572,6 +2625,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                 }
                             },
                             onError: (error) => { 
+                                clearTimeout(loadTimeout);
                                 console.error('Erro no Payment Brick:', error);
                                 if (loadingSpinner) {
                                     loadingSpinner.classList.add('hidden');
@@ -2600,6 +2654,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         },
                     });
                 } catch (error) {
+                    clearTimeout(loadTimeout);
                     console.error('Erro ao criar Payment Brick:', error);
                     if (loadingSpinner) {
                         loadingSpinner.classList.add('hidden');
@@ -2628,7 +2683,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
             function selectDefaultPaymentMethod() {
                 const pixPushinpayCard = document.querySelector('[data-payment-method="pix_pushinpay"]');
                 const pixEfiCard = document.querySelector('[data-payment-method="pix_efi"]');
+                const pixStripeCard = document.querySelector('[data-payment-method="pix_stripe"]');
                 const pixMercadopagoCard = document.querySelector('[data-payment-method="pix_mercadopago"]');
+                const creditCardStripeCard = document.querySelector('[data-payment-method="credit_card_stripe"]');
                 const creditCardCard = document.querySelector('[data-payment-method="credit_card"]');
                 const creditCardEfiCard = document.querySelector('[data-payment-method="credit_card_efi"]');
                 const creditCardHypercashCard = document.querySelector('[data-payment-method="credit_card_hypercash"]');
@@ -2638,8 +2695,12 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     selectPaymentMethod('pix_pushinpay');
                 } else if (pixEfiCard) {
                     selectPaymentMethod('pix_efi');
+                } else if (pixStripeCard) {
+                    selectPaymentMethod('pix_stripe');
                 } else if (pixMercadopagoCard) {
                     selectPaymentMethod('pix_mercadopago');
+                } else if (creditCardStripeCard) {
+                    selectPaymentMethod('credit_card_stripe');
                 } else if (creditCardCard) {
                     selectPaymentMethod('credit_card');
                 } else if (creditCardEfiCard) {
@@ -2649,7 +2710,6 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 } else if (creditCardBeehiveCard) {
                     selectPaymentMethod('credit_card_beehive');
                 } else {
-                    // Se não houver nenhum método específico, selecionar o primeiro disponível
                     const firstCard = document.querySelector('.payment-method-card');
                     if (firstCard) {
                         const methodType = firstCard.getAttribute('data-payment-method');
