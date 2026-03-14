@@ -5,7 +5,23 @@
  */
 
 if (!class_exists('\Stripe\Stripe')) {
-    require_once __DIR__ . '/../vendor/autoload.php';
+    $autoload_paths = [
+        __DIR__ . '/../vendor/autoload.php',
+        dirname(__DIR__) . '/vendor/autoload.php',
+        __DIR__ . '/../../vendor/autoload.php',
+    ];
+    $loaded = false;
+    foreach ($autoload_paths as $path) {
+        if (is_file($path)) {
+            require_once $path;
+            $loaded = true;
+            break;
+        }
+    }
+    if (!$loaded && !class_exists('\Stripe\Stripe')) {
+        error_log('Stripe: vendor/autoload.php não encontrado. Execute composer install.');
+        throw new \RuntimeException('Stripe SDK não disponível. Execute composer install no servidor.');
+    }
 }
 
 /**
