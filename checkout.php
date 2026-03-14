@@ -248,9 +248,15 @@ if (isset($payment_methods_config['ticket']['enabled']) && $payment_methods_conf
 
 // Variáveis de Resumo
 $main_price = floatval($produto['preco']);
+$preco_base = floatval($preco_original ?: $produto['preco']);
+$main_price_usd = (!empty($produto['price_usd']) && $produto['price_usd'] > 0) ? floatval($produto['price_usd']) : null;
+if ($main_price_usd !== null && $preco_base > 0 && $main_price != $preco_base) {
+    $main_price_usd = $main_price_usd * ($main_price / $preco_base); // Escala para oferta
+}
 $main_name = !empty($checkout_config['summary']['product_name']) ? $checkout_config['summary']['product_name'] : $produto['nome'];
 $main_image = resolve_product_image_url($produto['foto'] ?? '', 'uploads/') ?: '/uploads/placeholder.png';
 $formattedMainPrice = $is_free_product ? 'Grátis' : 'R$ ' . number_format($main_price, 2, ',', '.');
+$formattedMainPriceUsd = ($main_price_usd !== null && !$is_free_product) ? 'US$ ' . number_format($main_price_usd, 2, ',', '.') : null;
 $preco_anterior_raw = !empty($produto['preco_anterior']) ? floatval($produto['preco_anterior']) : null;
 $formattedPrecoAnterior = ($preco_anterior_raw && !$is_free_product) ? 'R$ ' . number_format($preco_anterior_raw, 2, ',', '.') : null;
 $discount_text = $checkout_config['summary']['discount_text'] ?? '';
@@ -980,8 +986,8 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         <div class="flex-1">
                             <h1 class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($main_name); ?></h1>
                             <div class="flex items-baseline flex-wrap gap-x-3 gap-y-1 mt-2">
-                                <span class="text-2xl font-bold" style="color: <?php echo htmlspecialchars($accentColor); ?>;"><?php echo $formattedMainPrice; ?></span>
-                                <?php if ($formattedPrecoAnterior): ?><span class="text-lg text-gray-400 line-through"><?php echo $formattedPrecoAnterior; ?></span><?php endif; ?>
+                                <span id="hero-main-price" class="text-2xl font-bold" style="color: <?php echo htmlspecialchars($accentColor); ?>;" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span>
+                                <?php if ($formattedPrecoAnterior): ?><span id="hero-preco-anterior" class="text-lg text-gray-400 line-through" data-brl="<?php echo htmlspecialchars($formattedPrecoAnterior); ?>"><?php echo $formattedPrecoAnterior; ?></span><?php endif; ?>
                             </div>
                             <div class="flex flex-wrap gap-2 mt-2">
                                 <?php if ($is_free_product): ?>
@@ -1047,8 +1053,8 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             <div class="flex justify-between text-gray-700">
                                 <span><?php echo htmlspecialchars($main_name); ?></span>
                                 <div class="flex items-baseline gap-2">
-                                    <?php if ($formattedPrecoAnterior): ?><span class="text-sm text-gray-400 line-through"><?php echo $formattedPrecoAnterior; ?></span><?php endif; ?>
-                                    <span class="font-medium"><?php echo $formattedMainPrice; ?></span>
+                                    <?php if ($formattedPrecoAnterior): ?><span id="summary-preco-anterior" class="text-sm text-gray-400 line-through" data-brl="<?php echo htmlspecialchars($formattedPrecoAnterior); ?>"><?php echo $formattedPrecoAnterior; ?></span><?php endif; ?>
+                                    <span id="summary-main-price" class="font-medium" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span>
                                 </div>
                             </div>
                             <div class="flex justify-start">
@@ -1066,7 +1072,10 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             </div>
                             <?php foreach ($order_bumps as $bump) {
                                 $ob_id = intval($bump['ob_id']); $ob_name = htmlspecialchars($bump['ob_nome']); $ob_price = floatval($bump['ob_preco']);
-                                echo "<div id='orderbump-summary-{$ob_id}' class='orderbump-summary-item flex justify-between text-gray-700' style='display: none;'><span>".htmlspecialchars($ob_name)."</span><span>R$ ".number_format($ob_price, 2, ',', '.')."</span></div>";
+                                $ob_usd = ($main_price_usd !== null && $main_price > 0) ? $ob_price * $main_price_usd / $main_price : null;
+                                $ob_brl = 'R$ ' . number_format($ob_price, 2, ',', '.');
+                                $ob_usd_str = $ob_usd !== null ? 'US$ ' . number_format($ob_usd, 2, ',', '.') : '';
+                                echo "<div id='orderbump-summary-{$ob_id}' class='orderbump-summary-item flex justify-between text-gray-700' style='display: none;' data-price-brl='".htmlspecialchars($ob_brl)."' data-price-usd='".htmlspecialchars($ob_usd_str)."'><span>".htmlspecialchars($ob_name)."</span><span class='ob-price'>".$ob_brl."</span></div>";
                             } ?>
                         </div>
                         <?php if ($pix_discount_enabled && $pix_discount_value > 0 && !$is_free_product): ?>
@@ -1079,7 +1088,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         </div>
                         <?php endif; ?>
                         <hr class="border-gray-200">
-                        <div class="flex justify-between items-center"><span class="text-lg font-bold text-gray-800">Total a pagar</span><span id="final-total-price" class="text-2xl font-bold text-[#348535]"><?php echo $formattedMainPrice; ?></span></div>
+                        <div class="flex justify-between items-center"><span class="text-lg font-bold text-gray-800">Total a pagar</span><span id="final-total-price" class="text-2xl font-bold text-[#348535]" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span></div>
                         <div class="text-center text-gray-500 text-sm mt-4"><i data-lucide="lock" class="w-4 h-4 inline-block -mt-1"></i> Compra segura</div>
                     </div>
                     <?php if (!empty($sideBanners)): ?>
@@ -1103,7 +1112,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
             <span class="pix-discount-value font-medium text-green-600 text-sm">- R$ 0,00</span>
         </div>
         <?php endif; ?>
-        <div class="flex justify-between items-center mb-3 pt-2 border-t"><span class="text-lg font-bold text-gray-800">Total a pagar</span><span id="final-total-price-mobile" class="text-2xl font-bold text-[#348535]"><?php echo $formattedMainPrice; ?></span></div>
+        <div class="flex justify-between items-center mb-3 pt-2 border-t"><span class="text-lg font-bold text-gray-800">Total a pagar</span><span id="final-total-price-mobile" class="text-2xl font-bold text-[#348535]" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span></div>
         <p class="text-center text-xs text-gray-500 flex items-center justify-center space-x-1"><i data-lucide="lock" class="w-3 h-3"></i><span>Compra segura processada pela <?php echo strtoupper(htmlspecialchars($nome_plataforma)); ?></span></p>
     </footer>
     <div id="mobile-footer-spacer" class="lg:hidden" style="height: 128px;"></div>
@@ -1444,8 +1453,8 @@ function render_sales_notification($config, $produto_nome_fallback) {
             
             const pixModalOverlay = document.getElementById('pix-modal-overlay');
             const pixModalContent = document.getElementById('pix-modal-content');
-            const mainProductPrice = <?php echo (float)$produto['preco']; ?>;
-            const mainProductPriceUsd = <?php echo (!empty($produto['price_usd']) && $produto['price_usd'] > 0) ? (float)$produto['price_usd'] : 'null'; ?>;
+            const mainProductPrice = <?php echo (float)$main_price; ?>;
+            const mainProductPriceUsd = <?php echo $main_price_usd !== null ? (float)$main_price_usd : 'null'; ?>;
             const productCurrency = '<?php echo (!empty($produto['price_usd']) && $produto['price_usd'] > 0) ? 'usd' : 'brl'; ?>';
             const checkoutHash = '<?php echo htmlspecialchars($checkout_hash ?? '', ENT_QUOTES, 'UTF-8'); ?>';
             const infoprodutorId = <?php echo (int)$infoprodutor_id; ?>;
@@ -1468,6 +1477,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
             
             const finalTotalElement = document.getElementById('final-total-price');
             const finalTotalMobileElement = document.getElementById('final-total-price-mobile');
+            // Exibir USD no checkout quando produto tem price_usd e método NÃO é Pix BR (melhor conversão internacional)
+            const isBrazilianPixMethod = (m) => ['pix_efi', 'pix_pushinpay', 'pix_pagarme'].includes(m || '');
+            const shouldDisplayUsd = () => productCurrency === 'usd' && mainProductPriceUsd && !isBrazilianPixMethod(selectedPaymentMethod);
             const mobileSummaryItemsContainer = document.getElementById('mobile-summary-items');
             const orderbumpCheckboxes = document.querySelectorAll('.orderbump-checkbox');
             const nameInput = document.getElementById('name');
@@ -1624,15 +1636,31 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 }
             }
 
+            const updateDisplayCurrency = () => {
+                const useUsd = shouldDisplayUsd();
+                const heroPrice = document.getElementById('hero-main-price');
+                const heroPrev = document.getElementById('hero-preco-anterior');
+                const summaryPrice = document.getElementById('summary-main-price');
+                if (heroPrice) heroPrice.textContent = useUsd && heroPrice.dataset.priceUsd ? heroPrice.dataset.priceUsd : heroPrice.dataset.priceBrl;
+                if (heroPrev && heroPrev.dataset.brl) heroPrev.style.display = useUsd ? 'none' : '';
+                if (summaryPrice) summaryPrice.textContent = useUsd && summaryPrice.dataset.priceUsd ? summaryPrice.dataset.priceUsd : summaryPrice.dataset.priceBrl;
+                document.querySelectorAll('.orderbump-summary-item .ob-price').forEach(el => {
+                    const row = el.closest('.orderbump-summary-item');
+                    if (row && row.dataset.priceUsd) el.textContent = useUsd ? row.dataset.priceUsd : row.dataset.priceBrl;
+                });
+            };
+
             const updateSummaryAndTotal = () => {
+                updateDisplayCurrency();
                 currentAmount = mainProductPrice;
                 acceptedOrderBumps = [];
                 document.querySelectorAll('.orderbump-summary-item').forEach(item => item.style.display = 'none');
                 if (mobileSummaryItemsContainer) {
                     mobileSummaryItemsContainer.innerHTML = '';
+                    const mainPriceDisplay = shouldDisplayUsd() && mainProductPriceUsd ? `US$ ${mainProductPriceUsd.toFixed(2).replace('.', ',')}` : `R$ ${mainProductPrice.toFixed(2).replace('.', ',')}`;
                     const mainItemEl = document.createElement('div');
                     mainItemEl.className = 'flex justify-between';
-                    mainItemEl.innerHTML = `<span><?php echo htmlspecialchars(addslashes($main_name)); ?></span><div class="flex items-baseline gap-2"><?php if ($formattedPrecoAnterior): ?><span class="text-sm text-gray-400 line-through"><?php echo $formattedPrecoAnterior; ?></span><?php endif; ?><span class="font-medium"><?php echo $formattedMainPrice; ?></span></div>`;
+                    mainItemEl.innerHTML = `<span><?php echo htmlspecialchars(addslashes($main_name)); ?></span><div class="flex items-baseline gap-2"><?php if ($formattedPrecoAnterior): ?><span class="text-sm text-gray-400 line-through"><?php echo $formattedPrecoAnterior; ?></span><?php endif; ?><span class="font-medium">${mainPriceDisplay}</span></div>`;
                     mobileSummaryItemsContainer.appendChild(mainItemEl);
                 }
                 orderbumpCheckboxes.forEach(checkbox => {
@@ -1647,7 +1675,8 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         if (mobileSummaryItemsContainer && name) {
                             const itemEl = document.createElement('div');
                             itemEl.className = 'flex justify-between';
-                            itemEl.innerHTML = `<span>${name}</span><span class="font-medium">R$ ${price.toFixed(2).replace('.', ',')}</span>`;
+                            const bumpDisplay = shouldDisplayUsd() && mainProductPrice > 0 ? `US$ ${(price * mainProductPriceUsd / mainProductPrice).toFixed(2).replace('.', ',')}` : `R$ ${price.toFixed(2).replace('.', ',')}`;
+                            itemEl.innerHTML = `<span>${name}</span><span class="font-medium">${bumpDisplay}</span>`;
                             mobileSummaryItemsContainer.appendChild(itemEl);
                         }
                     }
@@ -1683,7 +1712,14 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     }
                 }
                 
-                const totalText = `R$ ${displayAmount.toFixed(2).replace('.', ',')}`;
+                let totalText;
+                if (shouldDisplayUsd()) {
+                    const rate = mainProductPrice > 0 ? mainProductPriceUsd / mainProductPrice : 1;
+                    const totalUsd = mainProductPriceUsd + (currentAmount - mainProductPrice) * rate;
+                    totalText = `US$ ${totalUsd.toFixed(2).replace('.', ',')}`;
+                } else {
+                    totalText = `R$ ${displayAmount.toFixed(2).replace('.', ',')}`;
+                }
                 if (finalTotalElement) finalTotalElement.textContent = totalText;
                 if (finalTotalMobileElement) finalTotalMobileElement.textContent = totalText;
                 
@@ -2680,6 +2716,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
             <?php endif; ?>
             
             // Função para selecionar método de pagamento padrão (funciona para todos os gateways)
+            // Quando produto tem price_usd, prioriza Stripe para clientes internacionais verem USD
             function selectDefaultPaymentMethod() {
                 const pixPushinpayCard = document.querySelector('[data-payment-method="pix_pushinpay"]');
                 const pixEfiCard = document.querySelector('[data-payment-method="pix_efi"]');
@@ -2690,8 +2727,10 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 const creditCardEfiCard = document.querySelector('[data-payment-method="credit_card_efi"]');
                 const creditCardHypercashCard = document.querySelector('[data-payment-method="credit_card_hypercash"]');
                 const creditCardBeehiveCard = document.querySelector('[data-payment-method="credit_card_beehive"]');
-                
-                if (pixPushinpayCard) {
+                const preferStripe = productCurrency === 'usd' && mainProductPriceUsd;
+                if (preferStripe && (pixStripeCard || creditCardStripeCard)) {
+                    selectPaymentMethod(pixStripeCard ? 'pix_stripe' : 'credit_card_stripe');
+                } else if (pixPushinpayCard) {
                     selectPaymentMethod('pix_pushinpay');
                 } else if (pixEfiCard) {
                     selectPaymentMethod('pix_efi');
