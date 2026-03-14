@@ -1003,12 +1003,20 @@ function efi_create_card_charge($access_token, $amount, $payment_token, $custome
                 $error_messages = [];
                 foreach ($error_data['errors'] as $error) {
                     if (isset($error['message'])) {
-                        $error_messages[] = $error['message'];
+                        $error_messages[] = is_string($error['message']) ? $error['message'] : json_encode($error['message']);
                     }
                 }
                 if (!empty($error_messages)) {
                     $error_message = implode(', ', $error_messages);
                 }
+            }
+            // API Efí pode retornar message/error_description como array; Exception exige string
+            if (is_array($error_message)) {
+                $parts = [];
+                foreach (isset($error_message[0]) ? $error_message : [$error_message] as $v) {
+                    $parts[] = is_array($v) && isset($v['message']) ? $v['message'] : (is_string($v) ? $v : json_encode($v));
+                }
+                $error_message = implode(', ', $parts) ?: 'Erro ao processar pagamento';
             }
         }
         return [
@@ -1067,10 +1075,15 @@ function efi_create_card_charge($access_token, $amount, $payment_token, $custome
     
     error_log("Efí Cartão: Cobrança criada - charge_id: $charge_id, status_raw: $status_raw, status_normalized: $status_normalized, refusal.reason: " . ($reason ?: 'não informado') . ", message: " . ($message ?: 'não informado'));
     
+    $msg_raw = $response_data['message'] ?? ($data['message'] ?? '');
+    $msg_str = is_string($msg_raw) ? $msg_raw : (is_array($msg_raw) ? implode(', ', array_map(function ($v) {
+        return is_array($v) && isset($v['message']) ? $v['message'] : (is_string($v) ? $v : json_encode($v));
+    }, isset($msg_raw[0]) ? $msg_raw : [$msg_raw])) : (string) $msg_raw);
+    
     return [
         'charge_id' => $charge_id,
         'status' => $status_normalized,
-        'message' => $response_data['message'] ?? ($data['message'] ?? ''),
+        'message' => $msg_str,
         'status_raw' => $status_raw,
         'reason' => $reason
     ];
