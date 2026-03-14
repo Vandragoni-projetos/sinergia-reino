@@ -106,7 +106,7 @@ function create_stripe_checkout_session($params) {
         ];
     } catch (\Exception $e) {
         error_log("Stripe create_stripe_checkout_session error: " . $e->getMessage());
-        return null;
+        throw new \Exception("Stripe: " . $e->getMessage());
     }
 }
 
