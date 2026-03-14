@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y \
     libxml2-dev \
     zip \
     unzip \
+    git \
+    curl \
     && docker-php-ext-install -j$(nproc) \
     pdo \
     pdo_mysql \
@@ -16,6 +18,9 @@ RUN apt-get update && apt-get install -y \
     zip \
     exif \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Instalar Composer
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 # Habilitar mod_rewrite
 RUN a2enmod rewrite
@@ -36,8 +41,19 @@ COPY docker/apache.conf /etc/apache2/sites-available/000-default.conf
 WORKDIR /var/www/html
 COPY . .
 
-# uploads gravável pelo www-data
-RUN chown -R www-data:www-data /var/www/html/uploads \
+# Instalar dependências do Composer no build
+RUN composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+
+# Script de entrypoint: garante vendor/ se volume sobrescrever (ex.: Easypanel)
+COPY docker/entrypoint-app.sh /entrypoint-app.sh
+RUN chmod +x /entrypoint-app.sh
+
+# Permissões: aplicação e uploads gravável pelo www-data
+RUN mkdir -p /var/www/html/uploads \
+    && chown -R www-data:www-data /var/www/html \
     && chmod -R 775 /var/www/html/uploads
+
+ENTRYPOINT ["/entrypoint-app.sh"]
+CMD ["apache2-foreground"]
 
 EXPOSE 80
