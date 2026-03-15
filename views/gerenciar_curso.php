@@ -801,6 +801,7 @@ try {
         <p class="text-gray-400 text-sm mb-4">Permita que os alunos comentem nas aulas e defina se a aprovação é obrigatória.</p>
         <?php if ($has_comentarios_cols): ?>
         <form action="/index?pagina=gerenciar_curso&produto_id=<?php echo $produto_id; ?>" method="post" class="space-y-4">
+            <p class="text-xs text-gray-500 mb-2">Configurações gerais — o botão abaixo salva apenas estes toggles.</p>
             <div class="flex items-center justify-between py-2">
                 <label for="comentarios_ativos" class="text-gray-300 font-medium">Ativar comentários nas aulas</label>
                 <label class="relative inline-flex items-center cursor-pointer">
@@ -818,10 +819,11 @@ try {
                     <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#32e768]"></div>
                 </label>
             </div>
-            <button type="submit" name="salvar_comentarios_config" class="bg-white text-gray-900 font-bold py-2 px-5 rounded-lg hover:bg-gray-200 transition">Salvar alterações</button>
+            <button type="submit" name="salvar_comentarios_config" class="bg-white text-gray-900 font-bold py-2 px-5 rounded-lg hover:bg-gray-200 transition">Salvar configurações</button>
         </form>
         <div class="mt-8 pt-6 border-t border-dark-border">
             <h3 class="text-lg font-semibold text-white mb-3">Ver e aprovar comentários</h3>
+            <p class="text-xs text-gray-500 mb-3">Cada comentário tem seu próprio botão <strong class="text-[#32e768]">Salvar resposta</strong> para enviar sua resposta ao aluno.</p>
             <div class="flex flex-wrap gap-2 mb-4">
                 <button type="button" class="comentarios-filter-btn px-4 py-2 rounded-lg text-sm font-medium transition bg-[#32e768] text-white" data-status="all">Todos</button>
                 <button type="button" class="comentarios-filter-btn px-4 py-2 rounded-lg text-sm font-medium transition bg-gray-600 text-gray-300 hover:bg-gray-500" data-status="pending">Pendentes</button>
@@ -1691,7 +1693,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <div class="mt-3 pt-3 border-t border-dark-border">
                                 ${c.resposta_infoprodutor ? `<p class="text-green-300 text-sm mb-2"><strong>Sua resposta:</strong> ${escapeHtml(c.resposta_infoprodutor)}</p>` : ''}
                                 <textarea class="resposta-textarea w-full px-3 py-2 bg-dark-card border border-dark-border rounded text-white text-sm" rows="2" placeholder="Responder ao aluno..." data-id="${c.id}">${escapeHtml(c.resposta_infoprodutor || '')}</textarea>
-                                <button type="button" class="comentario-resposta-btn mt-1 text-[#32e768] hover:text-[#28d15e] text-sm font-medium" data-id="${c.id}">Salvar resposta</button>
+                                <button type="button" class="comentario-resposta-btn mt-2 px-4 py-2 bg-[#32e768] hover:bg-[#28d15e] text-white text-sm font-semibold rounded-lg transition" data-id="${c.id}">Salvar resposta</button>
                             </div>
                         ` : '';
                         return `<div class="p-3 bg-dark-elevated rounded-lg border border-dark-border" data-id="${c.id}">
