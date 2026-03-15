@@ -110,19 +110,11 @@ if (isset($_SESSION['profile_feedback_for_js']) && !empty($_SESSION['profile_fee
 }
 
 // Inclui a página solicitada (como 'gerenciar_curso.php') dentro do buffer
-$view_path = __DIR__ . '/views/' . $pagina . '.php';
-$in_list = in_array($pagina, $paginas_permitidas);
-$file_ok = file_exists($view_path);
-if ($in_list && $file_ok) {
-    include $view_path;
+if (in_array($pagina, $paginas_permitidas) && file_exists(__DIR__ . '/views/' . $pagina . '.php')) {
+    include __DIR__ . '/views/' . $pagina . '.php';
 } else {
     // Se a página não for encontrada, mostra um erro 404
-    // Debug: adicione ?debug=1 à URL para ver o motivo (remover em produção)
-    $debug_html = '';
-    if (isset($_GET['debug']) && $_GET['debug'] === '1') {
-        $debug_html = "<p class='mt-4 text-xs text-amber-400 font-mono'>Debug: pagina=" . htmlspecialchars($pagina) . " | na_lista=" . ($in_list ? 'sim' : 'nao') . " | arquivo_existe=" . ($file_ok ? 'sim' : 'nao') . " | path=" . htmlspecialchars($view_path) . "</p>";
-    }
-    echo "<div class='text-center p-10 bg-dark-card rounded-lg shadow border border-dark-border'><h1 class='text-4xl font-bold text-white'>Erro 404</h1><p class='mt-2 text-gray-400'>Página não encontrada.</p>" . $debug_html . "</div>";
+    echo "<div class='text-center p-10 bg-dark-card rounded-lg shadow border border-dark-border'><h1 class='text-4xl font-bold text-white'>Erro 404</h1><p class='mt-2 text-gray-400'>Página não encontrada.</p></div>";
 }
 
 // Captura todo o conteúdo do buffer para a variável $page_content
