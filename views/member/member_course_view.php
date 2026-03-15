@@ -505,6 +505,7 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                                 <div id="comentarios-list" class="space-y-3 mb-4 max-h-60 overflow-y-auto">
                                     <p class="text-gray-500 text-sm">Carregando...</p>
                                 </div>
+                                <div id="comentarios-feedback" class="hidden mb-4 p-4 rounded-lg border text-sm"></div>
                                 <div id="comentarios-form-wrap" class="border-t border-gray-700 pt-4">
                                     <textarea id="comentario-texto" rows="3" class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Escreva seu comentário ou dúvida sobre esta aula..." maxlength="2000"></textarea>
                                     <p class="text-xs text-gray-500 mt-1"><span id="comentario-char-count">0</span>/2000</p>
@@ -1508,10 +1509,17 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                             comentarioTexto.value = '';
                             if (comentarioCharCount) comentarioCharCount.textContent = '0';
                             loadComentariosForAula(currentLessonData.id);
-                            if (data.status === 'approved') {
-                                // Opcional: toast ou mensagem
-                            } else {
-                                // Aguardando aprovação
+                            const feedbackEl = document.getElementById('comentarios-feedback');
+                            if (feedbackEl) {
+                                feedbackEl.classList.remove('hidden');
+                                if (data.status === 'approved') {
+                                    feedbackEl.className = 'mb-4 p-4 rounded-lg border border-green-500/50 bg-green-500/10 text-green-300 text-sm';
+                                    feedbackEl.textContent = 'Comentário publicado com sucesso!';
+                                } else {
+                                    feedbackEl.className = 'mb-4 p-4 rounded-lg border border-amber-500/50 bg-amber-500/10 text-amber-200 text-sm';
+                                    feedbackEl.textContent = 'Seu comentário foi recebido e será analisado. Você receberá uma resposta em breve.';
+                                }
+                                setTimeout(() => { feedbackEl.classList.add('hidden'); }, 5000);
                             }
                         } else {
                             alert(data.error || 'Erro ao enviar comentário.');
