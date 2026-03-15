@@ -55,20 +55,26 @@ try {
             'scope' => '/'
         ];
     }
-    $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || $_SERVER['SERVER_PORT'] == 443 ||
+    $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443) ||
         (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
-        (!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && $_SERVER['HTTP_X_FORWARDED_SSL'] === 'on');
+        (!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && $_SERVER['HTTP_X_FORWARDED_SSL'] === 'on') ||
+        (!empty($_SERVER['HTTP_X_FORWARDED_PORT']) && $_SERVER['HTTP_X_FORWARDED_PORT'] == 443);
+    $host_check = $_SERVER['HTTP_HOST'] ?? '';
+    if (!$is_https && strpos($host_check, '.') !== false && strpos($host_check, 'localhost') === false) {
+        $is_https = true;
+    }
     $protocol = $is_https ? "https://" : "http://";
     $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    $script_path = $_SERVER['SCRIPT_NAME'] ?? $_SERVER['PHP_SELF'] ?? '';
-    $base_path = dirname($script_path);
+    $request_path = parse_url($_SERVER['REQUEST_URI'] ?? '/pwa/manifest.php', PHP_URL_PATH);
+    $base_path = ($request_path !== false && $request_path !== '') ? dirname($request_path) : '/pwa';
     $base_path = str_replace('\\', '/', $base_path);
-    $base_path = preg_replace('#^[A-Z]:/#i', '', $base_path);
+    $base_path = preg_replace('#^/var/www/[^/]+#i', '', $base_path);
     $base_path = preg_replace('#^.*htdocs#i', '', $base_path);
+    $base_path = preg_replace('#^[A-Z]:[/\\].*#i', '', $base_path);
     if (!empty($base_path) && $base_path[0] !== '/') $base_path = '/' . $base_path;
     $base_path = preg_replace('#/+#', '/', $base_path);
     $base_path = rtrim($base_path, '/');
-    if (empty($base_path) || $base_path === '/') $base_path = '';
+    if (empty($base_path) || $base_path === '/' || strpos($base_path, '/var') === 0) $base_path = '/pwa';
     $base_url = $protocol . $host . $base_path;
 
     $start_url = $config['start_url'] ?? '/';
