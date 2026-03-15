@@ -327,8 +327,8 @@ try {
     }
 
     // Verificação de segurança: Apenas usuários LOGADOS podem acessar esta API.
-    // Exceção: record_checkout_activity (checkout público - comprador preenche dados)
-    if ((!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || !isset($_SESSION['id'])) && $action !== 'record_checkout_activity') {
+    // Exceções: record_checkout_activity (checkout), validate_coupon (checkout - valida cupom)
+    if ((!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || !isset($_SESSION['id'])) && !in_array($action, ['record_checkout_activity', 'validate_coupon'])) {
         http_response_code(403);
         ob_clean();
         echo json_encode(['error' => 'Acesso não autorizado']);
@@ -345,6 +345,43 @@ try {
     if ($action === 'check_session') {
         ob_clean();
         echo json_encode(['success' => true, 'valid' => true]);
+        exit;
+    }
+
+    // --- Validar cupom (checkout público - sem login) ---
+    if ($action === 'validate_coupon') {
+        $input = $_SERVER['REQUEST_METHOD'] === 'POST' ? (json_decode(file_get_contents('php://input'), true) ?: []) : $_GET;
+        $codigo = trim($input['codigo'] ?? $input['code'] ?? '');
+        $produto_id = (int)($input['produto_id'] ?? $input['product_id'] ?? 0);
+        $valor_total = (float)($input['valor_total'] ?? $input['transaction_amount'] ?? 0);
+        if (empty($codigo) || $produto_id <= 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'valid' => false, 'error' => 'Dados inválidos']);
+            exit;
+        }
+        try {
+            $stmt = $pdo->prepare("SELECT usuario_id FROM produtos WHERE id = ?");
+            $stmt->execute([$produto_id]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row) {
+                ob_clean();
+                echo json_encode(['success' => false, 'valid' => false, 'error' => 'Produto não encontrado']);
+                exit;
+            }
+            $result = validarCupom($codigo, $produto_id, $valor_total, $row['usuario_id']);
+            ob_clean();
+            echo json_encode([
+                'success' => true,
+                'valid' => $result['valid'],
+                'cupom_id' => $result['cupom_id'],
+                'valor_desconto' => (float)$result['valor_desconto'],
+                'mensagem' => $result['mensagem'],
+                'error' => $result['valid'] ? null : $result['mensagem']
+            ]);
+        } catch (Exception $e) {
+            ob_clean();
+            echo json_encode(['success' => false, 'valid' => false, 'error' => 'Erro ao validar cupom']);
+        }
         exit;
     }
 
@@ -3440,6 +3477,144 @@ EOT;
             ob_clean();
             error_log("API: Erro ao excluir categoria: " . $e->getMessage());
             echo json_encode(['success' => false, 'error' => 'Erro ao excluir categoria']);
+        }
+        exit;
+    }
+
+    // =====================================================
+    // CUPONS DE DESCONTO
+    // =====================================================
+
+    if ($action == 'list_cupons') {
+        try {
+            $stmt = $pdo->prepare("
+                SELECT c.*, 
+                    (SELECT GROUP_CONCAT(produto_id) FROM cupom_produtos WHERE cupom_id = c.id) as produto_ids
+                FROM cupons c WHERE c.usuario_id = ? ORDER BY c.created_at DESC
+            ");
+            $stmt->execute([$usuario_id_logado]);
+            $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            ob_clean();
+            echo json_encode(['success' => true, 'items' => $items]);
+        } catch (PDOException $e) {
+            http_response_code(500);
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Erro ao listar cupons']);
+        }
+        exit;
+    }
+
+    if ($action == 'create_cupom' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $codigo = strtoupper(trim(preg_replace('/[^A-Za-z0-9_-]/', '', $input['codigo'] ?? '')));
+        $tipo = in_array($input['tipo'] ?? '', ['percentual', 'fixo']) ? $input['tipo'] : 'percentual';
+        $valor = (float)($input['valor'] ?? 0);
+        $pedido_minimo = isset($input['pedido_minimo']) && $input['pedido_minimo'] !== '' ? (float)$input['pedido_minimo'] : null;
+        $max_usos = isset($input['max_usos']) && $input['max_usos'] !== '' ? (int)$input['max_usos'] : null;
+        $valido_de = !empty($input['valido_de']) ? $input['valido_de'] : null;
+        $valido_ate = !empty($input['valido_ate']) ? $input['valido_ate'] : null;
+        $ativo = isset($input['ativo']) ? (int)$input['ativo'] : 1;
+        $produto_ids = $input['produto_ids'] ?? [];
+
+        if (strlen($codigo) < 2) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Código inválido (mín. 2 caracteres)']);
+            exit;
+        }
+        if ($tipo === 'percentual' && ($valor < 0 || $valor > 100)) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Percentual deve ser entre 0 e 100']);
+            exit;
+        }
+        if ($tipo === 'fixo' && $valor < 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Valor fixo deve ser positivo']);
+            exit;
+        }
+        try {
+            $stmt = $pdo->prepare("INSERT INTO cupons (usuario_id, codigo, tipo, valor, pedido_minimo, max_usos, valido_de, valido_ate, ativo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$usuario_id_logado, $codigo, $tipo, $valor, $pedido_minimo, $max_usos, $valido_de, $valido_ate, $ativo]);
+            $cupom_id = (int)$pdo->lastInsertId();
+            if ($cupom_id > 0 && !empty($produto_ids) && is_array($produto_ids)) {
+                $stmt_cp = $pdo->prepare("INSERT INTO cupom_produtos (cupom_id, produto_id) VALUES (?, ?)");
+                foreach ($produto_ids as $pid) {
+                    $pid = (int)$pid;
+                    if ($pid > 0) $stmt_cp->execute([$cupom_id, $pid]);
+                }
+            }
+            ob_clean();
+            echo json_encode(['success' => true, 'message' => 'Cupom criado!', 'id' => $cupom_id]);
+        } catch (PDOException $e) {
+            if ($e->getCode() == 23000) {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Já existe um cupom com este código']);
+            } else {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Erro ao criar cupom']);
+            }
+        }
+        exit;
+    }
+
+    if ($action == 'update_cupom' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $id = (int)($input['id'] ?? 0);
+        $codigo = strtoupper(trim(preg_replace('/[^A-Za-z0-9_-]/', '', $input['codigo'] ?? '')));
+        $tipo = in_array($input['tipo'] ?? '', ['percentual', 'fixo']) ? $input['tipo'] : 'percentual';
+        $valor = (float)($input['valor'] ?? 0);
+        $pedido_minimo = isset($input['pedido_minimo']) && $input['pedido_minimo'] !== '' ? (float)$input['pedido_minimo'] : null;
+        $max_usos = isset($input['max_usos']) && $input['max_usos'] !== '' ? (int)$input['max_usos'] : null;
+        $valido_de = !empty($input['valido_de']) ? $input['valido_de'] : null;
+        $valido_ate = !empty($input['valido_ate']) ? $input['valido_ate'] : null;
+        $ativo = isset($input['ativo']) ? (int)$input['ativo'] : 1;
+        $produto_ids = $input['produto_ids'] ?? [];
+
+        if ($id <= 0 || strlen($codigo) < 2) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Dados inválidos']);
+            exit;
+        }
+        try {
+            $stmt = $pdo->prepare("UPDATE cupons SET codigo=?, tipo=?, valor=?, pedido_minimo=?, max_usos=?, valido_de=?, valido_ate=?, ativo=? WHERE id=? AND usuario_id=?");
+            $stmt->execute([$codigo, $tipo, $valor, $pedido_minimo, $max_usos, $valido_de, $valido_ate, $ativo, $id, $usuario_id_logado]);
+            if ($stmt->rowCount() > 0) {
+                $pdo->prepare("DELETE FROM cupom_produtos WHERE cupom_id = ?")->execute([$id]);
+                if (!empty($produto_ids) && is_array($produto_ids)) {
+                    $stmt_cp = $pdo->prepare("INSERT INTO cupom_produtos (cupom_id, produto_id) VALUES (?, ?)");
+                    foreach ($produto_ids as $pid) {
+                        $pid = (int)$pid;
+                        if ($pid > 0) $stmt_cp->execute([$id, $pid]);
+                    }
+                }
+            }
+            ob_clean();
+            echo json_encode(['success' => true, 'message' => 'Cupom atualizado!']);
+        } catch (PDOException $e) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Erro ao atualizar cupom']);
+        }
+        exit;
+    }
+
+    if ($action == 'delete_cupom' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $id = (int)($input['id'] ?? 0);
+        if ($id <= 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'ID inválido']);
+            exit;
+        }
+        try {
+            $stmt = $pdo->prepare("DELETE FROM cupons WHERE id = ? AND usuario_id = ?");
+            $stmt->execute([$id, $usuario_id_logado]);
+            if ($stmt->rowCount() > 0) {
+                $pdo->prepare("DELETE FROM cupom_produtos WHERE cupom_id = ?")->execute([$id]);
+            }
+            ob_clean();
+            echo json_encode(['success' => true, 'message' => 'Cupom excluído!']);
+        } catch (PDOException $e) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Erro ao excluir cupom']);
         }
         exit;
     }
