@@ -293,6 +293,37 @@ try {
             }
         }
 
+        // Salvar configurações do certificado
+        if (isset($_POST['salvar_certificado_config'])) {
+            $should_redirect = true;
+            try {
+                $chk = $pdo->query("SHOW COLUMNS FROM cursos LIKE 'certificado_habilitado'");
+                if ($chk && $chk->rowCount() > 0) {
+                    $cert_habilitado = isset($_POST['certificado_habilitado']) ? 1 : 0;
+                    $cert_conclusao = min(100, max(0, (int)($_POST['certificado_conclusao_minima'] ?? 100)));
+                    $cert_duracao = trim($_POST['certificado_duracao'] ?? '');
+                    $cert_assinatura = trim($_POST['certificado_texto_assinatura'] ?? '');
+                    $cert_nome_plataforma = trim($_POST['certificado_nome_plataforma'] ?? '');
+                    $cert_cor = trim($_POST['certificado_cor_primaria'] ?? '#32e768');
+                    if (empty($cert_cor) || $cert_cor[0] !== '#') $cert_cor = '#32e768';
+                    $upload_cert = handle_file_upload('certificado_imagem_fundo', $upload_dir, $curso['certificado_imagem_fundo'] ?? null, $allowed_image_extensions);
+                    $cert_imagem = $curso['certificado_imagem_fundo'] ?? null;
+                    if (is_array($upload_cert) && isset($upload_cert['path'])) $cert_imagem = $upload_cert['path'];
+                    if (is_array($upload_cert) && isset($upload_cert['error'])) {
+                        $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>" . htmlspecialchars($upload_cert['error']) . "</div>";
+                    } else {
+                        $stmt = $pdo->prepare("UPDATE cursos SET certificado_habilitado=?, certificado_conclusao_minima=?, certificado_duracao=?, certificado_texto_assinatura=?, certificado_nome_plataforma=?, certificado_cor_primaria=?, certificado_imagem_fundo=? WHERE id=?");
+                        $stmt->execute([$cert_habilitado, $cert_conclusao, $cert_duracao ?: null, $cert_assinatura ?: null, $cert_nome_plataforma ?: null, $cert_cor, $cert_imagem, $curso_id]);
+                        $mensagem = "<div class='bg-green-900/20 border border-green-500 text-green-300 px-4 py-3 rounded' role='alert'>Configurações do certificado salvas!</div>";
+                    }
+                } else {
+                    $mensagem = "<div class='bg-yellow-900/20 border border-yellow-500 text-yellow-300 px-4 py-3 rounded' role='alert'>Execute a migration migrations/certificado_curso.sql para ativar certificados.</div>";
+                }
+            } catch (PDOException $e) {
+                $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>Erro ao salvar certificado. Execute migrations/certificado_curso.sql</div>";
+            }
+        }
+
         // Adicionar Módulo
         if (isset($_POST['adicionar_modulo'])) {
             $should_redirect = true;
@@ -836,6 +867,72 @@ try {
         </div>
         <?php else: ?>
         <p class="text-yellow-400 text-sm">Execute a migration <code class="bg-dark-elevated px-1 rounded">migrations/aula_comentarios.sql</code> para ativar esta funcionalidade.</p>
+        <?php endif; ?>
+    </div>
+
+    <!-- Certificado de Conclusão -->
+    <?php
+    $has_certificado_cols = false;
+    try {
+        $chk_cert = $pdo->query("SHOW COLUMNS FROM cursos LIKE 'certificado_habilitado'");
+        $has_certificado_cols = ($chk_cert && $chk_cert->rowCount() > 0);
+    } catch (PDOException $e) {}
+    $cert_habilitado = $has_certificado_cols ? (int)($curso['certificado_habilitado'] ?? 0) : 0;
+    $cert_conclusao = $has_certificado_cols ? (int)($curso['certificado_conclusao_minima'] ?? 100) : 100;
+    $cert_duracao = $has_certificado_cols ? ($curso['certificado_duracao'] ?? '') : '';
+    $cert_assinatura = $has_certificado_cols ? ($curso['certificado_texto_assinatura'] ?? '') : '';
+    $cert_nome_plataforma = $has_certificado_cols ? ($curso['certificado_nome_plataforma'] ?? '') : '';
+    $cert_cor = $has_certificado_cols ? ($curso['certificado_cor_primaria'] ?? '#32e768') : '#32e768';
+    ?>
+    <div class="bg-dark-card p-6 rounded-lg shadow-md mb-8 border border-[#32e768]">
+        <h2 class="text-2xl font-semibold mb-2 text-white flex items-center gap-2">
+            <i data-lucide="award" class="w-7 h-7 text-[#32e768]"></i>
+            Certificado de Conclusão
+        </h2>
+        <p class="text-gray-400 text-sm mb-4">Emita certificado quando o aluno atingir a conclusão mínima. Usa a logo e nome da plataforma (Configurações do sistema).</p>
+        <?php if ($has_certificado_cols): ?>
+        <form action="/index?pagina=gerenciar_curso&produto_id=<?php echo $produto_id; ?>" method="post" enctype="multipart/form-data" class="space-y-4">
+            <div class="flex items-center justify-between py-2">
+                <label for="certificado_habilitado" class="text-gray-300 font-medium">Habilitar certificado</label>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="certificado_habilitado" id="certificado_habilitado" value="1" class="sr-only peer" <?php echo $cert_habilitado ? 'checked' : ''; ?>>
+                    <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#32e768]"></div>
+                </label>
+            </div>
+            <div>
+                <label for="certificado_conclusao_minima" class="block text-gray-300 font-medium mb-1">% conclusão mínima</label>
+                <input type="number" name="certificado_conclusao_minima" id="certificado_conclusao_minima" value="<?php echo (int)$cert_conclusao; ?>" min="1" max="100" class="w-24 px-3 py-2 bg-dark-elevated border border-dark-border rounded text-white">
+            </div>
+            <div>
+                <label for="certificado_duracao" class="block text-gray-300 font-medium mb-1">Duração do curso</label>
+                <input type="text" name="certificado_duracao" id="certificado_duracao" value="<?php echo htmlspecialchars($cert_duracao); ?>" placeholder="Ex: 40 horas" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white">
+            </div>
+            <div>
+                <label for="certificado_texto_assinatura" class="block text-gray-300 font-medium mb-1">Texto da assinatura</label>
+                <input type="text" name="certificado_texto_assinatura" id="certificado_texto_assinatura" value="<?php echo htmlspecialchars($cert_assinatura); ?>" placeholder="Ex: Diretor, Escola XYZ" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white">
+            </div>
+            <div>
+                <label for="certificado_nome_plataforma" class="block text-gray-300 font-medium mb-1">Nome da plataforma</label>
+                <input type="text" name="certificado_nome_plataforma" id="certificado_nome_plataforma" value="<?php echo htmlspecialchars($cert_nome_plataforma); ?>" placeholder="Deixe vazio para usar o nome do sistema" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white">
+            </div>
+            <div>
+                <label for="certificado_cor_primaria" class="block text-gray-300 font-medium mb-1">Cor primária</label>
+                <div class="flex items-center gap-2">
+                    <input type="color" name="certificado_cor_primaria" id="certificado_cor_primaria" value="<?php echo htmlspecialchars($cert_cor); ?>" class="h-10 w-14 rounded border border-dark-border cursor-pointer">
+                    <input type="text" value="<?php echo htmlspecialchars($cert_cor); ?>" class="px-3 py-2 bg-dark-elevated border border-dark-border rounded text-white text-sm w-24" readonly>
+                </div>
+            </div>
+            <div>
+                <label class="block text-gray-300 font-medium mb-1">Imagem de fundo</label>
+                <input type="file" name="certificado_imagem_fundo" accept="image/*" class="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-[#32e768]/20 file:text-[#32e768]">
+                <?php if (!empty($curso['certificado_imagem_fundo'])): ?>
+                <p class="text-xs text-gray-500 mt-1">Atual: <?php echo htmlspecialchars(basename($curso['certificado_imagem_fundo'])); ?></p>
+                <?php endif; ?>
+            </div>
+            <button type="submit" name="salvar_certificado_config" class="bg-[#32e768] text-white font-bold py-2 px-5 rounded-lg hover:bg-[#28d15e] transition">Salvar</button>
+        </form>
+        <?php else: ?>
+        <p class="text-yellow-400 text-sm">Execute a migration <code class="bg-dark-elevated px-1 rounded">migrations/certificado_curso.sql</code> para ativar certificados.</p>
         <?php endif; ?>
     </div>
 
