@@ -134,6 +134,24 @@ function process_evolution_messages($pdo, $sale_data, $event_type) {
     $stmt_produto_nome->execute([$sale_data['produto_id']]);
     $produto_nome = $stmt_produto_nome->fetchColumn() ?: 'Produto';
 
+    // Link de checkout (recuperação de carrinho)
+    $link_checkout = $sale_data['link_checkout'] ?? '';
+    if (empty($link_checkout) && !empty($sale_data['checkout_hash'])) {
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host = $_SERVER['HTTP_HOST'] ?? '';
+        $link_checkout = $host ? ($protocol . '://' . $host . '/checkout?p=' . $sale_data['checkout_hash']) : '';
+    }
+    if (empty($link_checkout)) {
+        $stmt_ch = $pdo->prepare("SELECT checkout_hash FROM produtos WHERE id = ?");
+        $stmt_ch->execute([$sale_data['produto_id']]);
+        $ch = $stmt_ch->fetchColumn();
+        if ($ch) {
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $host = $_SERVER['HTTP_HOST'] ?? '';
+            $link_checkout = $host ? ($protocol . '://' . $host . '/checkout?p=' . $ch) : '';
+        }
+    }
+
     // Prepara as substituições de variáveis
     $replacements = [
         '{cliente_nome}' => $sale_data['comprador_nome'] ?? 'Cliente',
@@ -142,7 +160,8 @@ function process_evolution_messages($pdo, $sale_data, $event_type) {
         '{produto_nome}' => $produto_nome,
         '{valor}' => 'R$ ' . number_format($sale_data['valor'] ?? 0, 2, ',', '.'),
         '{transacao_id}' => $sale_data['transacao_id'] ?? '',
-        '{data_compra}' => date('d/m/Y H:i', strtotime($sale_data['data_venda'] ?? 'now'))
+        '{data_compra}' => date('d/m/Y H:i', strtotime($sale_data['data_venda'] ?? 'now')),
+        '{link_checkout}' => $link_checkout
     ];
 
     // Envia cada mensagem configurada
