@@ -22,9 +22,12 @@ $upload_dir = 'uploads/';
 $aula_files_dir = 'uploads/aula_files/';
 $aula_covers_dir = 'uploads/aula_covers/';
 
+$badges_dir = 'uploads/badges/';
+
 // Garante que os diretórios existam
 if (!is_dir($aula_files_dir)) mkdir($aula_files_dir, 0755, true);
 if (!is_dir($aula_covers_dir)) mkdir($aula_covers_dir, 0755, true);
+if (!is_dir($badges_dir)) mkdir($badges_dir, 0755, true);
 
 // === CONFIGURAÇÃO DE TIPOS DE ARQUIVOS PERMITIDOS ===
 $allowed_image_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
@@ -349,10 +352,20 @@ try {
             $gatilho_valor = (int)($_POST['conquista_gatilho_valor'] ?? 0);
             $modulo_id = (int)($_POST['conquista_modulo_id'] ?? 0) ?: null;
             $badge_url = trim($_POST['conquista_badge_url'] ?? '');
+            if (isset($_FILES['conquista_badge_upload']) && $_FILES['conquista_badge_upload']['error'] === UPLOAD_ERR_OK) {
+                $upload_badge = handle_file_upload('conquista_badge_upload', $badges_dir, null, $allowed_image_extensions);
+                if (is_array($upload_badge) && isset($upload_badge['path'])) {
+                    $badge_url = $upload_badge['path'];
+                } elseif (is_array($upload_badge) && isset($upload_badge['error'])) {
+                    $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>Badge: " . htmlspecialchars($upload_badge['error']) . "</div>";
+                    $badge_url = '';
+                    $should_redirect = false;
+                }
+            }
             $recompensa_tipo = in_array($_POST['conquista_recompensa_tipo'] ?? '', ['badge','cupom','mensagem','cupom_mensagem']) ? $_POST['conquista_recompensa_tipo'] : 'badge';
             $cupom_id = (int)($_POST['conquista_cupom_id'] ?? 0) ?: null;
             $mensagem_urgencia = trim($_POST['conquista_mensagem_urgencia'] ?? '');
-            if (!empty($titulo)) {
+            if (!empty($titulo) && empty($mensagem)) {
                 try {
                     $chk_cols = @$pdo->query("SHOW COLUMNS FROM curso_conquistas LIKE 'recompensa_tipo'");
                     $tem_recompensa = $chk_cols && $chk_cols->rowCount() > 0;
@@ -1089,7 +1102,7 @@ try {
             <div class="relative flex items-center justify-center min-h-screen p-4">
                 <div class="bg-dark-card rounded-xl p-8 max-w-md w-full border border-dark-border">
                     <h3 class="text-xl font-bold text-white mb-4">Nova conquista</h3>
-                    <form action="/index?pagina=gerenciar_curso&produto_id=<?php echo $produto_id; ?>" method="post" class="space-y-4">
+                    <form action="/index?pagina=gerenciar_curso&produto_id=<?php echo $produto_id; ?>" method="post" enctype="multipart/form-data" class="space-y-4">
                         <div>
                             <label class="block text-gray-300 font-medium mb-1">Título</label>
                             <input type="text" name="conquista_titulo" required placeholder="Ex: Primeira aula" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white">
@@ -1149,20 +1162,31 @@ try {
                         </div>
                         <div>
                             <label class="block text-gray-300 font-medium mb-1">Badge</label>
-                            <p class="text-xs text-gray-500 mb-2">Selecione um badge ou informe URL customizada abaixo.</p>
+                            <p class="text-xs text-gray-500 mb-2">Selecione um badge predefinido, faça upload ou informe URL customizada.</p>
                             <input type="hidden" name="conquista_badge_url" id="conquista_badge_url" value="">
-                            <div id="badges-grid" class="grid grid-cols-8 gap-2 mb-3">
+                            <div id="badges-grid-wrap" class="max-h-40 overflow-y-auto overflow-x-hidden rounded-lg border border-dark-border bg-dark-elevated/50 p-2 mb-3">
+                                <div id="badges-grid" class="grid grid-cols-8 gap-2">
                                 <?php
                                 if (file_exists(__DIR__ . '/../helpers/badge_helper.php')) {
                                     require_once __DIR__ . '/../helpers/badge_helper.php';
                                     $badges_pre = get_predefined_badges();
                                     foreach ($badges_pre as $key => $data_uri) {
-                                        echo '<button type="button" class="badge-option w-10 h-10 p-1 rounded-lg border-2 border-dark-border hover:border-[#32e768] focus:border-[#32e768] focus:ring-2 focus:ring-[#32e768]/50 transition bg-dark-elevated" data-badge="' . htmlspecialchars($key) . '" title="' . htmlspecialchars($key) . '"><img src="' . htmlspecialchars($data_uri) . '" alt="" class="w-full h-full object-contain"></button>';
+                                        echo '<button type="button" class="badge-option w-10 h-10 p-1 rounded-lg border-2 border-dark-border hover:border-[#32e768] focus:border-[#32e768] focus:ring-2 focus:ring-[#32e768]/50 transition bg-dark-elevated flex-shrink-0" data-badge="' . htmlspecialchars($key) . '" title="' . htmlspecialchars($key) . '"><img src="' . htmlspecialchars($data_uri) . '" alt="" class="w-full h-full object-contain"></button>';
                                     }
                                 }
                                 ?>
+                                </div>
                             </div>
-                            <input type="text" id="conquista_badge_url_custom" placeholder="Ou URL customizada (ex: /uploads/badges/trophy.png)" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white text-sm" oninput="document.getElementById('conquista_badge_url').value=this.value; document.querySelectorAll('.badge-option').forEach(b=>b.classList.remove('ring-2','ring-[#32e768]'));">
+                            <div class="flex flex-col sm:flex-row gap-2 mb-2">
+                                <div class="flex-1">
+                                    <label for="conquista_badge_upload" class="block text-xs text-gray-400 mb-1">Upload de imagem</label>
+                                    <input type="file" id="conquista_badge_upload" name="conquista_badge_upload" accept=".jpg,.jpeg,.png,.gif,.webp" class="w-full text-sm text-gray-400 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-[#32e768]/20 file:text-[#32e768] hover:file:bg-[#32e768]/30" onchange="document.getElementById('conquista_badge_url').value=''; var c=document.getElementById('conquista_badge_url_custom'); if(c)c.value=''; document.querySelectorAll('.badge-option').forEach(function(b){b.classList.remove('ring-2','ring-[#32e768]');});">
+                                </div>
+                                <div class="flex-1">
+                                    <label for="conquista_badge_url_custom" class="block text-xs text-gray-400 mb-1">Ou URL customizada</label>
+                                    <input type="text" id="conquista_badge_url_custom" placeholder="ex: /uploads/badges/trophy.png" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white text-sm" oninput="document.getElementById('conquista_badge_url').value=this.value; document.querySelectorAll('.badge-option').forEach(b=>b.classList.remove('ring-2','ring-[#32e768]')); document.getElementById('conquista_badge_upload').value='';">
+                                </div>
+                            </div>
                         </div>
                         <div class="flex gap-2">
                             <button type="submit" name="criar_conquista" class="bg-[#32e768] text-white font-bold py-2 px-5 rounded-lg hover:bg-[#28d15e] transition">Criar conquista</button>
@@ -1179,6 +1203,8 @@ try {
             document.querySelectorAll('.badge-option').forEach(function(b) { b.classList.remove('ring-2', 'ring-[#32e768]'); });
             var custom = document.getElementById('conquista_badge_url_custom');
             if (custom) custom.value = '';
+            var upload = document.getElementById('conquista_badge_upload');
+            if (upload) upload.value = '';
         });
         function fecharModalConquista() {
             document.getElementById('modal-nova-conquista').classList.add('hidden');
