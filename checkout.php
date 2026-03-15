@@ -1799,7 +1799,27 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 if (isPhoneActive && !payerData.phone) { showAlert('Por favor, preencha o telefone.'); return null; }
                 if (isCpfActive && !payerData.cpf) { showAlert('Por favor, preencha o CPF/CNPJ.'); return null; }
                 
+                // Recuperação de carrinho: registra lead (fire-and-forget)
+                if (typeof recordCheckoutActivity === 'function') recordCheckoutActivity(payerData);
+                
                 return payerData;
+            }
+
+            function recordCheckoutActivity(payerData) {
+                if (!checkoutSessionUUID || !mainProductId || !payerData?.name || !payerData?.email) return;
+                fetch('/api/api.php?action=record_checkout_activity', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        checkout_session_uuid: checkoutSessionUUID,
+                        product_id: mainProductId,
+                        comprador_nome: payerData.name,
+                        comprador_email: payerData.email,
+                        comprador_telefone: payerData.phone || '',
+                        comprador_cpf: payerData.cpf || '',
+                        utm_parameters: typeof utmParameters !== 'undefined' ? utmParameters : {}
+                    })
+                }).catch(function() {});
             }
 
             // --- LÓGICA DE SELEÇÃO DE MÉTODOS DE PAGAMENTO ---
