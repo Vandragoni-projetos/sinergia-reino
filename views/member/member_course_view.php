@@ -1630,10 +1630,26 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                 const badgeEl = document.getElementById('conquista-badge');
                 const tituloEl = document.getElementById('conquista-titulo');
                 const descEl = document.getElementById('conquista-descricao');
+                const cupomWrap = document.getElementById('conquista-cupom-wrap');
+                const cupomCodigoEl = document.getElementById('conquista-cupom-codigo');
+                const cupomValidadeEl = document.getElementById('conquista-cupom-validade');
+                const msgUrgenciaWrap = document.getElementById('conquista-msg-urgencia-wrap');
+                const msgUrgenciaEl = document.getElementById('conquista-msg-urgencia');
                 if (badgeEl) badgeEl.src = conquista.badge_url || '';
                 if (badgeEl) badgeEl.alt = conquista.titulo || '';
                 if (tituloEl) tituloEl.textContent = conquista.titulo || '';
                 if (descEl) descEl.textContent = conquista.descricao || '';
+                if (cupomWrap) cupomWrap.classList.add('hidden');
+                if (msgUrgenciaWrap) msgUrgenciaWrap.classList.add('hidden');
+                if (conquista.cupom_codigo && cupomWrap && cupomCodigoEl && cupomValidadeEl) {
+                    cupomCodigoEl.textContent = conquista.cupom_codigo;
+                    cupomValidadeEl.textContent = conquista.cupom_valido_ate ? 'Válido até ' + new Date(conquista.cupom_valido_ate).toLocaleDateString('pt-BR') : '';
+                    cupomWrap.classList.remove('hidden');
+                }
+                if (conquista.mensagem_urgencia && msgUrgenciaWrap && msgUrgenciaEl) {
+                    msgUrgenciaEl.textContent = conquista.mensagem_urgencia;
+                    msgUrgenciaWrap.classList.remove('hidden');
+                }
                 modal.classList.remove('hidden');
                 lucide.createIcons();
             }
@@ -1683,7 +1699,15 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
             <div class="bg-gray-800 rounded-xl p-8 max-w-md w-full text-center border border-gray-600 shadow-2xl">
                 <img id="conquista-badge" src="" alt="" class="w-24 h-24 mx-auto mb-4 object-contain">
                 <h3 id="conquista-titulo" class="text-xl font-bold text-white mb-2"></h3>
-                <p id="conquista-descricao" class="text-gray-400 mb-6"></p>
+                <p id="conquista-descricao" class="text-gray-400 mb-4"></p>
+                <div id="conquista-cupom-wrap" class="hidden mb-4 p-4 bg-green-900/30 border border-green-600/50 rounded-lg">
+                    <p class="text-sm text-green-300 mb-1">Seu cupom de desconto:</p>
+                    <p id="conquista-cupom-codigo" class="text-xl font-mono font-bold text-green-400 tracking-wider"></p>
+                    <p id="conquista-cupom-validade" class="text-xs text-gray-400 mt-1"></p>
+                </div>
+                <div id="conquista-msg-urgencia-wrap" class="hidden mb-4 p-3 bg-amber-900/30 border border-amber-600/50 rounded-lg text-left">
+                    <p id="conquista-msg-urgencia" class="text-sm text-amber-200"></p>
+                </div>
                 <button type="button" onclick="fecharModalConquistaCelebracao()" class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded-lg transition">Continuar</button>
             </div>
         </div>
