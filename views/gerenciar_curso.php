@@ -1686,6 +1686,13 @@ document.addEventListener('DOMContentLoaded', function() {
                             <button type="button" class="comentario-approve-btn text-green-400 hover:text-green-300 text-sm font-medium" data-id="${c.id}">Aprovar</button>
                             <button type="button" class="comentario-reject-btn text-red-400 hover:text-red-300 text-sm font-medium" data-id="${c.id}">Rejeitar</button>
                         ` : '';
+                        const respostaHtml = (c.status === 'approved') ? `
+                            <div class="mt-3 pt-3 border-t border-dark-border">
+                                ${c.resposta_infoprodutor ? `<p class="text-green-300 text-sm mb-2"><strong>Sua resposta:</strong> ${escapeHtml(c.resposta_infoprodutor)}</p>` : ''}
+                                <textarea class="resposta-textarea w-full px-3 py-2 bg-dark-card border border-dark-border rounded text-white text-sm" rows="2" placeholder="Responder ao aluno..." data-id="${c.id}">${escapeHtml(c.resposta_infoprodutor || '')}</textarea>
+                                <button type="button" class="comentario-resposta-btn mt-1 text-[#32e768] hover:text-[#28d15e] text-sm font-medium" data-id="${c.id}">Salvar resposta</button>
+                            </div>
+                        ` : '';
                         return `<div class="p-3 bg-dark-elevated rounded-lg border border-dark-border" data-id="${c.id}">
                             <div class="flex justify-between items-start gap-2">
                                 <div class="flex-1 min-w-0">
@@ -1693,6 +1700,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <p class="text-xs text-gray-500">${c.modulo_titulo} › ${escapeHtml(c.aula_titulo)}</p>
                                     <p class="text-gray-300 text-sm mt-2">${escapeHtml(c.texto)}</p>
                                     <p class="text-xs text-gray-500 mt-2">${formatDate(c.created_at)}</p>
+                                    ${respostaHtml}
                                 </div>
                                 <div class="flex items-center gap-2 flex-shrink-0">
                                     <span class="px-2 py-0.5 rounded text-xs ${statusBadge}">${c.status === 'pending' ? 'Pendente' : (c.status === 'approved' ? 'Aprovado' : 'Rejeitado')}</span>
@@ -1711,6 +1719,15 @@ document.addEventListener('DOMContentLoaded', function() {
                         btn.addEventListener('click', () => {
                             fetch('/api/api?action=reject_comentario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: parseInt(btn.dataset.id) }) })
                                 .then(r => r.json()).then(d => { if (d.success) loadComentarios(); });
+                        });
+                    });
+                    comentariosListContainer.querySelectorAll('.comentario-resposta-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const id = parseInt(btn.dataset.id);
+                            const textarea = comentariosListContainer.querySelector(`.resposta-textarea[data-id="${id}"]`);
+                            const resposta = textarea ? textarea.value.trim() : '';
+                            fetch('/api/api?action=resposta_comentario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, resposta }) })
+                                .then(r => r.json()).then(d => { if (d.success) loadComentarios(); else if (d.error) alert(d.error); });
                         });
                     });
                     if (typeof lucide !== 'undefined') lucide.createIcons();
