@@ -129,7 +129,7 @@ function conceder_acesso_aluno($pdo, $aluno_email, $produto_id, $oferta_id = nul
  */
 function verificar_acesso_aluno($pdo, $aluno_email, $produto_id) {
     try {
-        $stmt = $pdo->prepare("SELECT data_concessao, data_expiracao FROM alunos_acessos WHERE aluno_email = ? AND produto_id = ?");
+        $stmt = $pdo->prepare("SELECT data_concessao, data_expiracao FROM alunos_acessos WHERE LOWER(TRIM(aluno_email)) = LOWER(TRIM(?)) AND produto_id = ?");
         $stmt->execute([$aluno_email, $produto_id]);
         $acesso = $stmt->fetch(PDO::FETCH_ASSOC);
         
