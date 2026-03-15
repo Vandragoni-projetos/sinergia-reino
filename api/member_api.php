@@ -57,15 +57,30 @@ switch ($action) {
             $stmt = $pdo->prepare("INSERT IGNORE INTO aluno_progresso (aluno_email, aula_id, data_conclusao) VALUES (?, ?, NOW())");
             $stmt->execute([$aluno_email_logado, $aula_id]);
 
-            // Se rowCount() > 0, um novo registro foi inserido. Se for 0, o registro já existia.
-            if ($stmt->rowCount() > 0) {
-                sendJsonResponse(true, ['message' => 'Aula marcada como concluída.']);
-            } else {
-                sendJsonResponse(true, ['message' => 'Aula já estava marcada como concluída.']);
+            $novas_conquistas = [];
+            if ($stmt->rowCount() > 0 && file_exists(__DIR__ . '/../helpers/gamificacao_helper.php')) {
+                require_once __DIR__ . '/../helpers/gamificacao_helper.php';
+                $stmt_ctx = $pdo->prepare("SELECT m.curso_id, c.produto_id FROM aulas a JOIN modulos m ON a.modulo_id = m.id JOIN cursos c ON m.curso_id = c.id WHERE a.id = ?");
+                $stmt_ctx->execute([$aula_id]);
+                $ctx = $stmt_ctx->fetch(PDO::FETCH_ASSOC);
+                if ($ctx) {
+                    $stmt_ac = $pdo->prepare("SELECT data_concessao FROM alunos_acessos WHERE LOWER(TRIM(aluno_email)) = LOWER(TRIM(?)) AND produto_id = ?");
+                    $stmt_ac->execute([$aluno_email_logado, $ctx['produto_id']]);
+                    $ac = $stmt_ac->fetch(PDO::FETCH_ASSOC);
+                    $data_concessao = $ac['data_concessao'] ?? date('Y-m-d H:i:s');
+                    $result = verificar_conquistas_aluno($pdo, $aluno_email_logado, $ctx['curso_id'], $ctx['produto_id'], [
+                        'data_concessao' => $data_concessao,
+                        'acabou_marcar_aula' => true,
+                        'acabou_comentar' => false
+                    ]);
+                    $novas_conquistas = $result['novas_conquistas'] ?? [];
+                }
             }
 
+            $msg = $stmt->rowCount() > 0 ? 'Aula marcada como concluída.' : 'Aula já estava marcada como concluída.';
+            sendJsonResponse(true, ['message' => $msg, 'novas_conquistas' => $novas_conquistas]);
+
         } catch (PDOException $e) {
-            // Em ambiente de produção, logar o erro e retornar uma mensagem genérica
             error_log("Erro de DB ao marcar aula: " . $e->getMessage());
             sendJsonResponse(false, ['error' => 'Erro interno do servidor ao marcar aula.'], 500);
         }
@@ -108,6 +123,42 @@ switch ($action) {
         }
         break;
 
+    case 'check_conquistas':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            sendJsonResponse(false, ['error' => 'Método não permitido. Use POST.'], 405);
+        }
+        $produto_id_req = (int)($input['produto_id'] ?? 0);
+        if ($produto_id_req <= 0) {
+            sendJsonResponse(false, ['error' => 'produto_id inválido.'], 400);
+        }
+        try {
+            $stmt_ac = $pdo->prepare("SELECT data_concessao FROM alunos_acessos WHERE LOWER(TRIM(aluno_email)) = LOWER(TRIM(?)) AND produto_id = ?");
+            $stmt_ac->execute([$aluno_email_logado, $produto_id_req]);
+            $ac = $stmt_ac->fetch(PDO::FETCH_ASSOC);
+            if (!$ac) {
+                sendJsonResponse(false, ['error' => 'Sem acesso a este produto.'], 403);
+            }
+            $stmt_curso = $pdo->prepare("SELECT id FROM cursos WHERE produto_id = ?");
+            $stmt_curso->execute([$produto_id_req]);
+            $curso_row = $stmt_curso->fetch(PDO::FETCH_ASSOC);
+            if (!$curso_row) {
+                sendJsonResponse(true, ['novas_conquistas' => [], 'todas_desbloqueadas' => []]);
+            }
+            require_once __DIR__ . '/../helpers/gamificacao_helper.php';
+            $result = verificar_conquistas_aluno($pdo, $aluno_email_logado, $curso_row['id'], $produto_id_req, [
+                'data_concessao' => $ac['data_concessao'],
+                'acabou_marcar_aula' => false,
+                'acabou_comentar' => !empty($input['acabou_comentar'])
+            ]);
+            sendJsonResponse(true, [
+                'novas_conquistas' => $result['novas_conquistas'] ?? [],
+                'todas_desbloqueadas' => $result['todas_desbloqueadas'] ?? []
+            ]);
+        } catch (PDOException $e) {
+            error_log("Erro check_conquistas: " . $e->getMessage());
+            sendJsonResponse(false, ['error' => 'Erro ao verificar conquistas.'], 500);
+        }
+        break;
 
     // [NOVO CASE] Atualizar perfil do membro
     case 'update_member_profile':
@@ -560,10 +611,27 @@ switch ($action) {
                 error_log("Erro ao criar notificação de comentário: " . $e->getMessage());
             }
 
+            $novas_conquistas = [];
+            if (file_exists(__DIR__ . '/../helpers/gamificacao_helper.php')) {
+                require_once __DIR__ . '/../helpers/gamificacao_helper.php';
+                $stmt_ac = $pdo->prepare("SELECT data_concessao FROM alunos_acessos WHERE LOWER(TRIM(aluno_email)) = LOWER(TRIM(?)) AND produto_id = ?");
+                $stmt_ac->execute([$aluno_email_logado, $prod['id']]);
+                $ac = $stmt_ac->fetch(PDO::FETCH_ASSOC);
+                if ($ac) {
+                    $result = verificar_conquistas_aluno($pdo, $aluno_email_logado, $curso_info['curso_id'], $prod['id'], [
+                        'data_concessao' => $ac['data_concessao'],
+                        'acabou_marcar_aula' => false,
+                        'acabou_comentar' => true
+                    ]);
+                    $novas_conquistas = $result['novas_conquistas'] ?? [];
+                }
+            }
+
             sendJsonResponse(true, [
                 'message' => $status === 'approved' ? 'Comentário publicado!' : 'Comentário enviado. Ele aparecerá após aprovação.',
                 'id' => (int)$pdo->lastInsertId(),
-                'status' => $status
+                'status' => $status,
+                'novas_conquistas' => $novas_conquistas
             ]);
         } catch (PDOException $e) {
             error_log("Erro ao criar comentário: " . $e->getMessage());
