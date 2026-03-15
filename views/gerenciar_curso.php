@@ -1040,10 +1040,15 @@ try {
             </button>
         </div>
         <div id="conquistas-lista" class="space-y-4">
-            <?php foreach ($conquistas_lista as $cq): ?>
+            <?php
+            if (file_exists(__DIR__ . '/../helpers/badge_helper.php')) require_once __DIR__ . '/../helpers/badge_helper.php';
+            foreach ($conquistas_lista as $cq):
+                $cq_badge = !empty($cq['badge_url']) && function_exists('get_badge_display_url') ? get_badge_display_url($cq['badge_url']) : null;
+                if (!$cq_badge) $cq_badge = 'data:image/svg+xml,' . rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#32e768" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>');
+            ?>
             <div class="flex items-center justify-between p-4 bg-dark-elevated rounded-lg border border-dark-border">
                 <div class="flex items-center gap-3">
-                    <span class="text-2xl">🏆</span>
+                    <img src="<?php echo htmlspecialchars($cq_badge); ?>" alt="" class="w-10 h-10 object-contain flex-shrink-0">
                     <div>
                         <p class="font-semibold text-white"><?php echo htmlspecialchars($cq['titulo']); ?></p>
                         <p class="text-sm text-gray-400"><?php echo htmlspecialchars($gatilhos_opcoes[$cq['gatilho_tipo']] ?? $cq['gatilho_tipo']); ?><?php if ($cq['gatilho_tipo'] === 'aulas_concluidas' && $cq['gatilho_valor']) echo ' (' . $cq['gatilho_valor'] . ')'; ?><?php if ($cq['gatilho_tipo'] === 'modulo_completo' && $cq['modulo_id']) { $m = array_filter($modulos_select, fn($x) => $x['id'] == $cq['modulo_id']); echo ' - ' . (reset($m)['titulo'] ?? 'Módulo'); } ?></p>
@@ -1095,8 +1100,21 @@ try {
                             <textarea name="conquista_descricao" rows="2" placeholder="Exibida no modal de celebração" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white"></textarea>
                         </div>
                         <div>
-                            <label class="block text-gray-300 font-medium mb-1">Badge (URL ou deixe vazio para padrão)</label>
-                            <input type="text" name="conquista_badge_url" placeholder="Ex: /uploads/badges/trophy.png" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white">
+                            <label class="block text-gray-300 font-medium mb-1">Badge</label>
+                            <p class="text-xs text-gray-500 mb-2">Selecione um badge ou informe URL customizada abaixo.</p>
+                            <input type="hidden" name="conquista_badge_url" id="conquista_badge_url" value="">
+                            <div id="badges-grid" class="grid grid-cols-8 gap-2 mb-3">
+                                <?php
+                                if (file_exists(__DIR__ . '/../helpers/badge_helper.php')) {
+                                    require_once __DIR__ . '/../helpers/badge_helper.php';
+                                    $badges_pre = get_predefined_badges();
+                                    foreach ($badges_pre as $key => $data_uri) {
+                                        echo '<button type="button" class="badge-option w-10 h-10 p-1 rounded-lg border-2 border-dark-border hover:border-[#32e768] focus:border-[#32e768] focus:ring-2 focus:ring-[#32e768]/50 transition bg-dark-elevated" data-badge="' . htmlspecialchars($key) . '" title="' . htmlspecialchars($key) . '"><img src="' . htmlspecialchars($data_uri) . '" alt="" class="w-full h-full object-contain"></button>';
+                                    }
+                                }
+                                ?>
+                            </div>
+                            <input type="text" id="conquista_badge_url_custom" placeholder="Ou URL customizada (ex: /uploads/badges/trophy.png)" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white text-sm" oninput="document.getElementById('conquista_badge_url').value=this.value; document.querySelectorAll('.badge-option').forEach(b=>b.classList.remove('ring-2','ring-[#32e768]'));">
                         </div>
                         <div class="flex gap-2">
                             <button type="submit" name="criar_conquista" class="bg-[#32e768] text-white font-bold py-2 px-5 rounded-lg hover:bg-[#28d15e] transition">Criar conquista</button>
@@ -1109,6 +1127,10 @@ try {
         <script>
         document.getElementById('btn-add-conquista')?.addEventListener('click', function() {
             document.getElementById('modal-nova-conquista').classList.remove('hidden');
+            document.getElementById('conquista_badge_url').value = '';
+            document.querySelectorAll('.badge-option').forEach(function(b) { b.classList.remove('ring-2', 'ring-[#32e768]'); });
+            var custom = document.getElementById('conquista_badge_url_custom');
+            if (custom) custom.value = '';
         });
         function fecharModalConquista() {
             document.getElementById('modal-nova-conquista').classList.add('hidden');
@@ -1119,6 +1141,15 @@ try {
             document.getElementById('wrap-modulo').classList.toggle('hidden', v !== 'modulo_completo');
         });
         document.getElementById('conquista_gatilho')?.dispatchEvent(new Event('change'));
+        document.querySelectorAll('.badge-option').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.badge-option').forEach(function(b) { b.classList.remove('ring-2', 'ring-[#32e768]'); });
+                btn.classList.add('ring-2', 'ring-[#32e768]');
+                document.getElementById('conquista_badge_url').value = btn.dataset.badge || '';
+                var custom = document.getElementById('conquista_badge_url_custom');
+                if (custom) custom.value = '';
+            });
+        });
         </script>
         <?php else: ?>
         <p class="text-yellow-400 text-sm">Execute a migration <code class="bg-dark-elevated px-1 rounded">migrations/gamificacao.sql</code> para ativar gamificação.</p>
