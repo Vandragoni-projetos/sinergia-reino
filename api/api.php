@@ -1842,7 +1842,8 @@ try {
     }
 
     if ($action == 'resposta_comentario' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $input = json_decode(file_get_contents('php://input'), true);
+        $raw = file_get_contents('php://input');
+        $input = is_string($raw) ? (json_decode($raw, true) ?: []) : [];
         $id = (int)($input['id'] ?? 0);
         $resposta = trim($input['resposta'] ?? '');
         if ($id <= 0) {
@@ -1872,10 +1873,16 @@ try {
                 WHERE ac.id = ? AND p.usuario_id = ?
             ");
             $stmt->execute([$resposta ?: null, $id, $usuario_id_logado]);
+            $rows = $stmt->rowCount();
             ob_clean();
-            echo json_encode(['success' => $stmt->rowCount() > 0, 'message' => 'Resposta salva.']);
+            if ($rows > 0) {
+                echo json_encode(['success' => true, 'message' => 'Resposta salva.']);
+            } else {
+                echo json_encode(['success' => false, 'error' => 'Comentário não encontrado ou você não tem permissão para responder.']);
+            }
         } catch (PDOException $e) {
             ob_clean();
+            error_log("API resposta_comentario: " . $e->getMessage());
             echo json_encode(['success' => false, 'error' => 'Erro ao salvar resposta.']);
         }
         exit;
