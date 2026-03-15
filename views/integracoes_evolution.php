@@ -254,6 +254,13 @@ $messages = $stmt_messages->fetchAll(PDO::FETCH_ASSOC);
                             <p class="text-xs text-gray-400">Disputa aberta</p>
                         </div>
                     </label>
+                    <label class="flex items-center p-4 bg-dark-elevated border border-dark-border rounded-xl cursor-pointer hover:border-amber-500/50 transition-colors has-[:checked]:border-amber-500 has-[:checked]:bg-amber-900/20">
+                        <input type="radio" name="event_type" value="info_filled" class="form-radio h-5 w-5 text-amber-500">
+                        <div class="ml-3">
+                            <span class="text-white font-medium">Carrinho Abandonado</span>
+                            <p class="text-xs text-gray-400">Info preenchida no checkout</p>
+                        </div>
+                    </label>
                 </div>
             </div>
 
@@ -275,6 +282,7 @@ $messages = $stmt_messages->fetchAll(PDO::FETCH_ASSOC);
                         <button type="button" onclick="insertVariable('{valor}')" class="px-3 py-1.5 bg-dark-elevated text-[#25D366] text-xs font-mono rounded-lg hover:bg-dark-card border border-dark-border transition-colors">{valor}</button>
                         <button type="button" onclick="insertVariable('{transacao_id}')" class="px-3 py-1.5 bg-dark-elevated text-[#25D366] text-xs font-mono rounded-lg hover:bg-dark-card border border-dark-border transition-colors">{transacao_id}</button>
                         <button type="button" onclick="insertVariable('{data_compra}')" class="px-3 py-1.5 bg-dark-elevated text-[#25D366] text-xs font-mono rounded-lg hover:bg-dark-card border border-dark-border transition-colors">{data_compra}</button>
+                        <button type="button" onclick="insertVariable('{link_checkout}')" class="px-3 py-1.5 bg-dark-elevated text-[#25D366] text-xs font-mono rounded-lg hover:bg-dark-card border border-dark-border transition-colors" title="Link do checkout (recuperação de carrinho)">{link_checkout}</button>
                     </div>
                 </div>
             </div>
@@ -436,6 +444,7 @@ function getEventLabel(event) {
         'pending': { text: 'Aguardando Pagamento', color: 'yellow' },
         'rejected': { text: 'Pagamento Recusado', color: 'red' },
         'refunded': { text: 'Reembolso', color: 'purple' },
+        'info_filled': { text: 'Carrinho Abandonado', color: 'amber' },
         'charged_back': { text: 'Chargeback', color: 'pink' }
     };
     return labels[event] || { text: event, color: 'gray' };
