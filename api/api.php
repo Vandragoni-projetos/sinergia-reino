@@ -1842,8 +1842,13 @@ try {
     }
 
     if ($action == 'resposta_comentario' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $raw = file_get_contents('php://input');
-        $input = is_string($raw) ? (json_decode($raw, true) ?: []) : [];
+        $content_type = $_SERVER['CONTENT_TYPE'] ?? '';
+        if (strpos($content_type, 'application/json') !== false) {
+            $raw = file_get_contents('php://input');
+            $input = is_string($raw) ? (json_decode($raw, true) ?: []) : [];
+        } else {
+            $input = $_POST;
+        }
         $id = (int)($input['id'] ?? 0);
         $resposta = trim($input['resposta'] ?? '');
         if ($id <= 0) {
@@ -1878,6 +1883,12 @@ try {
             if ($rows > 0) {
                 echo json_encode(['success' => true, 'message' => 'Resposta salva.']);
             } else {
+                if (defined('APP_DEBUG') && APP_DEBUG) {
+                    $dbg = $pdo->prepare("SELECT ac.id, p.usuario_id as produto_owner FROM aula_comentarios ac INNER JOIN aulas a ON ac.aula_id=a.id INNER JOIN modulos m ON a.modulo_id=m.id INNER JOIN cursos c ON m.curso_id=c.id INNER JOIN produtos p ON c.produto_id=p.id WHERE ac.id=?");
+                    $dbg->execute([$id]);
+                    $row = $dbg->fetch(PDO::FETCH_ASSOC);
+                    error_log("resposta_comentario rowCount=0: id=$id, usuario_logado=$usuario_id_logado, db_row=" . json_encode($row));
+                }
                 echo json_encode(['success' => false, 'error' => 'Comentário não encontrado ou você não tem permissão para responder.']);
             }
         } catch (PDOException $e) {
