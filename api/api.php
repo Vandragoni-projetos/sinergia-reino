@@ -1754,8 +1754,11 @@ try {
             if ($status_filter === 'pending') $status_where = " AND ac.status = 'pending'";
             elseif ($status_filter === 'approved') $status_where = " AND ac.status = 'approved'";
             elseif ($status_filter === 'rejected') $status_where = " AND ac.status = 'rejected'";
+            $resposta_col = '';
+            $chk_resp = @$pdo->query("SHOW COLUMNS FROM aula_comentarios LIKE 'resposta_infoprodutor'");
+            if ($chk_resp && $chk_resp->rowCount() > 0) $resposta_col = ', ac.resposta_infoprodutor';
             $stmt = $pdo->prepare("
-                SELECT ac.id, ac.aula_id, ac.aluno_email, ac.nome_aluno, ac.texto, ac.status, ac.resposta_infoprodutor, ac.created_at,
+                SELECT ac.id, ac.aula_id, ac.aluno_email, ac.nome_aluno, ac.texto, ac.status, ac.created_at $resposta_col,
                        a.titulo as aula_titulo, m.titulo as modulo_titulo
                 FROM aula_comentarios ac
                 INNER JOIN aulas a ON ac.aula_id = a.id
