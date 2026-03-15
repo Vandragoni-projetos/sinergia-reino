@@ -419,7 +419,14 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
             </div>
         </div>
     <?php else: ?>
-    <div id="course-container" class="min-h-screen member-protected-content">
+    <?php
+    $comentarios_ativos = 0;
+    $chk_comentarios = @$pdo->query("SHOW COLUMNS FROM cursos LIKE 'comentarios_ativos'");
+    if ($chk_comentarios && $chk_comentarios->rowCount() > 0) {
+        $comentarios_ativos = (int)($curso['comentarios_ativos'] ?? 0);
+    }
+    ?>
+    <div id="course-container" class="min-h-screen member-protected-content" data-comentarios-ativos="<?php echo $comentarios_ativos; ?>" data-aluno-email="<?php echo htmlspecialchars($cliente_email); ?>">
         <?php
         $banner_raw = $curso['banner_url'] ?? $curso['produto_foto'] ?? '';
         $banner_src = !empty($banner_raw) ? resolve_product_image_url_protected($banner_raw, $upload_dir ?? 'uploads/', $produto_id) : '';
@@ -486,6 +493,23 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                                     <button id="mark-as-complete-btn" class="border-2 border-green-500 text-green-500 font-bold py-2.5 px-5 rounded-lg transition duration-300 flex items-center space-x-2 hover:bg-green-500 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed hidden ml-auto">
                                         <i data-lucide="check-square" class="w-5 h-5"></i>
                                         <span>Marcar como Concluída</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- Comentários da Aula -->
+                            <div id="comentarios-section" class="mt-6 bg-gray-800 p-6 rounded-xl shadow-lg hidden">
+                                <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                                    <i data-lucide="message-circle" class="w-5 h-5"></i>
+                                    Comentários
+                                </h3>
+                                <div id="comentarios-list" class="space-y-3 mb-4 max-h-60 overflow-y-auto">
+                                    <p class="text-gray-500 text-sm">Carregando...</p>
+                                </div>
+                                <div id="comentarios-form-wrap" class="border-t border-gray-700 pt-4">
+                                    <textarea id="comentario-texto" rows="3" class="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-green-500 focus:border-transparent" placeholder="Escreva seu comentário ou dúvida sobre esta aula..." maxlength="2000"></textarea>
+                                    <p class="text-xs text-gray-500 mt-1"><span id="comentario-char-count">0</span>/2000</p>
+                                    <button id="comentario-submit-btn" type="button" class="mt-2 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition">
+                                        Enviar comentário
                                     </button>
                                 </div>
                             </div>
@@ -971,6 +995,9 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
             const allModulesData = <?php echo json_encode($modulos_com_aulas); ?>;
             const clienteEmail = "<?php echo htmlspecialchars($cliente_email); ?>";
             const currentProductId = "<?php echo htmlspecialchars($produto_id); ?>";
+            const courseContainer = document.getElementById('course-container');
+            const comentariosAtivos = courseContainer && courseContainer.dataset.comentariosAtivos === '1';
+            const alunoEmail = courseContainer ? (courseContainer.dataset.alunoEmail || '') : '';
             const aulaFilesDirPublic = "<?php echo htmlspecialchars($aula_files_dir_public); ?>";
             
             if (!allModulesData || allModulesData.length === 0) return;
@@ -1006,6 +1033,7 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                     lessonDescription.innerHTML = '<p>Selecione uma aula na lista ao lado.</p>';
                     markAsCompleteBtn.classList.add('hidden');
                     currentLessonData = null;
+                    if (typeof toggleComentariosSection === 'function') toggleComentariosSection(false);
                     return;
                 }
                 
@@ -1023,6 +1051,7 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                     currentLessonData = null;
                     updateNextLessonButton();
                     lucide.createIcons(); // Render the lock icon in the description
+                    if (typeof toggleComentariosSection === 'function') toggleComentariosSection(false);
                     return;
                 }
 
@@ -1163,6 +1192,8 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                 updateMarkAsCompleteButton(lesson.concluida);
                 // 8. Atualiza o botão "Próxima Aula"
                 updateNextLessonButton();
+                // 9. Comentários da aula
+                if (typeof toggleComentariosSection === 'function') toggleComentariosSection(true, lesson.id);
             }
             // [FIM DA MUDANÇA] Função loadLesson
 
@@ -1222,6 +1253,51 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                     nextLessonBtn.disabled = true;
                 }
                 lucide.createIcons();
+            }
+
+            // Comentários nas aulas
+            function toggleComentariosSection(show, aulaId) {
+                const section = document.getElementById('comentarios-section');
+                if (!section) return;
+                if (!show || !comentariosAtivos) {
+                    section.classList.add('hidden');
+                    return;
+                }
+                section.classList.remove('hidden');
+                if (aulaId) loadComentariosForAula(aulaId);
+            }
+            function loadComentariosForAula(aulaId) {
+                const listEl = document.getElementById('comentarios-list');
+                const formWrap = document.getElementById('comentarios-form-wrap');
+                if (!listEl) return;
+                listEl.innerHTML = '<p class="text-gray-500 text-sm">Carregando...</p>';
+                if (formWrap) formWrap.style.display = comentariosAtivos ? 'block' : 'none';
+                fetch(`/api/member_api?action=list_aula_comentarios&aula_id=${aulaId}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data.success) {
+                            listEl.innerHTML = '<p class="text-red-400 text-sm">Erro ao carregar comentários.</p>';
+                            return;
+                        }
+                        if (!data.comentarios_ativos) {
+                            listEl.innerHTML = '';
+                            if (formWrap) formWrap.style.display = 'none';
+                            return;
+                        }
+                        const comentarios = data.comentarios || [];
+                        if (comentarios.length === 0) {
+                            listEl.innerHTML = '<p class="text-gray-500 text-sm">Nenhum comentário ainda. Seja o primeiro!</p>';
+                        } else {
+                            listEl.innerHTML = comentarios.map(c => {
+                                const nome = (c.nome_aluno || c.aluno_email || 'Anônimo').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                                const texto = (c.texto || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+                                const dataStr = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '';
+                                return `<div class="p-3 bg-gray-700 rounded-lg"><p class="font-medium text-white">${nome}</p><p class="text-gray-300 text-sm mt-1">${texto}</p><p class="text-xs text-gray-500 mt-2">${dataStr}</p></div>`;
+                            }).join('');
+                        }
+                        if (typeof lucide !== 'undefined') lucide.createIcons();
+                    })
+                    .catch(() => { listEl.innerHTML = '<p class="text-red-400 text-sm">Erro ao carregar.</p>'; });
             }
 
             function displayLessonsForModule(moduleIndex, lessonToSelect) {
@@ -1400,6 +1476,52 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                     loadLesson(next);
                 }
             });
+
+            // Comentário: contador de caracteres e envio
+            const comentarioTexto = document.getElementById('comentario-texto');
+            const comentarioCharCount = document.getElementById('comentario-char-count');
+            const comentarioSubmitBtn = document.getElementById('comentario-submit-btn');
+            if (comentarioTexto && comentarioCharCount) {
+                comentarioTexto.addEventListener('input', () => {
+                    comentarioCharCount.textContent = comentarioTexto.value.length;
+                });
+            }
+            if (comentarioSubmitBtn && comentarioTexto) {
+                comentarioSubmitBtn.addEventListener('click', () => {
+                    const texto = comentarioTexto.value.trim();
+                    if (!texto) return;
+                    if (!currentLessonData || !currentLessonData.id) return;
+                    comentarioSubmitBtn.disabled = true;
+                    comentarioSubmitBtn.textContent = 'Enviando...';
+                    fetch('/api/member_api?action=create_aula_comentario', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ aula_id: currentLessonData.id, texto: texto, aluno_email: alunoEmail })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        comentarioSubmitBtn.disabled = false;
+                        comentarioSubmitBtn.textContent = 'Enviar comentário';
+                        if (data.success) {
+                            comentarioTexto.value = '';
+                            if (comentarioCharCount) comentarioCharCount.textContent = '0';
+                            loadComentariosForAula(currentLessonData.id);
+                            if (data.status === 'approved') {
+                                // Opcional: toast ou mensagem
+                            } else {
+                                // Aguardando aprovação
+                            }
+                        } else {
+                            alert(data.error || 'Erro ao enviar comentário.');
+                        }
+                    })
+                    .catch(() => {
+                        comentarioSubmitBtn.disabled = false;
+                        comentarioSubmitBtn.textContent = 'Enviar comentário';
+                        alert('Erro de conexão. Tente novamente.');
+                    });
+                });
+            }
 
             function updateOverallProgress() {
                 let currentTotalAulas = 0;
