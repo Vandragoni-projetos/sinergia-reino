@@ -349,10 +349,20 @@ try {
             $gatilho_valor = (int)($_POST['conquista_gatilho_valor'] ?? 0);
             $modulo_id = (int)($_POST['conquista_modulo_id'] ?? 0) ?: null;
             $badge_url = trim($_POST['conquista_badge_url'] ?? '');
+            $recompensa_tipo = in_array($_POST['conquista_recompensa_tipo'] ?? '', ['badge','cupom','mensagem','cupom_mensagem']) ? $_POST['conquista_recompensa_tipo'] : 'badge';
+            $cupom_id = (int)($_POST['conquista_cupom_id'] ?? 0) ?: null;
+            $mensagem_urgencia = trim($_POST['conquista_mensagem_urgencia'] ?? '');
             if (!empty($titulo)) {
                 try {
-                    $stmt = $pdo->prepare("INSERT INTO curso_conquistas (curso_id, titulo, descricao, gatilho_tipo, gatilho_valor, modulo_id, badge_url, ordem) VALUES (?, ?, ?, ?, ?, ?, ?, 0)");
-                    $stmt->execute([$curso_id, $titulo, $descricao ?: null, $gatilho_tipo, $gatilho_valor ?: null, $modulo_id, $badge_url ?: null]);
+                    $chk_cols = @$pdo->query("SHOW COLUMNS FROM curso_conquistas LIKE 'recompensa_tipo'");
+                    $tem_recompensa = $chk_cols && $chk_cols->rowCount() > 0;
+                    if ($tem_recompensa) {
+                        $stmt = $pdo->prepare("INSERT INTO curso_conquistas (curso_id, titulo, descricao, gatilho_tipo, gatilho_valor, modulo_id, badge_url, ordem, recompensa_tipo, cupom_id, mensagem_urgencia) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)");
+                        $stmt->execute([$curso_id, $titulo, $descricao ?: null, $gatilho_tipo, $gatilho_valor ?: null, $modulo_id, $badge_url ?: null, $recompensa_tipo, $cupom_id, $mensagem_urgencia ?: null]);
+                    } else {
+                        $stmt = $pdo->prepare("INSERT INTO curso_conquistas (curso_id, titulo, descricao, gatilho_tipo, gatilho_valor, modulo_id, badge_url, ordem) VALUES (?, ?, ?, ?, ?, ?, ?, 0)");
+                        $stmt->execute([$curso_id, $titulo, $descricao ?: null, $gatilho_tipo, $gatilho_valor ?: null, $modulo_id, $badge_url ?: null]);
+                    }
                     $mensagem = "<div class='bg-green-900/20 border border-green-500 text-green-300 px-4 py-3 rounded' role='alert'>Conquista criada!</div>";
                 } catch (PDOException $e) {
                     $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>Erro ao criar conquista.</div>";
@@ -1006,6 +1016,7 @@ try {
         'aulas_concluidas' => 'N aulas concluídas',
         'modulo_completo' => 'Módulo 100% concluído',
         'progresso_50' => '50% do curso',
+        'progresso_70' => '70% do curso',
         'progresso_75' => '75% do curso',
         'progresso_100' => '100% do curso',
         'certificado' => 'Certificado liberado',
@@ -1014,6 +1025,15 @@ try {
     $stmt_mods = $pdo->prepare("SELECT id, titulo FROM modulos WHERE curso_id = ? ORDER BY ordem ASC, id ASC");
     $stmt_mods->execute([$curso_id]);
     $modulos_select = $stmt_mods->fetchAll(PDO::FETCH_ASSOC);
+    $cupons_select = [];
+    try {
+        $chk_cupons = @$pdo->query("SHOW TABLES LIKE 'cupons'");
+        if ($chk_cupons && $chk_cupons->rowCount() > 0) {
+            $stmt_cup = $pdo->prepare("SELECT id, codigo, tipo, valor, valido_ate FROM cupons WHERE usuario_id = ? AND ativo = 1 ORDER BY codigo ASC");
+            $stmt_cup->execute([$usuario_id_logado]);
+            $cupons_select = $stmt_cup->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (PDOException $e) {}
     ?>
     <div class="bg-dark-card p-6 rounded-lg shadow-md mb-8 border border-[#32e768]">
         <h2 class="text-2xl font-semibold mb-2 text-white flex items-center gap-2">
@@ -1099,6 +1119,34 @@ try {
                             <label class="block text-gray-300 font-medium mb-1">Descrição (opcional)</label>
                             <textarea name="conquista_descricao" rows="2" placeholder="Exibida no modal de celebração" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white"></textarea>
                         </div>
+                        <div id="wrap-recompensa" class="hidden space-y-4 p-4 bg-dark-elevated/50 rounded-lg border border-dark-border">
+                            <p class="text-sm text-gray-400">Para conquistas de 70% ou 100%, você pode oferecer cupom de desconto e/ou mensagem de urgência.</p>
+                            <div>
+                                <label class="block text-gray-300 font-medium mb-1">Tipo de recompensa</label>
+                                <select name="conquista_recompensa_tipo" id="conquista_recompensa_tipo" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white">
+                                    <option value="badge">Apenas badge</option>
+                                    <option value="cupom">Cupom de desconto</option>
+                                    <option value="mensagem">Mensagem de urgência</option>
+                                    <option value="cupom_mensagem">Cupom + mensagem de urgência</option>
+                                </select>
+                            </div>
+                            <div id="wrap-cupom" class="hidden">
+                                <label class="block text-gray-300 font-medium mb-1">Cupom</label>
+                                <select name="conquista_cupom_id" id="conquista_cupom_id" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white">
+                                    <option value="">Selecione um cupom</option>
+                                    <?php foreach ($cupons_select as $cup): ?>
+                                    <option value="<?php echo (int)$cup['id']; ?>"><?php echo htmlspecialchars($cup['codigo']); ?> (<?php echo $cup['tipo'] === 'percentual' ? $cup['valor'] . '%' : 'R$ ' . number_format($cup['valor'], 2, ',', '.'); ?>)<?php echo $cup['valido_ate'] ? ' - Válido até ' . date('d/m/Y', strtotime($cup['valido_ate'])) : ''; ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <?php if (empty($cupons_select)): ?>
+                                <p class="text-xs text-amber-400 mt-1">Nenhum cupom ativo. Crie em <a href="/index?pagina=cupons" class="text-[#32e768] hover:underline">Cupons</a>.</p>
+                                <?php endif; ?>
+                            </div>
+                            <div id="wrap-mensagem-urgencia" class="hidden">
+                                <label class="block text-gray-300 font-medium mb-1">Mensagem de urgência</label>
+                                <textarea name="conquista_mensagem_urgencia" id="conquista_mensagem_urgencia" rows="2" placeholder="Ex: Aproveite! Este desconto expira em 48h. Complete sua jornada agora!" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white"></textarea>
+                            </div>
+                        </div>
                         <div>
                             <label class="block text-gray-300 font-medium mb-1">Badge</label>
                             <p class="text-xs text-gray-500 mb-2">Selecione um badge ou informe URL customizada abaixo.</p>
@@ -1135,12 +1183,25 @@ try {
         function fecharModalConquista() {
             document.getElementById('modal-nova-conquista').classList.add('hidden');
         }
+        function toggleRecompensaWrap() {
+            var v = document.getElementById('conquista_gatilho').value;
+            var wrap = document.getElementById('wrap-recompensa');
+            if (wrap) wrap.classList.toggle('hidden', v !== 'progresso_70' && v !== 'progresso_100');
+        }
+        function toggleRecompensaCampos() {
+            var rt = document.getElementById('conquista_recompensa_tipo').value;
+            document.getElementById('wrap-cupom').classList.toggle('hidden', rt !== 'cupom' && rt !== 'cupom_mensagem');
+            document.getElementById('wrap-mensagem-urgencia').classList.toggle('hidden', rt !== 'mensagem' && rt !== 'cupom_mensagem');
+        }
         document.getElementById('conquista_gatilho')?.addEventListener('change', function() {
             var v = this.value;
             document.getElementById('wrap-gatilho-valor').classList.toggle('hidden', v !== 'aulas_concluidas');
             document.getElementById('wrap-modulo').classList.toggle('hidden', v !== 'modulo_completo');
+            toggleRecompensaWrap();
         });
+        document.getElementById('conquista_recompensa_tipo')?.addEventListener('change', toggleRecompensaCampos);
         document.getElementById('conquista_gatilho')?.dispatchEvent(new Event('change'));
+        toggleRecompensaCampos();
         document.querySelectorAll('.badge-option').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 document.querySelectorAll('.badge-option').forEach(function(b) { b.classList.remove('ring-2', 'ring-[#32e768]'); });
