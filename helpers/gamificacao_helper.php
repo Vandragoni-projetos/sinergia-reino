@@ -103,7 +103,11 @@ function verificar_conquistas_aluno($pdo, $aluno_email, $curso_id, $produto_id, 
         $tem_comentario = $stmt_c->fetchColumn() > 0;
     }
 
-    $stmt_conq = $pdo->prepare("SELECT id, titulo, descricao, gatilho_tipo, gatilho_valor, modulo_id, badge_url FROM curso_conquistas WHERE curso_id = ? ORDER BY ordem ASC, id ASC");
+    $chk_cols = @$pdo->query("SHOW COLUMNS FROM curso_conquistas LIKE 'recompensa_tipo'");
+    $tem_recompensa = $chk_cols && $chk_cols->rowCount() > 0;
+    $cols_conq = "id, titulo, descricao, gatilho_tipo, gatilho_valor, modulo_id, badge_url";
+    if ($tem_recompensa) $cols_conq .= ", recompensa_tipo, cupom_id, mensagem_urgencia";
+    $stmt_conq = $pdo->prepare("SELECT $cols_conq FROM curso_conquistas WHERE curso_id = ? ORDER BY ordem ASC, id ASC");
     $stmt_conq->execute([$curso_id]);
     $conquistas = $stmt_conq->fetchAll(PDO::FETCH_ASSOC);
 
@@ -131,6 +135,9 @@ function verificar_conquistas_aluno($pdo, $aluno_email, $curso_id, $produto_id, 
                 break;
             case 'progresso_50':
                 $atingido = $progresso_percentual >= 50;
+                break;
+            case 'progresso_70':
+                $atingido = $progresso_percentual >= 70;
                 break;
             case 'progresso_75':
                 $atingido = $progresso_percentual >= 75;
@@ -165,12 +172,31 @@ function verificar_conquistas_aluno($pdo, $aluno_email, $curso_id, $produto_id, 
             } elseif (strpos($badge_url, 'http') !== 0 && strpos($badge_url, 'data:') !== 0) {
                 $badge_url = '/' . ltrim($badge_url, '/');
             }
-            $novas_conquistas[] = [
+            $item = [
                 'id' => (int)$c['id'],
                 'titulo' => $c['titulo'],
                 'descricao' => $c['descricao'] ?? '',
                 'badge_url' => $badge_url
             ];
+            if ($tem_recompensa) {
+                $recompensa_tipo = $c['recompensa_tipo'] ?? 'badge';
+                $cupom_id = (int)($c['cupom_id'] ?? 0);
+                $mensagem_urgencia = trim($c['mensagem_urgencia'] ?? '');
+                if (in_array($recompensa_tipo, ['cupom', 'cupom_mensagem']) && $cupom_id > 0) {
+                    $stmt_cup = $pdo->prepare("SELECT codigo, valido_ate, ativo FROM cupons WHERE id = ?");
+                    $stmt_cup->execute([$cupom_id]);
+                    $cupom = $stmt_cup->fetch(PDO::FETCH_ASSOC);
+                    $now = date('Y-m-d H:i:s');
+                    if ($cupom && (int)$cupom['ativo'] === 1 && (!$cupom['valido_ate'] || $cupom['valido_ate'] >= $now)) {
+                        $item['cupom_codigo'] = $cupom['codigo'];
+                        $item['cupom_valido_ate'] = $cupom['valido_ate'];
+                    }
+                }
+                if (!empty($mensagem_urgencia) && in_array($recompensa_tipo, ['mensagem', 'cupom_mensagem'])) {
+                    $item['mensagem_urgencia'] = $mensagem_urgencia;
+                }
+            }
+            $novas_conquistas[] = $item;
         }
     }
 
