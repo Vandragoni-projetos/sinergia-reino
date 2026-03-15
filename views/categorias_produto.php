@@ -64,10 +64,12 @@ if (isset($_SESSION['flash_message'])) {
             <i data-lucide="folder-open" class="mx-auto w-16 h-16 text-gray-600 mb-4"></i>
             <p class="text-lg font-medium">Nenhuma categoria customizada</p>
             <p class="text-sm mt-1">Clique em "Nova Categoria" para criar. Enquanto não houver categorias, serão usadas as padrão do sistema.</p>
+            <p class="text-xs mt-3 text-gray-500">Após criar categorias, você poderá <strong>Editar</strong> ou <strong>Excluir</strong> cada uma na lista.</p>
         </div>
 
-        <div id="categories-list" class="space-y-3" style="display: none;">
-            <!-- Preenchido via JS -->
+        <div id="categories-list-wrap" style="display: none;">
+            <p class="text-xs text-gray-500 mb-3">Clique em <strong>Editar</strong> para alterar ou <strong>Excluir</strong> para remover (não é possível excluir categorias em uso).</p>
+            <div id="categories-list" class="space-y-3"><!-- Preenchido via JS --></div>
         </div>
     </div>
 </div>
@@ -201,10 +203,11 @@ function escapeHtml(str) {
 function fetchCategories() {
     const loading = document.getElementById('loading-state');
     const empty = document.getElementById('empty-state');
+    const wrap = document.getElementById('categories-list-wrap');
     const list = document.getElementById('categories-list');
     loading.style.display = 'block';
     empty.style.display = 'none';
-    list.style.display = 'none';
+    wrap.style.display = 'none';
 
     fetch('/api/api?action=list_product_type_categories')
         .then(r => r.json())
@@ -215,7 +218,7 @@ function fetchCategories() {
                 empty.style.display = 'block';
             } else {
                 cachedCategories = items;
-                list.style.display = 'block';
+                wrap.style.display = 'block';
                 list.innerHTML = items.map(c => {
                     const icon = c.icon ? escapeHtml(c.icon) + ' ' : '';
                     return '<div class="flex items-center justify-between p-4 bg-dark-elevated rounded-xl border border-dark-border hover:border-[#32e768]/50 transition">' +
@@ -225,8 +228,8 @@ function fetchCategories() {
                         '<span class="text-gray-500 text-sm ml-2">(' + escapeHtml(c.value) + ')</span>' +
                         '<span class="block text-xs text-gray-400">Grupo: ' + escapeHtml(c.group_name) + '</span></div></div>' +
                         '<div class="flex gap-2">' +
-                        '<button type="button" onclick="editCat(' + c.id + ')" class="p-2 text-gray-400 hover:text-[#32e768] rounded-lg hover:bg-dark-card transition" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></button>' +
-                        '<button type="button" onclick="deleteCat(' + c.id + ')" class="p-2 text-gray-400 hover:text-red-400 rounded-lg hover:bg-dark-card transition" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>' +
+                        '<button type="button" onclick="editCat(' + c.id + ')" class="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-300 hover:text-[#32e768] hover:bg-[#32e768]/10 rounded-lg border border-dark-border hover:border-[#32e768]/50 transition" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i><span>Editar</span></button>' +
+                        '<button type="button" onclick="deleteCat(' + c.id + ')" class="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-300 hover:text-red-400 hover:bg-red-500/10 rounded-lg border border-dark-border hover:border-red-500/50 transition" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i><span>Excluir</span></button>' +
                         '</div></div>';
                 }).join('');
                 lucide.createIcons();
