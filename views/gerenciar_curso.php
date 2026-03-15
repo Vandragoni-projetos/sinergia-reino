@@ -1280,6 +1280,7 @@ document.addEventListener('DOMContentLoaded', function() {
     lucide.createIcons();
 
     const currentProductId = <?php echo $produto_id; ?>;
+    const API_BASE = '<?php echo rtrim((isset($_SERVER["HTTPS"]) && $_SERVER["HTTPS"] === "on" ? "https" : "http") . "://" . ($_SERVER["HTTP_HOST"] ?? "localhost"), "/"); ?>/api/api.php';
 
     // Quill: paleta de cores customizada (evita bloqueio do input type=color)
     var QUILL_COLORS = ['#000000','#333333','#666666','#ffffff','#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
@@ -1668,7 +1669,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (comentariosListContainer && comentariosFilterBtns.length) {
         let comentariosCurrentStatus = 'all';
         function loadComentarios() {
-            fetch(`/api/api?action=list_aula_comentarios_admin&produto_id=${currentProductId}&status=${comentariosCurrentStatus}`)
+            fetch(`${API_BASE}?action=list_aula_comentarios_admin&produto_id=${currentProductId}&status=${comentariosCurrentStatus}`)
                 .then(r => r.json())
                 .then(data => {
                     if (!data.success) {
@@ -1711,49 +1712,60 @@ document.addEventListener('DOMContentLoaded', function() {
                     }).join('');
                     comentariosListContainer.querySelectorAll('.comentario-approve-btn').forEach(btn => {
                         btn.addEventListener('click', () => {
-                            fetch('/api/api?action=approve_comentario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: parseInt(btn.dataset.id) }) })
+                            fetch(`${API_BASE}?action=approve_comentario`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: parseInt(btn.dataset.id) }), credentials: 'same-origin' })
                                 .then(r => r.json()).then(d => { if (d.success) loadComentarios(); });
                         });
                     });
                     comentariosListContainer.querySelectorAll('.comentario-reject-btn').forEach(btn => {
                         btn.addEventListener('click', () => {
-                            fetch('/api/api?action=reject_comentario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: parseInt(btn.dataset.id) }) })
+                            fetch(`${API_BASE}?action=reject_comentario`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: parseInt(btn.dataset.id) }), credentials: 'same-origin' })
                                 .then(r => r.json()).then(d => { if (d.success) loadComentarios(); });
                         });
                     });
                     comentariosListContainer.querySelectorAll('.comentario-resposta-btn').forEach(btn => {
-                        btn.addEventListener('click', () => {
+                        btn.addEventListener('click', async () => {
                             const id = parseInt(btn.dataset.id);
                             const textarea = comentariosListContainer.querySelector(`.resposta-textarea[data-id="${id}"]`);
                             const resposta = textarea ? textarea.value.trim() : '';
                             const origText = btn.textContent;
                             btn.disabled = true;
                             btn.textContent = 'Salvando...';
-                            fetch('/api/api?action=resposta_comentario', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ id, resposta }),
-                                credentials: 'same-origin'
-                            })
-                                .then(r => {
-                                    if (!r.ok) throw new Error('Erro na requisição: ' + r.status);
-                                    return r.json();
-                                })
-                                .then(d => {
+                            const url = `${API_BASE}?action=resposta_comentario`;
+                            try {
+                                let r;
+                                r = await fetch(url, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ id, resposta }),
+                                    credentials: 'same-origin'
+                                });
+                                if (!r.ok) throw new Error('HTTP ' + r.status);
+                                const d = await r.json();
+                                if (d.success) {
+                                    loadComentarios();
+                                } else {
+                                    alert(d.error || d.message || 'Não foi possível salvar a resposta.');
+                                }
+                            } catch (err) {
+                                console.error('Erro ao salvar resposta:', err);
+                                try {
+                                    const fd = new FormData();
+                                    fd.append('id', id);
+                                    fd.append('resposta', resposta);
+                                    const r2 = await fetch(url, { method: 'POST', body: fd, credentials: 'same-origin' });
+                                    const d = await r2.json();
                                     if (d.success) {
                                         loadComentarios();
                                     } else {
                                         alert(d.error || d.message || 'Não foi possível salvar a resposta.');
                                     }
-                                })
-                                .catch(err => {
-                                    console.error('Erro ao salvar resposta:', err);
-                                    alert('Erro de conexão. Verifique sua internet e tente novamente.');
-                                })
-                                .finally(() => {
-                                    btn.disabled = false;
-                                    btn.textContent = origText;
-                                });
+                                } catch (e2) {
+                                    alert('Erro ao salvar. Verifique: 1) Sessão ativa (faça login novamente se necessário) 2) Coluna resposta_infoprodutor existe (execute migrations/add_resposta_infoprodutor.sql)');
+                                }
+                            } finally {
+                                btn.disabled = false;
+                                btn.textContent = origText;
+                            }
                         });
                     });
                     if (typeof lucide !== 'undefined') lucide.createIcons();
