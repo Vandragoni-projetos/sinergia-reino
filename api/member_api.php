@@ -495,6 +495,108 @@ switch ($action) {
         }
         break;
 
+    // ========================================
+    // COMENTÁRIOS NAS AULAS
+    // ========================================
+    case 'create_aula_comentario':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            sendJsonResponse(false, ['error' => 'Método não permitido. Use POST.'], 405);
+        }
+        $aula_id = (int)($input['aula_id'] ?? 0);
+        $texto = trim($input['texto'] ?? '');
+        if ($aula_id <= 0 || $texto === '') {
+            sendJsonResponse(false, ['error' => 'Aula e texto são obrigatórios.'], 400);
+        }
+        if (mb_strlen($texto) > 2000) {
+            sendJsonResponse(false, ['error' => 'O comentário deve ter no máximo 2000 caracteres.'], 400);
+        }
+        try {
+            // Verifica se a aula existe e pertence a um curso com comentários ativos
+            $stmt = $pdo->prepare("
+                SELECT c.id as curso_id, c.comentarios_ativos, c.comentarios_exigem_aprovacao
+                FROM aulas a
+                INNER JOIN modulos m ON a.modulo_id = m.id
+                INNER JOIN cursos c ON m.curso_id = c.id
+                WHERE a.id = ?
+            ");
+            $stmt->execute([$aula_id]);
+            $curso_info = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$curso_info || !$curso_info['comentarios_ativos']) {
+                sendJsonResponse(false, ['error' => 'Comentários não estão ativos para este curso.'], 400);
+            }
+            // Verifica se o aluno tem acesso ao produto/curso
+            $stmt_prod = $pdo->prepare("SELECT p.id FROM produtos p INNER JOIN cursos c ON c.produto_id = p.id WHERE c.id = ?");
+            $stmt_prod->execute([$curso_info['curso_id']]);
+            $prod = $stmt_prod->fetch(PDO::FETCH_ASSOC);
+            if (!$prod) {
+                sendJsonResponse(false, ['error' => 'Curso não encontrado.'], 404);
+            }
+            $stmt_acesso = $pdo->prepare("SELECT 1 FROM alunos_acessos WHERE aluno_email = ? AND produto_id = ? AND (data_expiracao IS NULL OR data_expiracao > NOW())");
+            $stmt_acesso->execute([$aluno_email_logado, $prod['id']]);
+            if (!$stmt_acesso->fetch()) {
+                sendJsonResponse(false, ['error' => 'Você não tem acesso a este curso.'], 403);
+            }
+            $nome_aluno = $_SESSION['nome'] ?? $aluno_email_logado;
+            $status = $curso_info['comentarios_exigem_aprovacao'] ? 'pending' : 'approved';
+            $stmt_ins = $pdo->prepare("INSERT INTO aula_comentarios (aula_id, aluno_email, nome_aluno, texto, status) VALUES (?, ?, ?, ?, ?)");
+            $stmt_ins->execute([$aula_id, $aluno_email_logado, $nome_aluno, $texto, $status]);
+            sendJsonResponse(true, [
+                'message' => $status === 'approved' ? 'Comentário publicado!' : 'Comentário enviado. Ele aparecerá após aprovação.',
+                'id' => (int)$pdo->lastInsertId(),
+                'status' => $status
+            ]);
+        } catch (PDOException $e) {
+            error_log("Erro ao criar comentário: " . $e->getMessage());
+            sendJsonResponse(false, ['error' => 'Erro ao enviar comentário.'], 500);
+        }
+        break;
+
+    case 'list_aula_comentarios':
+        $aula_id = (int)($_GET['aula_id'] ?? $input['aula_id'] ?? 0);
+        if ($aula_id <= 0) {
+            sendJsonResponse(false, ['error' => 'ID da aula inválido.'], 400);
+        }
+        try {
+            // Verifica acesso do aluno ao curso
+            $stmt_curso = $pdo->prepare("
+                SELECT c.id, c.produto_id, c.comentarios_ativos, c.comentarios_exigem_aprovacao
+                FROM aulas a
+                INNER JOIN modulos m ON a.modulo_id = m.id
+                INNER JOIN cursos c ON m.curso_id = c.id
+                WHERE a.id = ?
+            ");
+            $stmt_curso->execute([$aula_id]);
+            $curso_info = $stmt_curso->fetch(PDO::FETCH_ASSOC);
+            if (!$curso_info || !$curso_info['comentarios_ativos']) {
+                sendJsonResponse(true, ['comentarios' => [], 'comentarios_ativos' => false]);
+                exit;
+            }
+            $stmt_acesso = $pdo->prepare("SELECT 1 FROM alunos_acessos WHERE aluno_email = ? AND produto_id = ? AND (data_expiracao IS NULL OR data_expiracao > NOW())");
+            $stmt_acesso->execute([$aluno_email_logado, $curso_info['produto_id']]);
+            if (!$stmt_acesso->fetch()) {
+                sendJsonResponse(false, ['error' => 'Sem acesso ao curso.'], 403);
+            }
+            // Aluno vê apenas comentários aprovados
+            $status_filter = "AND status = 'approved'";
+            $stmt = $pdo->prepare("
+                SELECT id, aluno_email, nome_aluno, texto, status, created_at
+                FROM aula_comentarios
+                WHERE aula_id = ? $status_filter
+                ORDER BY created_at DESC
+            ");
+            $stmt->execute([$aula_id]);
+            $comentarios = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            sendJsonResponse(true, [
+                'comentarios' => $comentarios,
+                'comentarios_ativos' => true,
+                'exige_aprovacao' => (bool)$curso_info['comentarios_exigem_aprovacao']
+            ]);
+        } catch (PDOException $e) {
+            error_log("Erro ao listar comentários: " . $e->getMessage());
+            sendJsonResponse(false, ['error' => 'Erro ao carregar comentários.'], 500);
+        }
+        break;
+
     default:
         sendJsonResponse(false, ['error' => 'Ação desconhecida ou não especificada.'], 400);
         break;
