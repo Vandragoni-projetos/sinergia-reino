@@ -1292,7 +1292,9 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                                 const nome = (c.nome_aluno || c.aluno_email || 'Anônimo').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                                 const texto = (c.texto || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
                                 const dataStr = c.created_at ? new Date(c.created_at).toLocaleString('pt-BR') : '';
-                                return `<div class="p-3 bg-gray-700 rounded-lg"><p class="font-medium text-white">${nome}</p><p class="text-gray-300 text-sm mt-1">${texto}</p><p class="text-xs text-gray-500 mt-2">${dataStr}</p></div>`;
+                                const resposta = (c.resposta_infoprodutor || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+                                const respostaBlock = resposta ? `<div class="mt-3 pt-3 border-t border-gray-600"><p class="text-xs text-green-400 font-medium mb-1">Resposta do instrutor:</p><p class="text-gray-300 text-sm">${resposta}</p></div>` : '';
+                                return `<div class="p-3 bg-gray-700 rounded-lg"><p class="font-medium text-white">${nome}</p><p class="text-gray-300 text-sm mt-1">${texto}</p><p class="text-xs text-gray-500 mt-2">${dataStr}</p>${respostaBlock}</div>`;
                             }).join('');
                         }
                         if (typeof lucide !== 'undefined') lucide.createIcons();
