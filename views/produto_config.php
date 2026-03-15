@@ -159,7 +159,7 @@ if (isset($_POST['salvar_produto_config'])) {
             }
 
             // TAG/Categoria
-            $product_type = isset($_POST['product_type']) && in_array($_POST['product_type'], getValidProductTypes(), true) ? $_POST['product_type'] : null;
+            $product_type = isset($_POST['product_type']) && in_array($_POST['product_type'], getValidProductTypesForUser($usuario_id), true) ? $_POST['product_type'] : null;
             $product_tagline = isset($_POST['product_tagline']) ? mb_substr(trim($_POST['product_tagline']), 0, 40) : null;
             if ($product_tagline === '') $product_tagline = null;
 
@@ -733,7 +733,7 @@ if (!in_array($aba_ativa, $abas_permitidas)) {
     <div class="mb-8">
         <div class="flex items-center justify-between mb-4">
             <div class="flex items-center gap-4">
-                <a href="/index?pagina=produtos" class="text-[#32e768] hover:text-[#28d15e] transition-colors p-2 hover:bg-dark-elevated rounded-lg">
+                <a href="/index?pagina=produtos" class="text-[#32e768] hover:text-[#28d15e] transition-colors p-2 hover:bg-dark-elevated rounded-lg" title="Voltar para Meus Produtos">
                     <i data-lucide="arrow-left" class="w-6 h-6"></i>
                 </a>
                 <div>
@@ -741,6 +741,8 @@ if (!in_array($aba_ativa, $abas_permitidas)) {
                     <p class="text-gray-400 text-sm flex items-center gap-2">
                         <i data-lucide="package" class="w-4 h-4"></i>
                         <?php echo htmlspecialchars($produto['nome']); ?>
+                        <span class="text-gray-500">•</span>
+                        <a href="/index?pagina=categorias_produto" class="text-[#32e768] hover:text-[#28d15e] hover:underline">Gerenciar categorias</a>
                     </p>
                 </div>
             </div>
