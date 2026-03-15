@@ -425,6 +425,15 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
     if ($chk_comentarios && $chk_comentarios->rowCount() > 0) {
         $comentarios_ativos = (int)($curso['comentarios_ativos'] ?? 0);
     }
+    $certificado_habilitado = false;
+    $certificado_conclusao_minima = 100;
+    $pode_baixar_certificado = false;
+    $chk_cert = @$pdo->query("SHOW COLUMNS FROM cursos LIKE 'certificado_habilitado'");
+    if ($chk_cert && $chk_cert->rowCount() > 0) {
+        $certificado_habilitado = (int)($curso['certificado_habilitado'] ?? 0) === 1;
+        $certificado_conclusao_minima = (int)($curso['certificado_conclusao_minima'] ?? 100);
+        $pode_baixar_certificado = $certificado_habilitado && $progresso_percentual >= $certificado_conclusao_minima;
+    }
     ?>
     <div id="course-container" class="min-h-screen member-protected-content" data-comentarios-ativos="<?php echo $comentarios_ativos; ?>" data-aluno-email="<?php echo htmlspecialchars($cliente_email); ?>">
         <?php
@@ -442,6 +451,26 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
         </header>
 
         <main class="max-w-7xl mx-auto p-4 md:p-8 w-full">
+            <?php if ($certificado_habilitado && !empty($modulos_com_aulas) && $total_aulas_desbloqueadas > 0): ?>
+            <div class="mb-6 flex flex-wrap items-center justify-between gap-4 p-4 bg-gray-800/80 border border-gray-700 rounded-xl">
+                <?php if ($pode_baixar_certificado): ?>
+                <a href="/certificado_curso?produto_id=<?php echo (int)$produto_id; ?>" target="_blank" class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 px-5 rounded-lg transition">
+                    <i data-lucide="award" class="w-5 h-5"></i>
+                    <span>Baixar Certificado</span>
+                </a>
+                <?php else: ?>
+                <p class="text-gray-400 text-sm">
+                    <i data-lucide="award" class="w-4 h-4 inline-block align-middle mr-1"></i>
+                    Complete <?php echo $certificado_conclusao_minima; ?>% do curso para desbloquear o certificado (<?php echo $progresso_percentual; ?>% concluído).
+                </p>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+            <?php if (isset($_GET['certificado']) && $_GET['certificado'] === 'pendente'): ?>
+            <div class="mb-6 p-4 bg-amber-900/30 border border-amber-600/50 rounded-xl text-amber-200 text-sm">
+                Complete <?php echo $certificado_conclusao_minima; ?>% do curso para liberar o certificado. Seu progresso atual: <?php echo $progresso_percentual; ?>%.
+            </div>
+            <?php endif; ?>
             <?php if (empty($modulos_com_aulas) || $total_aulas_desbloqueadas === 0): ?>
                 <div class="bg-gray-800 border border-gray-700 p-8 rounded-lg text-center text-gray-400">
                     <i data-lucide="video-off" class="mx-auto w-16 h-16 text-gray-600"></i>
@@ -461,6 +490,14 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                         <div class="w-full bg-gray-700 rounded-full h-2.5">
                             <div class="bg-green-500 h-2.5 rounded-full" style="width: <?php echo $progresso_percentual; ?>%"></div>
                         </div>
+                        <?php if ($certificado_habilitado && $pode_baixar_certificado): ?>
+                        <div class="mt-3">
+                            <a href="/certificado_curso?produto_id=<?php echo (int)$produto_id; ?>" target="_blank" class="inline-flex items-center gap-2 text-green-400 hover:text-green-300 font-semibold text-sm">
+                                <i data-lucide="award" class="w-4 h-4"></i>
+                                Baixar Certificado
+                            </a>
+                        </div>
+                        <?php endif; ?>
                     </div>
 
                     <!-- Player e Lista de Aulas -->
