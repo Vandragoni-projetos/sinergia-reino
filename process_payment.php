@@ -985,6 +985,8 @@ function save_sales($pdo, $data, $main_id, $payment_id, $status, $metodo, $uuid,
     
     // Extrai oferta_id (apenas para o produto principal)
     $oferta_id = isset($data['oferta_id']) && $data['oferta_id'] ? (int)$data['oferta_id'] : null;
+    $cupom_id = isset($data['cupom_id']) && $data['cupom_id'] ? (int)$data['cupom_id'] : null;
+    $valor_desconto = isset($data['valor_desconto']) ? (float)$data['valor_desconto'] : 0.0;
 
     $pdo->beginTransaction();
     try {
@@ -1000,7 +1002,7 @@ function save_sales($pdo, $data, $main_id, $payment_id, $status, $metodo, $uuid,
         $stmt_info->execute($products);
         $prod_map = $stmt_info->fetchAll(PDO::FETCH_UNIQUE | PDO::FETCH_ASSOC);
 
-        $stmt_insert = $pdo->prepare("INSERT INTO vendas (produto_id, community_id, oferta_id, comprador_nome, comprador_email, comprador_cpf, comprador_telefone, valor, status_pagamento, transacao_id, metodo_pagamento, checkout_session_uuid, email_entrega_enviado, utm_source, utm_campaign, utm_medium, utm_content, utm_term, src, sck) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt_insert = $pdo->prepare("INSERT INTO vendas (produto_id, community_id, oferta_id, comprador_nome, comprador_email, comprador_cpf, comprador_telefone, valor, status_pagamento, transacao_id, metodo_pagamento, checkout_session_uuid, cupom_id, valor_desconto, email_entrega_enviado, utm_source, utm_campaign, utm_medium, utm_content, utm_term, src, sck) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)");
 
         // Calcular o valor total dos order bumps para determinar o valor do produto principal
         $order_bumps_total = 0;
@@ -1022,21 +1024,28 @@ function save_sales($pdo, $data, $main_id, $payment_id, $status, $metodo, $uuid,
 
         foreach ($products as $pid) {
             if (isset($prod_map[$pid])) {
-                // Produto principal usa o valor calculado (com desconto Pix se aplicável)
-                // Order bumps usam o preço original e não têm oferta_id
+                // Produto principal usa o valor calculado (com desconto Pix/cupom se aplicável)
+                // Order bumps usam o preço original e não têm oferta_id nem cupom
                 $val = ($pid == $main_id) ? $main_product_value : $prod_map[$pid]['preco'];
                 $current_oferta_id = ($pid == $main_id) ? $oferta_id : null;
+                $current_cupom_id = ($pid == $main_id) ? $cupom_id : null;
+                $current_valor_desconto = ($pid == $main_id) ? $valor_desconto : 0.0;
                 $cid = (int)($prod_map[$pid]['community_id'] ?? 1);
                 $stmt_insert->execute([
                     $pid, $cid, $current_oferta_id, $data['name'], $data['email'], 
                     preg_replace('/[^0-9]/', '', $data['cpf']), 
                     preg_replace('/[^0-9]/', '', $data['phone']), 
                     $val, $status, $payment_id, $metodo, $uuid,
+                    $current_cupom_id, $current_valor_desconto,
                     $utm_source, $utm_campaign, $utm_medium, $utm_content, $utm_term, $src, $sck
                 ]);
             }
         }
         $pdo->commit();
+
+        if ($cupom_id && function_exists('incrementarUsoCupom')) {
+            incrementarUsoCupom($cupom_id);
+        }
         
         // Incrementa contador de pedidos mensais (SaaS)
         if (function_exists('do_action')) {
