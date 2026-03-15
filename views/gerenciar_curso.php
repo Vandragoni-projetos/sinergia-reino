@@ -1280,7 +1280,7 @@ document.addEventListener('DOMContentLoaded', function() {
     lucide.createIcons();
 
     const currentProductId = <?php echo $produto_id; ?>;
-    const API_BASE = '<?php echo rtrim((isset($_SERVER["HTTPS"]) && $_SERVER["HTTPS"] === "on" ? "https" : "http") . "://" . ($_SERVER["HTTP_HOST"] ?? "localhost"), "/"); ?>/api/api.php';
+    const API_BASE = '/api/api.php';
 
     // Quill: paleta de cores customizada (evita bloqueio do input type=color)
     var QUILL_COLORS = ['#000000','#333333','#666666','#ffffff','#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
