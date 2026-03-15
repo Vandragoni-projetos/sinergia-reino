@@ -69,6 +69,7 @@ function calcular_progresso_gamificacao($pdo, $aluno_email, $curso_id, $data_con
 function verificar_conquistas_aluno($pdo, $aluno_email, $curso_id, $produto_id, $contexto) {
     $novas_conquistas = [];
     $todas_desbloqueadas = [];
+    if (file_exists(__DIR__ . '/badge_helper.php')) require_once __DIR__ . '/badge_helper.php';
 
     $chk = @$pdo->query("SHOW TABLES LIKE 'curso_gamificacao'");
     if (!$chk || $chk->rowCount() === 0) {
@@ -155,11 +156,14 @@ function verificar_conquistas_aluno($pdo, $aluno_email, $curso_id, $produto_id, 
         $stmt_ins->execute([$aluno_email, $c['id']]);
         if ($stmt_ins->rowCount() > 0) {
             $badge_url = $c['badge_url'] ?? '';
-            if (!empty($badge_url) && strpos($badge_url, 'http') !== 0) {
-                $badge_url = '/' . ltrim($badge_url, '/');
+            if (function_exists('get_badge_display_url')) {
+                $resolved = get_badge_display_url($badge_url);
+                if ($resolved !== null) $badge_url = $resolved;
             }
             if (empty($badge_url)) {
                 $badge_url = 'data:image/svg+xml,' . rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="%2332e768" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>');
+            } elseif (strpos($badge_url, 'http') !== 0 && strpos($badge_url, 'data:') !== 0) {
+                $badge_url = '/' . ltrim($badge_url, '/');
             }
             $novas_conquistas[] = [
                 'id' => (int)$c['id'],
@@ -180,11 +184,14 @@ function verificar_conquistas_aluno($pdo, $aluno_email, $curso_id, $produto_id, 
     $stmt_todas->execute([$aluno_email, $curso_id]);
     while ($row = $stmt_todas->fetch(PDO::FETCH_ASSOC)) {
         $badge_url = $row['badge_url'] ?? '';
-        if (!empty($badge_url) && strpos($badge_url, 'http') !== 0) {
-            $badge_url = '/' . ltrim($badge_url, '/');
+        if (function_exists('get_badge_display_url')) {
+            $resolved = get_badge_display_url($badge_url);
+            if ($resolved !== null) $badge_url = $resolved;
         }
         if (empty($badge_url)) {
             $badge_url = 'data:image/svg+xml,' . rawurlencode('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="%2332e768" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>');
+        } elseif (strpos($badge_url, 'http') !== 0 && strpos($badge_url, 'data:') !== 0) {
+            $badge_url = '/' . ltrim($badge_url, '/');
         }
         $todas_desbloqueadas[] = [
             'id' => (int)$row['id'],
