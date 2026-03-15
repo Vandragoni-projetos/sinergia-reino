@@ -404,6 +404,10 @@ $produtos = array_filter(array_map(function($item) {
                 <i data-lucide="tags" class="w-5 h-5"></i>
                 <span>Categorias</span>
             </a>
+            <a href="/index?pagina=cupons" class="group bg-dark-elevated hover:bg-dark-card text-gray-300 hover:text-white font-medium py-2.5 px-5 rounded-xl border border-dark-border transition-all duration-300 flex items-center space-x-2">
+                <i data-lucide="ticket" class="w-5 h-5"></i>
+                <span>Cupons</span>
+            </a>
             <button type="button" id="novo-banner-btn" onclick="if(typeof window.abrirBannerModal==='function'){window.abrirBannerModal();}else{alert('Recarregue a página e tente novamente.');}" class="group bg-purple-600 hover:bg-purple-700 text-white font-medium py-2.5 px-6 rounded-xl shadow-lg shadow-purple-600/20 transition-all duration-300 transform hover:-translate-y-0.5 flex items-center space-x-2">
                 <i data-lucide="image" class="w-5 h-5"></i>
                 <span>Novo Banner</span>
