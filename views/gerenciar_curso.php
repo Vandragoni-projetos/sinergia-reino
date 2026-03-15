@@ -274,6 +274,25 @@ try {
             }
         }
 
+        // Salvar configurações de comentários
+        if (isset($_POST['salvar_comentarios_config'])) {
+            $should_redirect = true;
+            $comentarios_ativos = isset($_POST['comentarios_ativos']) ? 1 : 0;
+            $comentarios_exigem_aprovacao = isset($_POST['comentarios_exigem_aprovacao']) ? 1 : 0;
+            try {
+                $chk = $pdo->query("SHOW COLUMNS FROM cursos LIKE 'comentarios_ativos'");
+                if ($chk && $chk->rowCount() > 0) {
+                    $stmt = $pdo->prepare("UPDATE cursos SET comentarios_ativos = ?, comentarios_exigem_aprovacao = ? WHERE id = ?");
+                    $stmt->execute([$comentarios_ativos, $comentarios_exigem_aprovacao, $curso_id]);
+                    $mensagem = "<div class='bg-green-900/20 border border-green-500 text-green-300 px-4 py-3 rounded' role='alert'>Configurações de comentários salvas!</div>";
+                } else {
+                    $mensagem = "<div class='bg-yellow-900/20 border border-yellow-500 text-yellow-300 px-4 py-3 rounded' role='alert'>Execute a migration migrations/aula_comentarios.sql para ativar comentários.</div>";
+                }
+            } catch (PDOException $e) {
+                $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>Erro ao salvar. Execute migrations/aula_comentarios.sql</div>";
+            }
+        }
+
         // Adicionar Módulo
         if (isset($_POST['adicionar_modulo'])) {
             $should_redirect = true;
@@ -763,6 +782,60 @@ try {
     </div>
 
     <?php if ($mensagem) echo "<div class='mb-6'>$mensagem</div>"; ?>
+
+    <!-- Comentários nas Aulas (ativação em destaque) -->
+    <?php
+    $has_comentarios_cols = false;
+    try {
+        $chk_cols = $pdo->query("SHOW COLUMNS FROM cursos LIKE 'comentarios_ativos'");
+        $has_comentarios_cols = ($chk_cols && $chk_cols->rowCount() > 0);
+    } catch (PDOException $e) {}
+    $comentarios_ativos = $has_comentarios_cols ? (int)($curso['comentarios_ativos'] ?? 0) : 0;
+    $comentarios_exigem_aprovacao = $has_comentarios_cols ? (int)($curso['comentarios_exigem_aprovacao'] ?? 1) : 1;
+    ?>
+    <div id="secao-comentarios" class="bg-dark-card p-6 rounded-lg shadow-md mb-8 border-2 border-[#32e768]">
+        <h2 class="text-2xl font-semibold mb-2 text-white flex items-center gap-2">
+            <i data-lucide="message-circle" class="w-7 h-7 text-[#32e768]"></i>
+            Comentários nas Aulas
+        </h2>
+        <p class="text-gray-400 text-sm mb-4">Permita que os alunos comentem nas aulas e defina se a aprovação é obrigatória.</p>
+        <?php if ($has_comentarios_cols): ?>
+        <form action="/index?pagina=gerenciar_curso&produto_id=<?php echo $produto_id; ?>" method="post" class="space-y-4">
+            <div class="flex items-center justify-between py-2">
+                <label for="comentarios_ativos" class="text-gray-300 font-medium">Ativar comentários nas aulas</label>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="comentarios_ativos" id="comentarios_ativos" value="1" class="sr-only peer" <?php echo $comentarios_ativos ? 'checked' : ''; ?>>
+                    <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#32e768]"></div>
+                </label>
+            </div>
+            <div class="flex items-center justify-between py-2">
+                <div>
+                    <label for="comentarios_exigem_aprovacao" class="text-gray-300 font-medium">Comentários exigem aprovação</label>
+                    <p class="text-xs text-gray-500 mt-1">Se ativo, os comentários só aparecem após você aprovar na lista abaixo.</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="comentarios_exigem_aprovacao" id="comentarios_exigem_aprovacao" value="1" class="sr-only peer" <?php echo $comentarios_exigem_aprovacao ? 'checked' : ''; ?>>
+                    <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#32e768]"></div>
+                </label>
+            </div>
+            <button type="submit" name="salvar_comentarios_config" class="bg-white text-gray-900 font-bold py-2 px-5 rounded-lg hover:bg-gray-200 transition">Salvar alterações</button>
+        </form>
+        <div class="mt-8 pt-6 border-t border-dark-border">
+            <h3 class="text-lg font-semibold text-white mb-3">Ver e aprovar comentários</h3>
+            <div class="flex flex-wrap gap-2 mb-4">
+                <button type="button" class="comentarios-filter-btn px-4 py-2 rounded-lg text-sm font-medium transition bg-[#32e768] text-white" data-status="all">Todos</button>
+                <button type="button" class="comentarios-filter-btn px-4 py-2 rounded-lg text-sm font-medium transition bg-gray-600 text-gray-300 hover:bg-gray-500" data-status="pending">Pendentes</button>
+                <button type="button" class="comentarios-filter-btn px-4 py-2 rounded-lg text-sm font-medium transition bg-gray-600 text-gray-300 hover:bg-gray-500" data-status="approved">Aprovados</button>
+                <button type="button" class="comentarios-filter-btn px-4 py-2 rounded-lg text-sm font-medium transition bg-gray-600 text-gray-300 hover:bg-gray-500" data-status="rejected">Rejeitados</button>
+            </div>
+            <div id="comentarios-list-container" class="space-y-3 max-h-80 overflow-y-auto">
+                <p class="text-gray-500 text-sm">Carregando...</p>
+            </div>
+        </div>
+        <?php else: ?>
+        <p class="text-yellow-400 text-sm">Execute a migration <code class="bg-dark-elevated px-1 rounded">migrations/aula_comentarios.sql</code> para ativar esta funcionalidade.</p>
+        <?php endif; ?>
+    </div>
 
     <!-- Personalizar Aparência do Curso -->
     <div class="bg-dark-card p-6 rounded-lg shadow-md mb-8 border border-[#32e768]">
@@ -1588,5 +1661,73 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Chamada inicial para toggleAddLessonFields para garantir que o formulário "Adicionar Aula" esteja correto ao carregar
     toggleAddLessonFields();
+
+    // --- Comentários: carregar lista e filtros ---
+    const comentariosListContainer = document.getElementById('comentarios-list-container');
+    const comentariosFilterBtns = document.querySelectorAll('.comentarios-filter-btn');
+    if (comentariosListContainer && comentariosFilterBtns.length) {
+        let comentariosCurrentStatus = 'all';
+        function loadComentarios() {
+            fetch(`/api/api?action=list_aula_comentarios_admin&produto_id=${currentProductId}&status=${comentariosCurrentStatus}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) {
+                        comentariosListContainer.innerHTML = '<p class="text-red-400 text-sm">Erro ao carregar comentários.</p>';
+                        return;
+                    }
+                    const comentarios = data.comentarios || [];
+                    if (comentarios.length === 0) {
+                        comentariosListContainer.innerHTML = '<p class="text-gray-500 text-sm">Nenhum comentário encontrado.</p>';
+                        return;
+                    }
+                    comentariosListContainer.innerHTML = comentarios.map(c => {
+                        const statusBadge = c.status === 'pending' ? 'bg-yellow-600' : (c.status === 'approved' ? 'bg-green-600' : 'bg-red-600');
+                        const actions = c.status === 'pending' ? `
+                            <button type="button" class="comentario-approve-btn text-green-400 hover:text-green-300 text-sm font-medium" data-id="${c.id}">Aprovar</button>
+                            <button type="button" class="comentario-reject-btn text-red-400 hover:text-red-300 text-sm font-medium" data-id="${c.id}">Rejeitar</button>
+                        ` : '';
+                        return `<div class="p-3 bg-dark-elevated rounded-lg border border-dark-border" data-id="${c.id}">
+                            <div class="flex justify-between items-start gap-2">
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-white font-medium">${escapeHtml(c.nome_aluno || c.aluno_email)}</p>
+                                    <p class="text-xs text-gray-500">${c.modulo_titulo} › ${escapeHtml(c.aula_titulo)}</p>
+                                    <p class="text-gray-300 text-sm mt-2">${escapeHtml(c.texto)}</p>
+                                    <p class="text-xs text-gray-500 mt-2">${formatDate(c.created_at)}</p>
+                                </div>
+                                <div class="flex items-center gap-2 flex-shrink-0">
+                                    <span class="px-2 py-0.5 rounded text-xs ${statusBadge}">${c.status === 'pending' ? 'Pendente' : (c.status === 'approved' ? 'Aprovado' : 'Rejeitado')}</span>
+                                    ${actions}
+                                </div>
+                            </div>
+                        </div>`;
+                    }).join('');
+                    comentariosListContainer.querySelectorAll('.comentario-approve-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            fetch('/api/api?action=approve_comentario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: parseInt(btn.dataset.id) }) })
+                                .then(r => r.json()).then(d => { if (d.success) loadComentarios(); });
+                        });
+                    });
+                    comentariosListContainer.querySelectorAll('.comentario-reject-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            fetch('/api/api?action=reject_comentario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: parseInt(btn.dataset.id) }) })
+                                .then(r => r.json()).then(d => { if (d.success) loadComentarios(); });
+                        });
+                    });
+                    if (typeof lucide !== 'undefined') lucide.createIcons();
+                })
+                .catch(() => { comentariosListContainer.innerHTML = '<p class="text-red-400 text-sm">Erro ao carregar.</p>'; });
+        }
+        function escapeHtml(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+        function formatDate(s) { if (!s) return ''; try { const d = new Date(s); return d.toLocaleString('pt-BR'); } catch(e) { return s; } }
+        comentariosFilterBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                comentariosFilterBtns.forEach(b => { b.classList.remove('bg-[#32e768]', 'text-white'); b.classList.add('bg-gray-600', 'text-gray-300'); });
+                btn.classList.remove('bg-gray-600', 'text-gray-300'); btn.classList.add('bg-[#32e768]', 'text-white');
+                comentariosCurrentStatus = btn.dataset.status;
+                loadComentarios();
+            });
+        });
+        loadComentarios();
+    }
 });
 </script>
