@@ -320,23 +320,22 @@ try {
     require_once __DIR__ . '/../config/config.php';
     error_log("API: config.php carregado com sucesso.");
 
-    // Verificação de segurança: Apenas usuários LOGADOS (não importa se é admin ou user) podem acessar esta API.
-    // O tipo 'admin' específico será tratado no admin_api.php.
-    if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || !isset($_SESSION['id'])) {
-        http_response_code(403);
-        ob_clean(); // Limpa o buffer antes de enviar o JSON
-        echo json_encode(['error' => 'Acesso não autorizado']);
-        exit;
-    }
-
-    $usuario_id_logado = $_SESSION['id'];
     $action = $_GET['action'] ?? '';
-    
-    // Para POST requests, a ação pode vir no corpo
     if (empty($action) && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $input = json_decode(file_get_contents('php://input'), true);
         $action = $input['action'] ?? $action;
     }
+
+    // Verificação de segurança: Apenas usuários LOGADOS podem acessar esta API.
+    // Exceção: record_checkout_activity (checkout público - comprador preenche dados)
+    if ((!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true || !isset($_SESSION['id'])) && $action !== 'record_checkout_activity') {
+        http_response_code(403);
+        ob_clean();
+        echo json_encode(['error' => 'Acesso não autorizado']);
+        exit;
+    }
+
+    $usuario_id_logado = $_SESSION['id'] ?? 0;
 
     if (defined('APP_DEBUG') && APP_DEBUG) {
         error_log("API: Ação recebida: " . $action);
@@ -1213,18 +1212,16 @@ try {
         }
 
         try {
-            // 1. Verificar se o produto pertence ao infoprodutor logado
-            $stmt_check_product_owner = $pdo->prepare("SELECT id, preco FROM produtos WHERE id = :product_id AND usuario_id = :usuario_id");
-            $stmt_check_product_owner->bindParam(':product_id', $product_id, PDO::PARAM_INT);
-            $stmt_check_product_owner->bindParam(':usuario_id', $usuario_id_logado, PDO::PARAM_INT);
-            $stmt_check_product_owner->execute();
-
-            $product_info = $stmt_check_product_owner->fetch(PDO::FETCH_ASSOC);
+            // 1. Verificar se o produto existe (checkout público - comprador não precisa estar logado)
+            $stmt_check_product = $pdo->prepare("SELECT id, preco FROM produtos WHERE id = :product_id");
+            $stmt_check_product->bindParam(':product_id', $product_id, PDO::PARAM_INT);
+            $stmt_check_product->execute();
+            $product_info = $stmt_check_product->fetch(PDO::FETCH_ASSOC);
 
             if (!$product_info) {
-                http_response_code(403);
+                http_response_code(404);
                 ob_clean();
-                echo json_encode(['success' => false, 'error' => 'Produto não encontrado ou não pertence a você.']);
+                echo json_encode(['success' => false, 'error' => 'Produto não encontrado.']);
                 exit;
             }
             // MODIFICADO: Remove a linha que pega o preço, pois o valor agora será 0.00
@@ -1336,6 +1333,37 @@ try {
                 $stmt_insert->bindParam(':sck', $sck, PDO::PARAM_STR);
                 $stmt_insert->execute();
                 error_log("API: record_checkout_activity - Nova venda com status 'info_filled' criada: ID " . $pdo->lastInsertId() . ", Valor: 0.00");
+            }
+
+            // Recuperação de carrinho: disparar Evolution API (info_filled) se tiver telefone
+            $sale_id = isset($existing_sale['id']) ? (int)$existing_sale['id'] : (int)$pdo->lastInsertId();
+            if ($sale_id > 0 && !empty($comprador_telefone) && function_exists('process_evolution_messages')) {
+                try {
+                    require_once __DIR__ . '/../helpers/evolution_helper.php';
+                    $stmt_ch = $pdo->prepare("SELECT checkout_hash FROM produtos WHERE id = ?");
+                    $stmt_ch->execute([$product_id]);
+                    $checkout_hash = $stmt_ch->fetchColumn() ?: '';
+                    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+                    $host = $_SERVER['HTTP_HOST'] ?? '';
+                    $link_checkout = ($checkout_hash && $host) ? ($protocol . '://' . $host . '/checkout?p=' . $checkout_hash) : '';
+                    $sale_data = [
+                        'id' => $sale_id,
+                        'produto_id' => $product_id,
+                        'comprador_nome' => $comprador_nome,
+                        'comprador_email' => $comprador_email,
+                        'comprador_telefone' => $comprador_telefone,
+                        'comprador_cpf' => $comprador_cpf ?? '',
+                        'valor' => 0.00,
+                        'transacao_id' => '',
+                        'data_venda' => date('Y-m-d H:i:s'),
+                        'checkout_hash' => $checkout_hash,
+                        'link_checkout' => $link_checkout
+                    ];
+                    process_evolution_messages($pdo, $sale_data, 'info_filled');
+                    error_log("API: record_checkout_activity - Evolution disparada para info_filled (venda ID: $sale_id)");
+                } catch (Throwable $e) {
+                    error_log("API: record_checkout_activity - Erro ao disparar Evolution: " . $e->getMessage());
+                }
             }
 
             ob_clean();
@@ -3350,7 +3378,7 @@ EOT;
         $message_template = trim($input['message_template'] ?? '');
         $is_active = isset($input['is_active']) ? (int)$input['is_active'] : 1;
 
-        $valid_events = ['approved', 'pending', 'rejected', 'refunded', 'charged_back'];
+        $valid_events = ['approved', 'pending', 'rejected', 'refunded', 'charged_back', 'info_filled'];
 
         if (empty($name) || empty($event_type) || empty($message_template)) {
             ob_clean();
@@ -3399,7 +3427,7 @@ EOT;
         $message_template = trim($input['message_template'] ?? '');
         $is_active = isset($input['is_active']) ? (int)$input['is_active'] : 1;
 
-        $valid_events = ['approved', 'pending', 'rejected', 'refunded', 'charged_back'];
+        $valid_events = ['approved', 'pending', 'rejected', 'refunded', 'charged_back', 'info_filled'];
 
         if ($id <= 0 || empty($name) || empty($event_type) || empty($message_template)) {
             ob_clean();
