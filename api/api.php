@@ -1700,6 +1700,144 @@ try {
         exit;
     }
 
+    // --- Comentários nas aulas (infoprodutor) ---
+    if ($action == 'save_comentarios_config' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $curso_id = (int)($input['curso_id'] ?? 0);
+        $comentarios_ativos = isset($input['comentarios_ativos']) ? (int)$input['comentarios_ativos'] : 0;
+        $comentarios_exigem_aprovacao = isset($input['comentarios_exigem_aprovacao']) ? (int)$input['comentarios_exigem_aprovacao'] : 1;
+        if ($curso_id <= 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Curso inválido.']);
+            exit;
+        }
+        try {
+            $stmt = $pdo->prepare("
+                UPDATE cursos SET comentarios_ativos = ?, comentarios_exigem_aprovacao = ?
+                WHERE id = ? AND produto_id IN (SELECT id FROM produtos WHERE usuario_id = ?)
+            ");
+            $stmt->execute([$comentarios_ativos, $comentarios_exigem_aprovacao, $curso_id, $usuario_id_logado]);
+            if ($stmt->rowCount() === 0) {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Curso não encontrado ou sem permissão.']);
+                exit;
+            }
+            ob_clean();
+            echo json_encode(['success' => true, 'message' => 'Configurações salvas.']);
+        } catch (PDOException $e) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Erro ao salvar.']);
+        }
+        exit;
+    }
+
+    if ($action == 'list_aula_comentarios_admin') {
+        $produto_id = (int)($_GET['produto_id'] ?? 0);
+        $status_filter = $_GET['status'] ?? 'all'; // all, pending, approved, rejected
+        if ($produto_id <= 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Produto inválido.']);
+            exit;
+        }
+        try {
+            $stmt_curso = $pdo->prepare("SELECT c.id FROM cursos c JOIN produtos p ON c.produto_id = p.id WHERE p.id = ? AND p.usuario_id = ?");
+            $stmt_curso->execute([$produto_id, $usuario_id_logado]);
+            $curso = $stmt_curso->fetch(PDO::FETCH_ASSOC);
+            if (!$curso) {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Curso não encontrado.']);
+                exit;
+            }
+            $curso_id = $curso['id'];
+            $status_where = '';
+            $params = [$curso_id];
+            if ($status_filter === 'pending') $status_where = " AND ac.status = 'pending'";
+            elseif ($status_filter === 'approved') $status_where = " AND ac.status = 'approved'";
+            elseif ($status_filter === 'rejected') $status_where = " AND ac.status = 'rejected'";
+            $stmt = $pdo->prepare("
+                SELECT ac.id, ac.aula_id, ac.aluno_email, ac.nome_aluno, ac.texto, ac.status, ac.created_at,
+                       a.titulo as aula_titulo, m.titulo as modulo_titulo
+                FROM aula_comentarios ac
+                INNER JOIN aulas a ON ac.aula_id = a.id
+                INNER JOIN modulos m ON a.modulo_id = m.id
+                WHERE m.curso_id = ? $status_where
+                ORDER BY ac.created_at DESC
+            ");
+            $stmt->execute($params);
+            $comentarios = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $stmt_config = $pdo->prepare("SELECT comentarios_ativos, comentarios_exigem_aprovacao FROM cursos WHERE id = ?");
+            $stmt_config->execute([$curso_id]);
+            $config = $stmt_config->fetch(PDO::FETCH_ASSOC);
+            ob_clean();
+            echo json_encode([
+                'success' => true,
+                'comentarios' => $comentarios,
+                'comentarios_ativos' => (bool)($config['comentarios_ativos'] ?? 0),
+                'comentarios_exigem_aprovacao' => (bool)($config['comentarios_exigem_aprovacao'] ?? 1)
+            ]);
+        } catch (PDOException $e) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Erro ao listar comentários.']);
+        }
+        exit;
+    }
+
+    if ($action == 'approve_comentario' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $id = (int)($input['id'] ?? 0);
+        if ($id <= 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'ID inválido.']);
+            exit;
+        }
+        try {
+            $stmt = $pdo->prepare("
+                UPDATE aula_comentarios ac
+                INNER JOIN aulas a ON ac.aula_id = a.id
+                INNER JOIN modulos m ON a.modulo_id = m.id
+                INNER JOIN cursos c ON m.curso_id = c.id
+                INNER JOIN produtos p ON c.produto_id = p.id
+                SET ac.status = 'approved'
+                WHERE ac.id = ? AND p.usuario_id = ?
+            ");
+            $stmt->execute([$id, $usuario_id_logado]);
+            ob_clean();
+            echo json_encode(['success' => $stmt->rowCount() > 0, 'message' => 'Comentário aprovado.']);
+        } catch (PDOException $e) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Erro ao aprovar.']);
+        }
+        exit;
+    }
+
+    if ($action == 'reject_comentario' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $id = (int)($input['id'] ?? 0);
+        if ($id <= 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'ID inválido.']);
+            exit;
+        }
+        try {
+            $stmt = $pdo->prepare("
+                UPDATE aula_comentarios ac
+                INNER JOIN aulas a ON ac.aula_id = a.id
+                INNER JOIN modulos m ON a.modulo_id = m.id
+                INNER JOIN cursos c ON m.curso_id = c.id
+                INNER JOIN produtos p ON c.produto_id = p.id
+                SET ac.status = 'rejected'
+                WHERE ac.id = ? AND p.usuario_id = ?
+            ");
+            $stmt->execute([$id, $usuario_id_logado]);
+            ob_clean();
+            echo json_encode(['success' => $stmt->rowCount() > 0, 'message' => 'Comentário rejeitado.']);
+        } catch (PDOException $e) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Erro ao rejeitar.']);
+        }
+        exit;
+    }
+
     // Action: Salvar ordem dos produtos (drag & drop em Meus Produtos)
     if ($action == 'salvar_ordem_produtos' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $input = json_decode(file_get_contents('php://input'), true);
