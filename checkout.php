@@ -1030,6 +1030,17 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         <hr class="border-gray-200">
                         <section data-id="order_bump"><?php echo render_order_bumps_section($order_bumps); ?></section>
                     <?php endif; ?>
+                    <?php if (!$is_free_product): ?>
+                    <hr class="border-gray-200">
+                    <section data-id="coupon" class="space-y-2">
+                        <label class="block text-sm font-medium text-gray-700">Cupom de desconto</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="coupon-input" placeholder="Digite o código" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 checkout-input">
+                            <button type="button" id="btn-aplicar-cupom" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-medium rounded-lg transition">Aplicar</button>
+                        </div>
+                        <div id="coupon-message" class="text-xs hidden"></div>
+                    </section>
+                    <?php endif; ?>
                     <hr class="border-gray-200">
                     <!-- Renderiza Pagamento ou Produto Grátis -->
                     <section data-id="payment">
@@ -1078,6 +1089,12 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                 echo "<div id='orderbump-summary-{$ob_id}' class='orderbump-summary-item flex justify-between text-gray-700' style='display: none;' data-price-brl='".htmlspecialchars($ob_brl)."' data-price-usd='".htmlspecialchars($ob_usd_str)."'><span>".htmlspecialchars($ob_name)."</span><span class='ob-price'>".$ob_brl."</span></div>";
                             } ?>
                         </div>
+                        <?php if (!$is_free_product): ?>
+                        <div id="coupon-discount-row" class="flex justify-between items-center" style="display: none;">
+                            <span class="bg-amber-100 text-amber-700 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1"><i data-lucide="ticket" class="w-3 h-3"></i>Cupom</span>
+                            <span id="coupon-discount-value" class="font-medium text-amber-600">- R$ 0,00</span>
+                        </div>
+                        <?php endif; ?>
                         <?php if ($pix_discount_enabled && $pix_discount_value > 0 && !$is_free_product): ?>
                         <div id="pix-discount-row" class="flex justify-between items-center" style="display: none;">
                             <span class="bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
@@ -1103,6 +1120,10 @@ function render_sales_notification($config, $produto_nome_fallback) {
     <!-- Footer Mobile -->
     <footer id="mobile-footer" class="lg:hidden fixed bottom-0 left-0 right-0 bg-white shadow-lg p-4 border-t border-gray-200">
         <div id="mobile-summary-items" class="mb-2 text-sm text-gray-700 space-y-1 max-h-20 overflow-y-auto pr-2"></div>
+        <div id="coupon-discount-row-mobile" class="flex justify-between items-center mb-2" style="display: none;">
+            <span class="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1"><i data-lucide="ticket" class="w-3 h-3"></i>Cupom</span>
+            <span id="coupon-discount-value-mobile" class="font-medium text-amber-600 text-sm">- R$ 0,00</span>
+        </div>
         <?php if ($pix_discount_enabled && $pix_discount_value > 0): ?>
         <div id="pix-discount-row-mobile" class="flex justify-between items-center mb-2" style="display: none;">
             <span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
@@ -1451,6 +1472,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
             let notificationTimer;
             let customRedirectUrl = '<?php echo htmlspecialchars($redirectUrlConfig ?? '', ENT_QUOTES, 'UTF-8'); ?>'; // URL de redirecionamento personalizada
             
+            const getCouponPayload = () => couponApplied ? { cupom_id: couponApplied.cupom_id, valor_desconto: couponApplied.valor_desconto } : {};
             const pixModalOverlay = document.getElementById('pix-modal-overlay');
             const pixModalContent = document.getElementById('pix-modal-content');
             const mainProductPrice = <?php echo (float)$main_price; ?>;
@@ -1465,6 +1487,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
             const activeGateway = '<?php echo $gateway; ?>';
             let currentAmount = mainProductPrice;
             let acceptedOrderBumps = [];
+            let couponApplied = null; // { cupom_id, valor_desconto }
             let selectedPaymentMethod = null; // Declarado aqui para evitar erro de referência
             // Stripe usa Checkout Session (redirecionamento) - Stripe.js carregado apenas para pix_stripe se necessário
             
@@ -1682,14 +1705,34 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     }
                 });
                 
-                // Aplicar desconto Pix se método Pix estiver selecionado
-                let displayAmount = currentAmount;
+                // Aplicar desconto cupom
+                let couponDiscountAmount = couponApplied ? (couponApplied.valor_desconto || 0) : 0;
+                let displayAmount = currentAmount - couponDiscountAmount;
+                if (displayAmount < 0) displayAmount = 0;
+
+                // Mostrar/ocultar linha de desconto cupom
+                const couponDiscountRow = document.getElementById('coupon-discount-row');
+                const couponDiscountRowMobile = document.getElementById('coupon-discount-row-mobile');
+                const couponValEl = document.getElementById('coupon-discount-value');
+                const couponValMobile = document.getElementById('coupon-discount-value-mobile');
+                const couponValStr = '- R$ ' + couponDiscountAmount.toFixed(2).replace('.', ',');
+                if (couponDiscountAmount > 0) {
+                    if (couponDiscountRow) { couponDiscountRow.style.display = 'flex'; }
+                    if (couponValEl) couponValEl.textContent = couponValStr;
+                    if (couponDiscountRowMobile) { couponDiscountRowMobile.style.display = 'flex'; }
+                    if (couponValMobile) couponValMobile.textContent = couponValStr;
+                } else {
+                    if (couponDiscountRow) couponDiscountRow.style.display = 'none';
+                    if (couponDiscountRowMobile) couponDiscountRowMobile.style.display = 'none';
+                }
+
+                // Aplicar desconto Pix se método Pix estiver selecionado (sobre o valor já com cupom)
                 let pixDiscountAmount = 0;
                 const isPixSelected = selectedPaymentMethod === 'pix' || selectedPaymentMethod === 'pix_mercadopago' || selectedPaymentMethod === 'pix_pushinpay' || selectedPaymentMethod === 'pix_efi' || selectedPaymentMethod === 'pix_pagarme' || selectedPaymentMethod === 'pix_stripe';
                 
                 if (isPixSelected && pixDiscountConfig.enabled) {
-                    pixDiscountAmount = calculatePixDiscount(currentAmount);
-                    displayAmount = currentAmount - pixDiscountAmount;
+                    pixDiscountAmount = calculatePixDiscount(displayAmount);
+                    displayAmount = displayAmount - pixDiscountAmount;
                 }
                 
                 // Mostrar/ocultar linha de desconto Pix
@@ -1723,14 +1766,55 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 if (finalTotalElement) finalTotalElement.textContent = totalText;
                 if (finalTotalMobileElement) finalTotalMobileElement.textContent = totalText;
                 
-                // Atualizar currentAmount para o valor com desconto (para envio ao backend)
-                if (isPixSelected && pixDiscountAmount > 0) {
-                    currentAmount = displayAmount;
-                }
+                // Atualizar currentAmount para o valor final (cupom + pix) para envio ao backend
+                currentAmount = displayAmount;
                 
                 updateMobileLayout();
             };
             
+            // Cupom: aplicar
+            const couponInput = document.getElementById('coupon-input');
+            const btnAplicarCupom = document.getElementById('btn-aplicar-cupom');
+            const couponMessage = document.getElementById('coupon-message');
+            if (btnAplicarCupom && couponInput) {
+                btnAplicarCupom.addEventListener('click', async () => {
+                    const codigo = couponInput.value.trim();
+                    if (!codigo) {
+                        if (couponMessage) { couponMessage.textContent = 'Digite o código do cupom'; couponMessage.classList.remove('hidden'); couponMessage.classList.add('text-red-600'); }
+                        return;
+                    }
+                    btnAplicarCupom.disabled = true;
+                    try {
+                        let baseTotal = mainProductPrice;
+                        orderbumpCheckboxes.forEach(cb => {
+                            if (cb.checked) baseTotal += parseFloat(cb.dataset.price || 0);
+                        });
+                        const r = await fetch('/api/api.php?action=validate_coupon', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ codigo, produto_id: mainProductId, valor_total: baseTotal })
+                        });
+                        const data = await r.json();
+                        if (data.valid && data.cupom_id && data.valor_desconto >= 0) {
+                            couponApplied = { cupom_id: data.cupom_id, valor_desconto: data.valor_desconto };
+                            if (couponMessage) { couponMessage.textContent = data.mensagem || 'Cupom aplicado!'; couponMessage.classList.remove('text-red-600'); couponMessage.classList.add('text-green-600'); couponMessage.classList.remove('hidden'); }
+                            couponInput.disabled = true;
+                            btnAplicarCupom.textContent = 'Aplicado';
+                        } else {
+                            couponApplied = null;
+                            if (couponMessage) { couponMessage.textContent = data.error || data.mensagem || 'Cupom inválido'; couponMessage.classList.add('text-red-600'); couponMessage.classList.remove('text-green-600'); couponMessage.classList.remove('hidden'); }
+                        }
+                        updateSummaryAndTotal();
+                        if (typeof initializePaymentBrickForMethod === 'function' && (selectedPaymentMethod === 'credit_card' || selectedPaymentMethod === 'ticket' || selectedPaymentMethod === 'pix_mercadopago')) {
+                            initializePaymentBrickForMethod(selectedPaymentMethod, emailInput?.value || null, currentAmount);
+                        }
+                    } catch (e) {
+                        if (couponMessage) { couponMessage.textContent = 'Erro ao validar cupom'; couponMessage.classList.add('text-red-600'); couponMessage.classList.remove('hidden'); }
+                    }
+                    btnAplicarCupom.disabled = false;
+                });
+            }
+
             orderbumpCheckboxes.forEach(checkbox => {
                 checkbox.addEventListener('change', () => {
                     updateSummaryAndTotal();
@@ -1913,7 +1997,8 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                 transaction_amount: parseFloat(currentAmount).toFixed(2),
                                 order_bump_product_ids: acceptedOrderBumps,
                                 utm_parameters: utmParameters,
-                                gateway: 'pushinpay' // Flag para o backend
+                                gateway: 'pushinpay', // Flag para o backend
+                                ...getCouponPayload()
                             })
                         });
                         
@@ -1970,7 +2055,8 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                 transaction_amount: parseFloat(currentAmount).toFixed(2),
                                 order_bump_product_ids: acceptedOrderBumps,
                                 utm_parameters: utmParameters,
-                                gateway: 'efi'
+                                gateway: 'efi',
+                                ...getCouponPayload()
                             })
                         });
                         
@@ -2013,7 +2099,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         const response = await fetch('/process_payment', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: 'pix', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: 'pagarme' })
+                            body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: 'pix', transaction_amount: parseFloat(currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: 'pagarme', ...getCouponPayload() })
                         });
                         const result = await response.json();
                         if (response.ok && result.status === 'pix_created') {
@@ -2039,7 +2125,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         const response = await fetch('/process_payment', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: 'pix', transaction_amount: parseFloat(productCurrency === 'usd' && mainProductPriceUsd ? mainProductPriceUsd : currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: 'stripe', currency: productCurrency, checkout_hash: checkoutHash })
+                            body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: 'pix', transaction_amount: parseFloat(productCurrency === 'usd' && mainProductPriceUsd ? mainProductPriceUsd : currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: 'stripe', currency: productCurrency, checkout_hash: checkoutHash, ...getCouponPayload() })
                         });
                         const result = await response.json();
                         if (response.ok && result.status === 'pix_created') {
@@ -2071,7 +2157,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             const response = await fetch('/process_payment', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: gateway.includes('ticket') ? 'ticket' : 'credit_card', transaction_amount: parseFloat((gateway === 'stripe_card' || gateway === 'stripe' || gateway === 'paypal') && productCurrency === 'usd' && mainProductPriceUsd ? mainProductPriceUsd : currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: gateway, currency: (gateway === 'stripe_card' || gateway === 'stripe' || gateway === 'paypal') ? productCurrency : undefined, checkout_hash: (gateway === 'stripe_card' || gateway === 'stripe' || gateway === 'paypal') ? checkoutHash : undefined })
+                                body: JSON.stringify({ ...payerData, product_id: mainProductId, payment_method_id: gateway.includes('ticket') ? 'ticket' : 'credit_card', transaction_amount: parseFloat((gateway === 'stripe_card' || gateway === 'stripe' || gateway === 'paypal') && productCurrency === 'usd' && mainProductPriceUsd ? mainProductPriceUsd : currentAmount).toFixed(2), order_bump_product_ids: acceptedOrderBumps, utm_parameters: utmParameters, gateway: gateway, currency: (gateway === 'stripe_card' || gateway === 'stripe' || gateway === 'paypal') ? productCurrency : undefined, checkout_hash: (gateway === 'stripe_card' || gateway === 'stripe' || gateway === 'paypal') ? checkoutHash : undefined, ...getCouponPayload() })
                             });
                             const contentType = response.headers.get('content-type') || '';
                             let result = {};
@@ -2180,7 +2266,8 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                 transaction_amount: parseFloat(currentAmount).toFixed(2),
                                 order_bump_product_ids: acceptedOrderBumps,
                                 utm_parameters: utmParameters,
-                                gateway: 'beehive'
+                                gateway: 'beehive',
+                                ...getCouponPayload()
                             })
                         });
                         
@@ -2287,7 +2374,8 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                 transaction_amount: parseFloat(currentAmount).toFixed(2),
                                 order_bump_product_ids: acceptedOrderBumps,
                                 utm_parameters: utmParameters,
-                                gateway: 'hypercash'
+                                gateway: 'hypercash',
+                                ...getCouponPayload()
                             })
                         });
                         
@@ -2428,7 +2516,8 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                     installments: 1,
                                     order_bump_product_ids: acceptedOrderBumps,
                                     utm_parameters: utmParameters,
-                                    gateway: 'efi_card'
+                                    gateway: 'efi_card',
+                                    ...getCouponPayload()
                                 })
                             });
                             
@@ -2614,7 +2703,8 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                         transaction_amount: parseFloat(currentAmount).toFixed(2),
                                         order_bump_product_ids: acceptedOrderBumps,
                                         utm_parameters: utmParameters,
-                                        gateway: 'mercadopago'
+                                        gateway: 'mercadopago',
+                                        ...getCouponPayload()
                                     })
                                 });
                                 const result = await response.json();
