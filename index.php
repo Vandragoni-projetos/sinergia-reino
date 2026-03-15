@@ -915,8 +915,12 @@ $page_content = ob_get_clean();
                             case 'Pagamento Recusado': iconName = 'x-circle'; break;
                             case 'Reembolso': iconName = 'rotate-ccw'; break;
                             case 'Chargeback': iconName = 'shield-alert'; break;
+                            case 'Novo Comentário': iconName = 'message-circle'; break;
                             default: iconName = 'info'; break;
                         }
+
+                        const isInternalLink = notification.link_acao && notification.link_acao.startsWith('/');
+                        item.target = (notification.link_acao && !isInternalLink) ? '_blank' : '_self';
 
                         item.innerHTML = `
                             <i data-lucide="${iconName}" class="notification-icon"></i>
