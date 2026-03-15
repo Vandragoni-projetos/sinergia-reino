@@ -79,7 +79,7 @@ try {
 
 
 // Lista de páginas permitidas para segurança
-$paginas_permitidas = ['dashboard', 'produtos', 'configuracoes', 'checkout_editor', 'checkout_editor_preview', 'produto_config', 'vendas', 'area_membros', 'gerenciar_curso', 'profile', 'infoprodutor_member_offers', 'tracking', 'integracoes', 'integracoes_webhooks', 'integracoes_utmfy', 'integracoes_evolution', 'integracoes_api', 'clonar_site', 'planos', 'clientes'];
+$paginas_permitidas = ['dashboard', 'produtos', 'configuracoes', 'checkout_editor', 'checkout_editor_preview', 'produto_config', 'categorias_produto', 'vendas', 'area_membros', 'gerenciar_curso', 'profile', 'infoprodutor_member_offers', 'tracking', 'integracoes', 'integracoes_webhooks', 'integracoes_utmfy', 'integracoes_evolution', 'integracoes_api', 'clonar_site', 'planos', 'clientes'];
 
 // Lógica para link ativo do menu - Modern Glassmorphism Design
 $active_class = 'sidebar-item sidebar-item-active';
@@ -495,6 +495,10 @@ $page_content = ob_get_clean();
             <a href="/index?pagina=produtos" class="<?php echo ($pagina == 'produtos' || $pagina == 'checkout_editor' || $pagina == 'produto_config') ? $active_class : $inactive_class; ?>">
                 <i data-lucide="package" class="w-5 h-5"></i>
                 <span>Produtos</span>
+            </a>
+            <a href="/index?pagina=categorias_produto" class="<?php echo $pagina == 'categorias_produto' ? $active_class : $inactive_class; ?> pl-8 text-sm">
+                <i data-lucide="tags" class="w-4 h-4"></i>
+                <span>Categorias</span>
             </a>
             <a href="/index?pagina=area_membros" class="<?php echo ($pagina == 'area_membros' || $pagina == 'gerenciar_curso' || $pagina == 'infoprodutor_member_offers') ? $active_class : $inactive_class; ?>">
                 <i data-lucide="play-square" class="w-5 h-5"></i>
