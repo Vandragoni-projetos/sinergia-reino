@@ -434,8 +434,16 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
         $certificado_conclusao_minima = (int)($curso['certificado_conclusao_minima'] ?? 100);
         $pode_baixar_certificado = $certificado_habilitado && $progresso_percentual >= $certificado_conclusao_minima;
     }
+    $gamificacao_habilitado = false;
+    $chk_gam = @$pdo->query("SHOW TABLES LIKE 'curso_gamificacao'");
+    if ($chk_gam && $chk_gam->rowCount() > 0) {
+        $stmt_g = $pdo->prepare("SELECT habilitado FROM curso_gamificacao WHERE curso_id = ?");
+        $stmt_g->execute([$curso['id']]);
+        $g = $stmt_g->fetch(PDO::FETCH_ASSOC);
+        $gamificacao_habilitado = $g && (int)($g['habilitado'] ?? 0) === 1;
+    }
     ?>
-    <div id="course-container" class="min-h-screen member-protected-content" data-comentarios-ativos="<?php echo $comentarios_ativos; ?>" data-aluno-email="<?php echo htmlspecialchars($cliente_email); ?>">
+    <div id="course-container" class="min-h-screen member-protected-content" data-comentarios-ativos="<?php echo $comentarios_ativos; ?>" data-aluno-email="<?php echo htmlspecialchars($cliente_email); ?>" data-gamificacao="<?php echo $gamificacao_habilitado ? '1' : '0'; ?>" data-produto-id="<?php echo (int)$produto_id; ?>">
         <?php
         $banner_raw = $curso['banner_url'] ?? $curso['produto_foto'] ?? '';
         $banner_src = !empty($banner_raw) ? resolve_product_image_url_protected($banner_raw, $upload_dir ?? 'uploads/', $produto_id) : '';
@@ -469,6 +477,14 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
             <?php if (isset($_GET['certificado']) && $_GET['certificado'] === 'pendente'): ?>
             <div class="mb-6 p-4 bg-amber-900/30 border border-amber-600/50 rounded-xl text-amber-200 text-sm">
                 Complete <?php echo $certificado_conclusao_minima; ?>% do curso para liberar o certificado. Seu progresso atual: <?php echo $progresso_percentual; ?>%.
+            </div>
+            <?php endif; ?>
+            <?php if ($gamificacao_habilitado && !empty($modulos_com_aulas) && $total_aulas_desbloqueadas > 0): ?>
+            <div id="conquistas-minhas-wrap" class="mb-6 p-4 bg-gray-800/80 border border-gray-700 rounded-xl">
+                <p class="text-sm font-semibold text-green-400 mb-2 flex items-center gap-2"><i data-lucide="trophy" class="w-4 h-4"></i> MINHAS CONQUISTAS</p>
+                <div id="conquistas-grid" class="flex flex-wrap gap-3">
+                    <span class="text-gray-500 text-sm">Carregando...</span>
+                </div>
             </div>
             <?php endif; ?>
             <?php if (empty($modulos_com_aulas) || $total_aulas_desbloqueadas === 0): ?>
@@ -1484,6 +1500,11 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                         // 5. Atualiza a barra de progresso geral
                         updateOverallProgress();
 
+                        // 6. Gamificação: exibir modal de conquistas se houver novas
+                        if (result.novas_conquistas && result.novas_conquistas.length > 0 && typeof exibirNovasConquistas === 'function') {
+                            exibirNovasConquistas(result.novas_conquistas);
+                        }
+
                     } else {
                         console.error(`Erro ao ${action}: ` + (result.error || 'Erro desconhecido.'));
                         // Se a ação de desmarcar falhar, avisa o usuário (pois pode ser problema de backend)
@@ -1546,6 +1567,9 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                             comentarioTexto.value = '';
                             if (comentarioCharCount) comentarioCharCount.textContent = '0';
                             loadComentariosForAula(currentLessonData.id);
+                            if (data.novas_conquistas && data.novas_conquistas.length > 0 && typeof exibirNovasConquistas === 'function') {
+                                exibirNovasConquistas(data.novas_conquistas);
+                            }
                             const feedbackEl = document.getElementById('comentarios-feedback');
                             if (feedbackEl) {
                                 feedbackEl.classList.remove('hidden');
@@ -1594,8 +1618,76 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
 
             // Initial call to update progress bar on page load
             updateOverallProgress();
+
+            // Gamificação: carregar conquistas e modal
+            const gamificacaoAtivo = courseContainer && courseContainer.dataset.gamificacao === '1';
+            const produtoIdGam = courseContainer ? (courseContainer.dataset.produtoId || '') : '';
+            let filaConquistasModal = [];
+
+            function showConquistaModalCelebracao(conquista) {
+                const modal = document.getElementById('conquista-modal');
+                if (!modal || !conquista) return;
+                const badgeEl = document.getElementById('conquista-badge');
+                const tituloEl = document.getElementById('conquista-titulo');
+                const descEl = document.getElementById('conquista-descricao');
+                if (badgeEl) badgeEl.src = conquista.badge_url || '';
+                if (badgeEl) badgeEl.alt = conquista.titulo || '';
+                if (tituloEl) tituloEl.textContent = conquista.titulo || '';
+                if (descEl) descEl.textContent = conquista.descricao || '';
+                modal.classList.remove('hidden');
+                lucide.createIcons();
+            }
+            window.fecharModalConquistaCelebracao = function() {
+                const modal = document.getElementById('conquista-modal');
+                if (modal) modal.classList.add('hidden');
+                if (filaConquistasModal.length > 0) {
+                    const next = filaConquistasModal.shift();
+                    showConquistaModalCelebracao(next);
+                }
+            };
+            function exibirNovasConquistas(novas) {
+                if (!novas || novas.length === 0) return;
+                filaConquistasModal = [...novas];
+                showConquistaModalCelebracao(filaConquistasModal.shift());
+                if (typeof loadConquistas === 'function') loadConquistas();
+            }
+            function loadConquistas() {
+                const grid = document.getElementById('conquistas-grid');
+                if (!grid || !gamificacaoAtivo || !produtoIdGam) return;
+                fetch('/api/member_api?action=check_conquistas', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ produto_id: parseInt(produtoIdGam, 10) })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+                    const todas = data.todas_desbloqueadas || [];
+                    const novas = data.novas_conquistas || [];
+                    if (novas.length > 0) exibirNovasConquistas(novas);
+                    grid.innerHTML = todas.length === 0
+                        ? '<span class="text-gray-500 text-sm">Complete aulas para desbloquear conquistas!</span>'
+                        : todas.map(c => `<div class="flex flex-col items-center" title="${(c.descricao || c.titulo || '').replace(/"/g, '&quot;')}"><img src="${c.badge_url || ''}" alt="${(c.titulo || '').replace(/"/g, '&quot;')}" class="w-12 h-12 object-contain rounded-lg"><span class="text-xs text-gray-400 mt-1 max-w-[60px] truncate">${(c.titulo || '').replace(/</g, '&lt;')}</span></div>`).join('');
+                })
+                .catch(() => { grid.innerHTML = '<span class="text-gray-500 text-sm">Erro ao carregar.</span>'; });
+            }
+            if (gamificacaoAtivo && produtoIdGam) {
+                loadConquistas();
+            }
         });
     </script>
+    <!-- Modal de Celebração de Conquista -->
+    <div id="conquista-modal" class="fixed inset-0 z-[100] hidden">
+        <div class="absolute inset-0 bg-black/70" onclick="fecharModalConquistaCelebracao()"></div>
+        <div class="relative flex items-center justify-center min-h-screen p-4">
+            <div class="bg-gray-800 rounded-xl p-8 max-w-md w-full text-center border border-gray-600 shadow-2xl">
+                <img id="conquista-badge" src="" alt="" class="w-24 h-24 mx-auto mb-4 object-contain">
+                <h3 id="conquista-titulo" class="text-xl font-bold text-white mb-2"></h3>
+                <p id="conquista-descricao" class="text-gray-400 mb-6"></p>
+                <button type="button" onclick="fecharModalConquistaCelebracao()" class="bg-green-600 hover:bg-green-500 text-white font-bold py-2 px-6 rounded-lg transition">Continuar</button>
+            </div>
+        </div>
+    </div>
     <?php 
     $mp_path = __DIR__ . '/../includes/member_protection.php';
     if (file_exists($mp_path)) require_once $mp_path; 
