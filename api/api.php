@@ -3307,6 +3307,144 @@ EOT;
     }
 
     // =====================================================
+    // CATEGORIAS DE PRODUTO (product_type_categories)
+    // =====================================================
+
+    if ($action == 'list_product_type_categories') {
+        try {
+            $stmt = $pdo->prepare("SELECT id, group_name, value, label, icon, ordem FROM product_type_categories WHERE usuario_id = ? ORDER BY group_name ASC, ordem ASC, label ASC");
+            $stmt->execute([$usuario_id_logado]);
+            $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            ob_clean();
+            echo json_encode(['success' => true, 'items' => $items]);
+        } catch (PDOException $e) {
+            http_response_code(500);
+            ob_clean();
+            error_log("API: Erro ao listar categorias: " . $e->getMessage());
+            echo json_encode(['success' => false, 'error' => 'Erro ao listar categorias']);
+        }
+        exit;
+    }
+
+    if ($action == 'create_product_type_category' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $group_name = trim($input['group_name'] ?? '');
+        $value = trim($input['value'] ?? '');
+        $label = trim($input['label'] ?? '');
+        $icon = isset($input['icon']) ? trim($input['icon']) : null;
+        $ordem = (int)($input['ordem'] ?? 0);
+
+        if (empty($group_name) || empty($value) || empty($label)) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Preencha grupo, valor e label']);
+            exit;
+        }
+        $value = strtoupper(preg_replace('/[^A-Za-z0-9_]/', '_', $value));
+        if (strlen($value) > 40) $value = substr($value, 0, 40);
+        if (strlen($value) < 1) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Valor inválido (use letras, números e underscore)']);
+            exit;
+        }
+
+        try {
+            $stmt = $pdo->prepare("INSERT INTO product_type_categories (usuario_id, group_name, value, label, icon, ordem) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$usuario_id_logado, $group_name, $value, $label, $icon ?: null, $ordem]);
+            ob_clean();
+            echo json_encode(['success' => true, 'message' => 'Categoria criada!', 'id' => (int)$pdo->lastInsertId()]);
+        } catch (PDOException $e) {
+            if ($e->getCode() == 23000) {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Já existe uma categoria com esse valor']);
+            } else {
+                http_response_code(500);
+                ob_clean();
+                error_log("API: Erro ao criar categoria: " . $e->getMessage());
+                echo json_encode(['success' => false, 'error' => 'Erro ao criar categoria']);
+            }
+        }
+        exit;
+    }
+
+    if ($action == 'update_product_type_category' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $id = (int)($input['id'] ?? 0);
+        $group_name = trim($input['group_name'] ?? '');
+        $value = trim($input['value'] ?? '');
+        $label = trim($input['label'] ?? '');
+        $icon = isset($input['icon']) ? trim($input['icon']) : null;
+        $ordem = (int)($input['ordem'] ?? 0);
+
+        if ($id <= 0 || empty($group_name) || empty($value) || empty($label)) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Dados inválidos']);
+            exit;
+        }
+        $value = strtoupper(preg_replace('/[^A-Za-z0-9_]/', '_', $value));
+        if (strlen($value) > 40) $value = substr($value, 0, 40);
+
+        try {
+            $stmt = $pdo->prepare("UPDATE product_type_categories SET group_name = ?, value = ?, label = ?, icon = ?, ordem = ? WHERE id = ? AND usuario_id = ?");
+            $stmt->execute([$group_name, $value, $label, $icon ?: null, $ordem, $id, $usuario_id_logado]);
+            if ($stmt->rowCount() > 0) {
+                ob_clean();
+                echo json_encode(['success' => true, 'message' => 'Categoria atualizada!']);
+            } else {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Categoria não encontrada ou sem alteração']);
+            }
+        } catch (PDOException $e) {
+            if ($e->getCode() == 23000) {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Já existe outra categoria com esse valor']);
+            } else {
+                http_response_code(500);
+                ob_clean();
+                error_log("API: Erro ao atualizar categoria: " . $e->getMessage());
+                echo json_encode(['success' => false, 'error' => 'Erro ao atualizar categoria']);
+            }
+        }
+        exit;
+    }
+
+    if ($action == 'delete_product_type_category' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $id = (int)($input['id'] ?? 0);
+        if ($id <= 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'ID inválido']);
+            exit;
+        }
+        try {
+            $stmt = $pdo->prepare("SELECT value FROM product_type_categories WHERE id = ? AND usuario_id = ?");
+            $stmt->execute([$id, $usuario_id_logado]);
+            $cat = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$cat) {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Categoria não encontrada']);
+                exit;
+            }
+            $check = $pdo->prepare("SELECT COUNT(*) FROM produtos WHERE usuario_id = ? AND product_type = ?");
+            $check->execute([$usuario_id_logado, $cat['value']]);
+            if ($check->fetchColumn() > 0) {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Não é possível excluir: há produtos usando esta categoria']);
+                exit;
+            }
+            $del = $pdo->prepare("DELETE FROM product_type_categories WHERE id = ? AND usuario_id = ?");
+            $del->execute([$id, $usuario_id_logado]);
+            ob_clean();
+            echo json_encode(['success' => true, 'message' => 'Categoria excluída!']);
+        } catch (PDOException $e) {
+            http_response_code(500);
+            ob_clean();
+            error_log("API: Erro ao excluir categoria: " . $e->getMessage());
+            echo json_encode(['success' => false, 'error' => 'Erro ao excluir categoria']);
+        }
+        exit;
+    }
+
+    // =====================================================
     // EVOLUTION API - MENSAGENS WHATSAPP
     // =====================================================
 
