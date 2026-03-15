@@ -454,7 +454,7 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
             <?php if ($certificado_habilitado && !empty($modulos_com_aulas) && $total_aulas_desbloqueadas > 0): ?>
             <div class="mb-6 flex flex-wrap items-center justify-between gap-4 p-4 bg-gray-800/80 border border-gray-700 rounded-xl">
                 <?php if ($pode_baixar_certificado): ?>
-                <a href="/certificado_curso?produto_id=<?php echo (int)$produto_id; ?>" target="_blank" class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 px-5 rounded-lg transition">
+                <a href="/certificado_curso?produto_id=<?php echo (int)$produto_id; ?>" class="inline-flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-bold py-2.5 px-5 rounded-lg transition">
                     <i data-lucide="award" class="w-5 h-5"></i>
                     <span>Baixar Certificado</span>
                 </a>
@@ -492,7 +492,7 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                         </div>
                         <?php if ($certificado_habilitado && $pode_baixar_certificado): ?>
                         <div class="mt-3">
-                            <a href="/certificado_curso?produto_id=<?php echo (int)$produto_id; ?>" target="_blank" class="inline-flex items-center gap-2 text-green-400 hover:text-green-300 font-semibold text-sm">
+                            <a href="/certificado_curso?produto_id=<?php echo (int)$produto_id; ?>" class="inline-flex items-center gap-2 text-green-400 hover:text-green-300 font-semibold text-sm">
                                 <i data-lucide="award" class="w-4 h-4"></i>
                                 Baixar Certificado
                             </a>
