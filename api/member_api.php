@@ -540,6 +540,26 @@ switch ($action) {
             $status = $curso_info['comentarios_exigem_aprovacao'] ? 'pending' : 'approved';
             $stmt_ins = $pdo->prepare("INSERT INTO aula_comentarios (aula_id, aluno_email, nome_aluno, texto, status) VALUES (?, ?, ?, ?, ?)");
             $stmt_ins->execute([$aula_id, $aluno_email_logado, $nome_aluno, $texto, $status]);
+
+            // Notifica o infoprodutor (dono do produto)
+            try {
+                $stmt_owner = $pdo->prepare("SELECT p.usuario_id FROM produtos p JOIN cursos c ON c.produto_id = p.id WHERE c.id = ?");
+                $stmt_owner->execute([$curso_info['curso_id']]);
+                $owner = $stmt_owner->fetch(PDO::FETCH_ASSOC);
+                $stmt_aula = $pdo->prepare("SELECT titulo FROM aulas WHERE id = ?");
+                $stmt_aula->execute([$aula_id]);
+                $aula_titulo = $stmt_aula->fetchColumn() ?: 'Aula';
+                if ($owner && $owner['usuario_id']) {
+                    $preview = mb_strlen($texto) > 80 ? mb_substr($texto, 0, 80) . '...' : $texto;
+                    $mensagem = $nome_aluno . ' comentou na aula "' . $aula_titulo . '": "' . $preview . '"';
+                    $link = '/index?pagina=gerenciar_curso&produto_id=' . (int)$prod['id'] . '#secao-comentarios';
+                    $pdo->prepare("INSERT INTO notificacoes (usuario_id, tipo, mensagem, valor, link_acao, venda_id_fk, metodo_pagamento) VALUES (?, 'Novo Comentário', ?, NULL, ?, NULL, NULL)")
+                        ->execute([$owner['usuario_id'], $mensagem, $link]);
+                }
+            } catch (PDOException $e) {
+                error_log("Erro ao criar notificação de comentário: " . $e->getMessage());
+            }
+
             sendJsonResponse(true, [
                 'message' => $status === 'approved' ? 'Comentário publicado!' : 'Comentário enviado. Ele aparecerá após aprovação.',
                 'id' => (int)$pdo->lastInsertId(),
@@ -576,10 +596,13 @@ switch ($action) {
             if (!$stmt_acesso->fetch()) {
                 sendJsonResponse(false, ['error' => 'Sem acesso ao curso.'], 403);
             }
-            // Aluno vê apenas comentários aprovados
+            // Aluno vê apenas comentários aprovados (inclui resposta do infoprodutor se existir)
             $status_filter = "AND status = 'approved'";
+            $resposta_col = '';
+            $chk_resp = @$pdo->query("SHOW COLUMNS FROM aula_comentarios LIKE 'resposta_infoprodutor'");
+            if ($chk_resp && $chk_resp->rowCount() > 0) $resposta_col = ', resposta_infoprodutor';
             $stmt = $pdo->prepare("
-                SELECT id, aluno_email, nome_aluno, texto, status, created_at
+                SELECT id, aluno_email, nome_aluno, texto, status, created_at $resposta_col
                 FROM aula_comentarios
                 WHERE aula_id = ? $status_filter
                 ORDER BY created_at DESC
