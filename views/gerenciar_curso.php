@@ -324,6 +324,53 @@ try {
             }
         }
 
+        // Gamificação
+        if (isset($_POST['salvar_gamificacao_config'])) {
+            $should_redirect = true;
+            try {
+                $chk = $pdo->query("SHOW TABLES LIKE 'curso_gamificacao'");
+                if ($chk && $chk->rowCount() > 0) {
+                    $habilitado = isset($_POST['gamificacao_habilitado']) ? 1 : 0;
+                    $stmt = $pdo->prepare("INSERT INTO curso_gamificacao (curso_id, habilitado) VALUES (?, ?) ON DUPLICATE KEY UPDATE habilitado = ?");
+                    $stmt->execute([$curso_id, $habilitado, $habilitado]);
+                    $mensagem = "<div class='bg-green-900/20 border border-green-500 text-green-300 px-4 py-3 rounded' role='alert'>Gamificação atualizada!</div>";
+                } else {
+                    $mensagem = "<div class='bg-yellow-900/20 border border-yellow-500 text-yellow-300 px-4 py-3 rounded' role='alert'>Execute migrations/gamificacao.sql para ativar gamificação.</div>";
+                }
+            } catch (PDOException $e) {
+                $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>Erro ao salvar. Execute migrations/gamificacao.sql</div>";
+            }
+        }
+        if (isset($_POST['criar_conquista'])) {
+            $should_redirect = true;
+            $titulo = trim($_POST['conquista_titulo'] ?? '');
+            $descricao = trim($_POST['conquista_descricao'] ?? '');
+            $gatilho_tipo = $_POST['conquista_gatilho'] ?? 'primeira_aula';
+            $gatilho_valor = (int)($_POST['conquista_gatilho_valor'] ?? 0);
+            $modulo_id = (int)($_POST['conquista_modulo_id'] ?? 0) ?: null;
+            $badge_url = trim($_POST['conquista_badge_url'] ?? '');
+            if (!empty($titulo)) {
+                try {
+                    $stmt = $pdo->prepare("INSERT INTO curso_conquistas (curso_id, titulo, descricao, gatilho_tipo, gatilho_valor, modulo_id, badge_url, ordem) VALUES (?, ?, ?, ?, ?, ?, ?, 0)");
+                    $stmt->execute([$curso_id, $titulo, $descricao ?: null, $gatilho_tipo, $gatilho_valor ?: null, $modulo_id, $badge_url ?: null]);
+                    $mensagem = "<div class='bg-green-900/20 border border-green-500 text-green-300 px-4 py-3 rounded' role='alert'>Conquista criada!</div>";
+                } catch (PDOException $e) {
+                    $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>Erro ao criar conquista.</div>";
+                }
+            } else {
+                $mensagem = "<div class='bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded' role='alert'>Título da conquista é obrigatório.</div>";
+            }
+        }
+        if (isset($_POST['excluir_conquista'])) {
+            $should_redirect = true;
+            $conquista_id = (int)($_POST['conquista_id'] ?? 0);
+            if ($conquista_id > 0) {
+                $stmt = $pdo->prepare("DELETE FROM curso_conquistas WHERE id = ? AND curso_id = ?");
+                $stmt->execute([$conquista_id, $curso_id]);
+                $mensagem = "<div class='bg-green-900/20 border border-green-500 text-green-300 px-4 py-3 rounded' role='alert'>Conquista excluída!</div>";
+            }
+        }
+
         // Adicionar Módulo
         if (isset($_POST['adicionar_modulo'])) {
             $should_redirect = true;
@@ -933,6 +980,148 @@ try {
         </form>
         <?php else: ?>
         <p class="text-yellow-400 text-sm">Execute a migration <code class="bg-dark-elevated px-1 rounded">migrations/certificado_curso.sql</code> para ativar certificados.</p>
+        <?php endif; ?>
+    </div>
+
+    <!-- Gamificação -->
+    <?php
+    $has_gamificacao = false;
+    $gamificacao_habilitado = 0;
+    $conquistas_lista = [];
+    try {
+        $chk_g = $pdo->query("SHOW TABLES LIKE 'curso_gamificacao'");
+        if ($chk_g && $chk_g->rowCount() > 0) {
+            $has_gamificacao = true;
+            $stmt_g = $pdo->prepare("SELECT habilitado FROM curso_gamificacao WHERE curso_id = ?");
+            $stmt_g->execute([$curso_id]);
+            $g = $stmt_g->fetch(PDO::FETCH_ASSOC);
+            $gamificacao_habilitado = $g ? (int)$g['habilitado'] : 0;
+            $stmt_c = $pdo->prepare("SELECT id, titulo, descricao, gatilho_tipo, gatilho_valor, modulo_id, badge_url, ordem FROM curso_conquistas WHERE curso_id = ? ORDER BY ordem ASC, id ASC");
+            $stmt_c->execute([$curso_id]);
+            $conquistas_lista = $stmt_c->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (PDOException $e) {}
+    $gatilhos_opcoes = [
+        'primeira_aula' => 'Primeira aula concluída',
+        'aulas_concluidas' => 'N aulas concluídas',
+        'modulo_completo' => 'Módulo 100% concluído',
+        'progresso_50' => '50% do curso',
+        'progresso_75' => '75% do curso',
+        'progresso_100' => '100% do curso',
+        'certificado' => 'Certificado liberado',
+        'primeiro_comentario' => 'Primeiro comentário em aula'
+    ];
+    $stmt_mods = $pdo->prepare("SELECT id, titulo FROM modulos WHERE curso_id = ? ORDER BY ordem ASC, id ASC");
+    $stmt_mods->execute([$curso_id]);
+    $modulos_select = $stmt_mods->fetchAll(PDO::FETCH_ASSOC);
+    ?>
+    <div class="bg-dark-card p-6 rounded-lg shadow-md mb-8 border border-[#32e768]">
+        <h2 class="text-2xl font-semibold mb-2 text-white flex items-center gap-2">
+            <i data-lucide="trophy" class="w-7 h-7 text-[#32e768]"></i>
+            Gamificação
+        </h2>
+        <p class="text-gray-400 text-sm mb-4">Configure conquistas (badges) que os alunos desbloqueiam ao atingir metas. Personalize título, descrição (exibida no modal de celebração) e badge.</p>
+        <?php if ($has_gamificacao): ?>
+        <form action="/index?pagina=gerenciar_curso&produto_id=<?php echo $produto_id; ?>" method="post" class="mb-6">
+            <div class="flex items-center justify-between py-2">
+                <label for="gamificacao_habilitado" class="text-gray-300 font-medium">Habilitar gamificação</label>
+                <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" name="gamificacao_habilitado" id="gamificacao_habilitado" value="1" class="sr-only peer" <?php echo $gamificacao_habilitado ? 'checked' : ''; ?>>
+                    <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#32e768]"></div>
+                </label>
+            </div>
+            <button type="submit" name="salvar_gamificacao_config" class="bg-[#32e768] text-white font-bold py-2 px-5 rounded-lg hover:bg-[#28d15e] transition">Salvar</button>
+        </form>
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-semibold text-white">Conquistas</h3>
+            <button type="button" id="btn-add-conquista" class="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg transition flex items-center gap-2">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                Adicionar conquista
+            </button>
+        </div>
+        <div id="conquistas-lista" class="space-y-4">
+            <?php foreach ($conquistas_lista as $cq): ?>
+            <div class="flex items-center justify-between p-4 bg-dark-elevated rounded-lg border border-dark-border">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">🏆</span>
+                    <div>
+                        <p class="font-semibold text-white"><?php echo htmlspecialchars($cq['titulo']); ?></p>
+                        <p class="text-sm text-gray-400"><?php echo htmlspecialchars($gatilhos_opcoes[$cq['gatilho_tipo']] ?? $cq['gatilho_tipo']); ?><?php if ($cq['gatilho_tipo'] === 'aulas_concluidas' && $cq['gatilho_valor']) echo ' (' . $cq['gatilho_valor'] . ')'; ?><?php if ($cq['gatilho_tipo'] === 'modulo_completo' && $cq['modulo_id']) { $m = array_filter($modulos_select, fn($x) => $x['id'] == $cq['modulo_id']); echo ' - ' . (reset($m)['titulo'] ?? 'Módulo'); } ?></p>
+                    </div>
+                </div>
+                <form action="/index?pagina=gerenciar_curso&produto_id=<?php echo $produto_id; ?>" method="post" class="inline" onsubmit="return confirm('Excluir esta conquista?');">
+                    <input type="hidden" name="conquista_id" value="<?php echo $cq['id']; ?>">
+                    <button type="submit" name="excluir_conquista" class="text-red-400 hover:text-red-300 text-sm">Excluir</button>
+                </form>
+            </div>
+            <?php endforeach; ?>
+            <?php if (empty($conquistas_lista)): ?>
+            <p class="text-gray-500 text-sm">Nenhuma conquista configurada. Clique em "Adicionar conquista" para criar.</p>
+            <?php endif; ?>
+        </div>
+        <div id="modal-nova-conquista" class="fixed inset-0 z-50 hidden">
+            <div class="absolute inset-0 bg-black/70" onclick="fecharModalConquista()"></div>
+            <div class="relative flex items-center justify-center min-h-screen p-4">
+                <div class="bg-dark-card rounded-xl p-8 max-w-md w-full border border-dark-border">
+                    <h3 class="text-xl font-bold text-white mb-4">Nova conquista</h3>
+                    <form action="/index?pagina=gerenciar_curso&produto_id=<?php echo $produto_id; ?>" method="post" class="space-y-4">
+                        <div>
+                            <label class="block text-gray-300 font-medium mb-1">Título</label>
+                            <input type="text" name="conquista_titulo" required placeholder="Ex: Primeira aula" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white">
+                        </div>
+                        <div>
+                            <label class="block text-gray-300 font-medium mb-1">Gatilho</label>
+                            <select name="conquista_gatilho" id="conquista_gatilho" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white">
+                                <?php foreach ($gatilhos_opcoes as $k => $v): ?>
+                                <option value="<?php echo htmlspecialchars($k); ?>"><?php echo htmlspecialchars($v); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div id="wrap-gatilho-valor" class="hidden">
+                            <label class="block text-gray-300 font-medium mb-1">Quantidade de aulas</label>
+                            <input type="number" name="conquista_gatilho_valor" min="1" placeholder="Ex: 5" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white">
+                        </div>
+                        <div id="wrap-modulo" class="hidden">
+                            <label class="block text-gray-300 font-medium mb-1">Módulo</label>
+                            <select name="conquista_modulo_id" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white">
+                                <option value="">Selecione</option>
+                                <?php foreach ($modulos_select as $m): ?>
+                                <option value="<?php echo $m['id']; ?>"><?php echo htmlspecialchars($m['titulo']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-gray-300 font-medium mb-1">Descrição (opcional)</label>
+                            <textarea name="conquista_descricao" rows="2" placeholder="Exibida no modal de celebração" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-gray-300 font-medium mb-1">Badge (URL ou deixe vazio para padrão)</label>
+                            <input type="text" name="conquista_badge_url" placeholder="Ex: /uploads/badges/trophy.png" class="w-full px-4 py-2 bg-dark-elevated border border-dark-border rounded text-white">
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="submit" name="criar_conquista" class="bg-[#32e768] text-white font-bold py-2 px-5 rounded-lg hover:bg-[#28d15e] transition">Criar conquista</button>
+                            <button type="button" onclick="fecharModalConquista()" class="bg-gray-600 text-white font-bold py-2 px-5 rounded-lg hover:bg-gray-500 transition">Cancelar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <script>
+        document.getElementById('btn-add-conquista')?.addEventListener('click', function() {
+            document.getElementById('modal-nova-conquista').classList.remove('hidden');
+        });
+        function fecharModalConquista() {
+            document.getElementById('modal-nova-conquista').classList.add('hidden');
+        }
+        document.getElementById('conquista_gatilho')?.addEventListener('change', function() {
+            var v = this.value;
+            document.getElementById('wrap-gatilho-valor').classList.toggle('hidden', v !== 'aulas_concluidas');
+            document.getElementById('wrap-modulo').classList.toggle('hidden', v !== 'modulo_completo');
+        });
+        document.getElementById('conquista_gatilho')?.dispatchEvent(new Event('change'));
+        </script>
+        <?php else: ?>
+        <p class="text-yellow-400 text-sm">Execute a migration <code class="bg-dark-elevated px-1 rounded">migrations/gamificacao.sql</code> para ativar gamificação.</p>
         <?php endif; ?>
     </div>
 
