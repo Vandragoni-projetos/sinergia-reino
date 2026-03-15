@@ -149,12 +149,19 @@
         <div class="bg-dark-elevated p-6 rounded-lg border border-dark-border space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                    <label for="product_type" class="block text-gray-300 text-sm font-semibold mb-2">Tipo/Categoria</label>
+                    <div class="flex items-center justify-between mb-2">
+                        <label for="product_type" class="text-gray-300 text-sm font-semibold">Tipo/Categoria</label>
+                        <a href="/index?pagina=categorias_produto" class="text-xs text-[#32e768] hover:text-[#28d15e] hover:underline flex items-center gap-1">
+                            <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+                            Gerenciar categorias
+                        </a>
+                    </div>
                     <select id="product_type" name="product_type" class="form-input cursor-pointer">
                         <option value="">— Nenhum —</option>
                         <?php
                         $pt_current = $produto['product_type'] ?? '';
-                        foreach (getProductTypeOptions() as $group => $items):
+                        $usuario_id_pt = $usuario_id ?? $_SESSION['id'] ?? 0;
+                        foreach (getProductTypeOptionsForUser($usuario_id_pt) as $group => $items):
                             ?><optgroup label="— <?php echo htmlspecialchars($group); ?> —"><?php
                             foreach ($items as $value => $label):
                                 ?><option value="<?php echo htmlspecialchars($value); ?>" <?php echo $pt_current === $value ? 'selected' : ''; ?>><?php echo htmlspecialchars($label); ?></option><?php
