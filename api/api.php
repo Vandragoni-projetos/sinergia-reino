@@ -1755,7 +1755,7 @@ try {
             elseif ($status_filter === 'approved') $status_where = " AND ac.status = 'approved'";
             elseif ($status_filter === 'rejected') $status_where = " AND ac.status = 'rejected'";
             $stmt = $pdo->prepare("
-                SELECT ac.id, ac.aula_id, ac.aluno_email, ac.nome_aluno, ac.texto, ac.status, ac.created_at,
+                SELECT ac.id, ac.aula_id, ac.aluno_email, ac.nome_aluno, ac.texto, ac.status, ac.resposta_infoprodutor, ac.created_at,
                        a.titulo as aula_titulo, m.titulo as modulo_titulo
                 FROM aula_comentarios ac
                 INNER JOIN aulas a ON ac.aula_id = a.id
@@ -1834,6 +1834,46 @@ try {
         } catch (PDOException $e) {
             ob_clean();
             echo json_encode(['success' => false, 'error' => 'Erro ao rejeitar.']);
+        }
+        exit;
+    }
+
+    if ($action == 'resposta_comentario' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true);
+        $id = (int)($input['id'] ?? 0);
+        $resposta = trim($input['resposta'] ?? '');
+        if ($id <= 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'ID inválido.']);
+            exit;
+        }
+        if (mb_strlen($resposta) > 2000) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Resposta deve ter no máximo 2000 caracteres.']);
+            exit;
+        }
+        try {
+            $chk = $pdo->query("SHOW COLUMNS FROM aula_comentarios LIKE 'resposta_infoprodutor'");
+            if (!$chk || $chk->rowCount() === 0) {
+                ob_clean();
+                echo json_encode(['success' => false, 'error' => 'Coluna resposta não existe. Execute a migration.']);
+                exit;
+            }
+            $stmt = $pdo->prepare("
+                UPDATE aula_comentarios ac
+                INNER JOIN aulas a ON ac.aula_id = a.id
+                INNER JOIN modulos m ON a.modulo_id = m.id
+                INNER JOIN cursos c ON m.curso_id = c.id
+                INNER JOIN produtos p ON c.produto_id = p.id
+                SET ac.resposta_infoprodutor = ?
+                WHERE ac.id = ? AND p.usuario_id = ?
+            ");
+            $stmt->execute([$resposta ?: null, $id, $usuario_id_logado]);
+            ob_clean();
+            echo json_encode(['success' => $stmt->rowCount() > 0, 'message' => 'Resposta salva.']);
+        } catch (PDOException $e) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'Erro ao salvar resposta.']);
         }
         exit;
     }
