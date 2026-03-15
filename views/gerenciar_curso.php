@@ -1726,8 +1726,34 @@ document.addEventListener('DOMContentLoaded', function() {
                             const id = parseInt(btn.dataset.id);
                             const textarea = comentariosListContainer.querySelector(`.resposta-textarea[data-id="${id}"]`);
                             const resposta = textarea ? textarea.value.trim() : '';
-                            fetch('/api/api?action=resposta_comentario', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, resposta }) })
-                                .then(r => r.json()).then(d => { if (d.success) loadComentarios(); else if (d.error) alert(d.error); });
+                            const origText = btn.textContent;
+                            btn.disabled = true;
+                            btn.textContent = 'Salvando...';
+                            fetch('/api/api?action=resposta_comentario', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ id, resposta }),
+                                credentials: 'same-origin'
+                            })
+                                .then(r => {
+                                    if (!r.ok) throw new Error('Erro na requisição: ' + r.status);
+                                    return r.json();
+                                })
+                                .then(d => {
+                                    if (d.success) {
+                                        loadComentarios();
+                                    } else {
+                                        alert(d.error || d.message || 'Não foi possível salvar a resposta.');
+                                    }
+                                })
+                                .catch(err => {
+                                    console.error('Erro ao salvar resposta:', err);
+                                    alert('Erro de conexão. Verifique sua internet e tente novamente.');
+                                })
+                                .finally(() => {
+                                    btn.disabled = false;
+                                    btn.textContent = origText;
+                                });
                         });
                     });
                     if (typeof lucide !== 'undefined') lucide.createIcons();
