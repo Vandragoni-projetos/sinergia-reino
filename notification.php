@@ -748,6 +748,25 @@ try {
                         
                         create_notification($main_sale['usuario_id'], ($db_status == 'approved' ? 'Compra Aprovada' : 'Atualização'), $msg, $webhook_payload['valor_total_compra'], $main_sale['id'], $main_sale['metodo_pagamento']);
 
+                        // Revogar acesso automaticamente em reembolso ou chargeback (apenas acessos vindos de compra, não manuais)
+                        if (in_array($db_status, ['refunded', 'charged_back'])) {
+                            foreach ($all_sales as $sale_item) {
+                                if (($sale_item['tipo_entrega'] ?? '') !== 'area_membros') continue;
+                                $aluno_email = trim($sale_item['comprador_email'] ?? '');
+                                $produto_id = (int)($sale_item['produto_id'] ?? 0);
+                                if (empty($aluno_email) || $produto_id <= 0) continue;
+                                try {
+                                    $stmt_revoke = $pdo->prepare("DELETE FROM alunos_acessos WHERE LOWER(TRIM(aluno_email)) = LOWER(?) AND produto_id = ? AND (criado_manualmente = 0 OR criado_manualmente IS NULL)");
+                                    $stmt_revoke->execute([$aluno_email, $produto_id]);
+                                    if ($stmt_revoke->rowCount() > 0) {
+                                        log_webhook("Acesso revogado automaticamente ({$db_status}): {$aluno_email}, produto {$produto_id}");
+                                    }
+                                } catch (Throwable $e) {
+                                    log_webhook("Erro ao revogar acesso ({$db_status}): " . $e->getMessage());
+                                }
+                            }
+                        }
+
                         // Dispara mensagens via Evolution API (WhatsApp)
                         if (file_exists(__DIR__ . '/helpers/evolution_helper.php')) {
                             require_once __DIR__ . '/helpers/evolution_helper.php';
