@@ -2,6 +2,16 @@
 require __DIR__ . '/config/config.php';
 include __DIR__ . '/config/load_settings.php';
 
+// i18n: ?lang=es|fr|en|pt (padrão pt)
+$checkout_lang = isset($_GET['lang']) ? strtolower(trim($_GET['lang'])) : 'pt';
+$valid_langs = ['pt', 'es', 'fr', 'en'];
+if (!in_array($checkout_lang, $valid_langs, true)) $checkout_lang = 'pt';
+$lang_file = __DIR__ . '/lang/' . $checkout_lang . '.php';
+$fallback_file = __DIR__ . '/lang/pt.php';
+$CHECKOUT_LANG_STRINGS = file_exists($lang_file) ? (require $lang_file) : [];
+$CHECKOUT_LANG_FALLBACK = file_exists($fallback_file) ? (require $fallback_file) : [];
+require_once __DIR__ . '/helpers/i18n_helper.php';
+
 // Se vier payment_id, redireciona para obrigado (não confundir com funnel_main que é o payment_id da compra principal no funil)
 $payment_id = $_GET['payment_id'] ?? null;
 if ($payment_id) {
@@ -65,12 +75,12 @@ try {
         }
     }
     
-    // Labels e cores para o tipo de acesso
+    // Labels e cores para o tipo de acesso (i18n)
     $tipo_acesso_labels = [
-        'vitalicio' => ['label' => 'Acesso Vitalício', 'color' => 'bg-green-100 text-green-700'],
-        'mensal' => ['label' => 'Acesso Mensal', 'color' => 'bg-blue-100 text-blue-700'],
-        'semestral' => ['label' => 'Acesso Semestral', 'color' => 'bg-purple-100 text-purple-700'],
-        'anual' => ['label' => 'Acesso Anual', 'color' => 'bg-yellow-100 text-yellow-700']
+        'vitalicio' => ['label' => checkout_t('access_lifetime'), 'color' => 'bg-green-100 text-green-700'],
+        'mensal' => ['label' => checkout_t('access_monthly'), 'color' => 'bg-blue-100 text-blue-700'],
+        'semestral' => ['label' => checkout_t('access_semiannual'), 'color' => 'bg-purple-100 text-purple-700'],
+        'anual' => ['label' => checkout_t('access_annual'), 'color' => 'bg-yellow-100 text-yellow-700']
     ];
     $tipo_acesso_info = $tipo_acesso_labels[$tipo_acesso] ?? $tipo_acesso_labels['vitalicio'];
     
@@ -347,10 +357,12 @@ function render_order_bumps_section($order_bumps_array) {
         $html .= "<div class='order-bump-wrapper'>";
         $html .= "<input type='checkbox' id='orderbump-checkbox-{$ob_id}' data-product-id='{$ob_id}' data-price='{$ob_price_raw}' data-name='{$ob_name}' class='orderbump-checkbox sr-only'>";
         $html .= "<label for='orderbump-checkbox-{$ob_id}' class='order-bump-block'>"; 
-        $html .= "<div class='offer-badge'>Oferta Especial</div>";
+        $ob_offer = htmlspecialchars(checkout_t('offer_special'));
+        $ob_yes = htmlspecialchars(checkout_t('yes_want_offer'));
+        $html .= "<div class='offer-badge'>{$ob_offer}</div>";
         $html .= "<div class='flex items-start gap-4'><img src='{$ob_image}' class='w-16 h-16 rounded-md object-cover border shadow-sm flex-shrink-0' onerror=\"this.src='https://placehold.co/64x64/e2e8f0/334155?text=Produto'\"/><div class='flex-1'><h4 class='text-lg font-bold text-gray-800'>{$ob_headline}</h4><p class='text-sm text-gray-600 mt-1'>{$ob_description}</p></div></div>";
         $html .= "<hr class='my-3 border-dashed border-gray-300'>";
-        $html .= "<div class='flex justify-between items-center'><div class='flex items-center gap-2'><div class='custom-checkbox flex-shrink-0'><i data-lucide='check' class='checkmark'></i></div><span class='font-semibold text-gray-800 text-sm sm:text-base'>Sim, quero esta oferta!</span></div><p class='font-bold text-green-600 text-lg'>+{$ob_price_formatted}</p></div>";
+        $html .= "<div class='flex justify-between items-center'><div class='flex items-center gap-2'><div class='custom-checkbox flex-shrink-0'><i data-lucide='check' class='checkmark'></i></div><span class='font-semibold text-gray-800 text-sm sm:text-base'>{$ob_yes}</span></div><p class='font-bold text-green-600 text-lg'>+{$ob_price_formatted}</p></div>";
         $html .= "</label></div>";
     }
     $html .= "</div>";
@@ -374,22 +386,23 @@ function render_payment_methods_selector($pix_pushinpay_enabled, $pix_mercadopag
     }
     
     // Cartão de Crédito - prioridade Stripe > PayPal > Pagar.me > Hypercash > Beehive > Efí > Mercado Pago
+    $cc_name = checkout_t('credit_card');
     if ($credit_card_stripe_enabled) {
-        $available_methods[] = ['type' => 'credit_card_stripe', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'stripe'];
+        $available_methods[] = ['type' => 'credit_card_stripe', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'stripe'];
     } elseif ($credit_card_paypal_enabled) {
-        $available_methods[] = ['type' => 'credit_card_paypal', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'paypal'];
+        $available_methods[] = ['type' => 'credit_card_paypal', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'paypal'];
     } elseif ($credit_card_pagarme_enabled) {
-        $available_methods[] = ['type' => 'credit_card_pagarme', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'pagarme'];
+        $available_methods[] = ['type' => 'credit_card_pagarme', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'pagarme'];
     } elseif ($credit_card_hypercash_enabled) {
-        $available_methods[] = ['type' => 'credit_card_hypercash', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'hypercash'];
+        $available_methods[] = ['type' => 'credit_card_hypercash', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'hypercash'];
     } elseif ($credit_card_beehive_enabled) {
-        $available_methods[] = ['type' => 'credit_card_beehive', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'beehive'];
+        $available_methods[] = ['type' => 'credit_card_beehive', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'beehive'];
     } elseif ($credit_card_efi_enabled) {
-        $available_methods[] = ['type' => 'credit_card_efi', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'efi'];
+        $available_methods[] = ['type' => 'credit_card_efi', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'efi'];
     } elseif ($credit_card_mercadopago_enabled) {
-        $available_methods[] = ['type' => 'credit_card', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'mercadopago'];
+        $available_methods[] = ['type' => 'credit_card', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'mercadopago'];
     } elseif ($credit_card_enabled) {
-        $available_methods[] = ['type' => 'credit_card', 'name' => 'Cartão de Crédito', 'icon' => 'credit-card', 'gateway' => 'mercadopago'];
+        $available_methods[] = ['type' => 'credit_card', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'mercadopago'];
     }
     
     if ($ticket_enabled) {
@@ -403,7 +416,7 @@ function render_payment_methods_selector($pix_pushinpay_enabled, $pix_mercadopag
     $accentColorEscaped = htmlspecialchars($accentColor, ENT_QUOTES, 'UTF-8');
     
     $html = "<div class='mb-6'>";
-    $html .= "<h3 class='text-lg font-semibold mb-4 text-gray-800 flex items-center'><i data-lucide='wallet' class='w-5 h-5 mr-2'></i>Escolha a forma de pagamento</h3>";
+    $html .= "<h3 class='text-lg font-semibold mb-4 text-gray-800 flex items-center'><i data-lucide='wallet' class='w-5 h-5 mr-2'></i>" . htmlspecialchars(checkout_t('payment_choose')) . "</h3>";
     $html .= "<div class='grid grid-cols-2 lg:grid-cols-3 gap-4' id='payment-methods-selector'>";
     
     foreach ($available_methods as $method) {
@@ -569,7 +582,7 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         
         $html .= "<div class='payment-method-container hidden' data-method-type='pix_mercadopago'>";
         $html .= "<div id='payment_container_wrapper_pix_mp' class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm' data-mp-config='{$json_config}'>";
-        $html .= "<div id='loading_spinner_pix_mp' class='flex flex-col items-center justify-center py-12 text-gray-500'><svg class='animate-spin h-8 w-8' style='color: {$accentColor};' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z'></path></svg><p class='mt-4 font-medium'>Carregando pagamento seguro...</p></div>";
+        $html .= "<div id='loading_spinner_pix_mp' class='flex flex-col items-center justify-center py-12 text-gray-500'><svg class='animate-spin h-8 w-8' style='color: {$accentColor};' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z'></path></svg><p class='mt-4 font-medium'>" . htmlspecialchars(checkout_t('loading_payment')) . "</p></div>";
         $html .= "<div id='paymentBrick_container_pix_mp'></div>";
         $html .= "</div>";
         $html .= "</div>";
@@ -636,7 +649,7 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         
         $html .= "<div class='payment-method-container hidden' data-method-type='credit_card'>";
         $html .= "<div id='payment_container_wrapper_credit' class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm' data-mp-config='{$json_config}'>";
-        $html .= "<div id='loading_spinner_credit' class='flex flex-col items-center justify-center py-12 text-gray-500'><svg class='animate-spin h-8 w-8' style='color: {$accentColor};' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z'></path></svg><p class='mt-4 font-medium'>Carregando pagamento seguro...</p></div>";
+        $html .= "<div id='loading_spinner_credit' class='flex flex-col items-center justify-center py-12 text-gray-500'><svg class='animate-spin h-8 w-8' style='color: {$accentColor};' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z'></path></svg><p class='mt-4 font-medium'>" . htmlspecialchars(checkout_t('loading_payment')) . "</p></div>";
         $html .= "<div id='paymentBrick_container_credit'></div>";
         $html .= "</div>";
         $html .= "</div>";
@@ -752,7 +765,7 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         
         $html .= "<div class='payment-method-container hidden' data-method-type='ticket'>";
         $html .= "<div id='payment_container_wrapper_ticket' class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm' data-mp-config='{$json_config}'>";
-        $html .= "<div id='loading_spinner_ticket' class='flex flex-col items-center justify-center py-12 text-gray-500'><svg class='animate-spin h-8 w-8' style='color: {$accentColor};' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z'></path></svg><p class='mt-4 font-medium'>Carregando pagamento seguro...</p></div>";
+        $html .= "<div id='loading_spinner_ticket' class='flex flex-col items-center justify-center py-12 text-gray-500'><svg class='animate-spin h-8 w-8' style='color: {$accentColor};' xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'><circle class='opacity-25' cx='12' cy='12' r='10' stroke='currentColor' stroke-width='4'></circle><path class='opacity-75' fill='currentColor' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z'></path></svg><p class='mt-4 font-medium'>" . htmlspecialchars(checkout_t('loading_payment')) . "</p></div>";
         $html .= "<div id='paymentBrick_container_ticket'></div>";
         $html .= "</div>";
         $html .= "</div>";
@@ -1007,21 +1020,21 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     </section>
                     <hr class="border-gray-200">
                     <section data-id="customer_info">
-                        <div class="flex items-center gap-2.5 mb-4"><i data-lucide="clipboard-list" class="w-6 h-6 text-gray-700"></i><h2 class="text-xl font-semibold text-gray-800">Seus dados</h2></div>
+                        <div class="flex items-center gap-2.5 mb-4"><i data-lucide="clipboard-list" class="w-6 h-6 text-gray-700"></i><h2 class="text-xl font-semibold text-gray-800"><?php echo htmlspecialchars(checkout_t('section_your_data')); ?></h2></div>
                         <div class="space-y-4">
-                            <div><label for="name" class="block text-sm font-medium text-gray-700">Qual é o seu nome completo?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="user" class="w-5 h-5 text-gray-400"></i></div><input type="text" id="name" name="name" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="Nome da Silva" value="<?php echo htmlspecialchars($prefill_name); ?>"></div></div>
-                            <div><label for="email" class="block text-sm font-medium text-gray-700">Qual é o seu e-mail?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="mail" class="w-5 h-5 text-gray-400"></i></div><input type="email" id="email" name="email" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="Digite o e-mail que receberá o produto" value="<?php echo htmlspecialchars($prefill_email); ?>"></div></div>
+                            <div><label for="name" class="block text-sm font-medium text-gray-700"><?php echo htmlspecialchars(checkout_t('label_name')); ?></label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="user" class="w-5 h-5 text-gray-400"></i></div><input type="text" id="name" name="name" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="<?php echo htmlspecialchars(checkout_t('placeholder_name')); ?>" value="<?php echo htmlspecialchars($prefill_name); ?>"></div></div>
+                            <div><label for="email" class="block text-sm font-medium text-gray-700"><?php echo htmlspecialchars(checkout_t('label_email')); ?></label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="mail" class="w-5 h-5 text-gray-400"></i></div><input type="email" id="email" name="email" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="<?php echo htmlspecialchars(checkout_t('placeholder_email')); ?>" value="<?php echo htmlspecialchars($prefill_email); ?>"></div></div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <?php if (($customer_fields_config['enable_phone'] ?? true)): ?>
-                                <div><label for="phone" class="block text-sm font-medium text-gray-700">Qual é o número do seu celular?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="smartphone" class="w-5 h-5 text-gray-400"></i></div><input type="tel" id="phone" name="phone" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="(11) 99999-9999" value="<?php echo htmlspecialchars($prefill_phone); ?>"></div></div>
+                                <div><label for="phone" class="block text-sm font-medium text-gray-700"><?php echo htmlspecialchars(checkout_t('label_phone')); ?></label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="smartphone" class="w-5 h-5 text-gray-400"></i></div><input type="tel" id="phone" name="phone" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="<?php echo htmlspecialchars(checkout_t('placeholder_phone')); ?>" value="<?php echo htmlspecialchars($prefill_phone); ?>"></div></div>
                                 <?php else: ?><input type="hidden" id="phone" name="phone" value="<?php echo htmlspecialchars($prefill_phone !== '' ? $prefill_phone : '(00) 00000-0000'); ?>"><?php endif; ?>
                                 <?php if (($customer_fields_config['enable_cpf'] ?? true)): ?>
-                                <div><label for="cpf" class="block text-sm font-medium text-gray-700">Qual é o seu CPF/CNPJ?</label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="file-text" class="w-5 h-5 text-gray-400"></i></div><input type="text" id="cpf" name="cpf" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="Preencha seu CPF/CNPJ" value="<?php echo htmlspecialchars($prefill_cpf); ?>"></div></div>
+                                <div><label for="cpf" class="block text-sm font-medium text-gray-700"><?php echo htmlspecialchars(checkout_t('label_cpf')); ?></label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="file-text" class="w-5 h-5 text-gray-400"></i></div><input type="text" id="cpf" name="cpf" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="<?php echo htmlspecialchars(checkout_t('placeholder_cpf')); ?>" value="<?php echo htmlspecialchars($prefill_cpf); ?>"></div></div>
                                 <?php else: ?><input type="hidden" id="cpf" name="cpf" value="000.000.000-00"><?php endif; ?>
                             </div>
                             <div class="text-left">
                                 <button type="button" onclick="openWhyDataModal()" class="text-sm text-gray-500 hover:text-gray-700 transition-colors">
-                                    Porque pedimos esse dado?
+                                    <?php echo htmlspecialchars(checkout_t('why_data_link')); ?>
                                 </button>
                             </div>
                         </div>
@@ -1033,10 +1046,10 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     <?php if (!$is_free_product): ?>
                     <hr class="border-gray-200">
                     <section data-id="coupon" class="space-y-2">
-                        <label class="block text-sm font-medium text-gray-700">Cupom de desconto</label>
+                        <label class="block text-sm font-medium text-gray-700"><?php echo htmlspecialchars(checkout_t('label_coupon')); ?></label>
                         <div class="flex gap-2">
-                            <input type="text" id="coupon-input" placeholder="Digite o código" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 checkout-input">
-                            <button type="button" id="btn-aplicar-cupom" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-medium rounded-lg transition">Aplicar</button>
+                            <input type="text" id="coupon-input" placeholder="<?php echo htmlspecialchars(checkout_t('placeholder_coupon')); ?>" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 checkout-input">
+                            <button type="button" id="btn-aplicar-cupom" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 text-sm font-medium rounded-lg transition"><?php echo htmlspecialchars(checkout_t('btn_apply_coupon')); ?></button>
                         </div>
                         <div id="coupon-message" class="text-xs hidden"></div>
                     </section>
@@ -1059,7 +1072,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
             <aside class="w-full lg:w-1/3 hidden lg:block">
                 <div class="sticky top-6 space-y-6">
                     <div class="bg-white rounded-lg shadow-lg p-6 space-y-4" data-id="final_summary">
-                        <h2 class="text-xl font-semibold text-gray-800">Resumo da compra</h2>
+                        <h2 class="text-xl font-semibold text-gray-800"><?php echo htmlspecialchars(checkout_t('summary_title')); ?></h2>
                         <div class="space-y-2">
                             <div class="flex justify-between text-gray-700">
                                 <span><?php echo htmlspecialchars($main_name); ?></span>
@@ -1072,7 +1085,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                 <?php if ($is_free_product): ?>
                                 <span class="bg-green-100 text-green-700 text-xs font-bold uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1">
                                     <i data-lucide="gift" class="w-3 h-3"></i>
-                                    Produto Grátis
+                                    <?php echo htmlspecialchars(checkout_t('free_product')); ?>
                                 </span>
                                 <?php else: ?>
                                 <span class="<?php echo $tipo_acesso_info['color']; ?> text-xs font-bold uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1">
@@ -1091,7 +1104,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         </div>
                         <?php if (!$is_free_product): ?>
                         <div id="coupon-discount-row" class="flex justify-between items-center" style="display: none;">
-                            <span class="bg-amber-100 text-amber-700 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1"><i data-lucide="ticket" class="w-3 h-3"></i>Cupom</span>
+                            <span class="bg-amber-100 text-amber-700 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1"><i data-lucide="ticket" class="w-3 h-3"></i><?php echo htmlspecialchars(checkout_t('coupon_label')); ?></span>
                             <span id="coupon-discount-value" class="font-medium text-amber-600">- R$ 0,00</span>
                         </div>
                         <?php endif; ?>
@@ -1099,14 +1112,14 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         <div id="pix-discount-row" class="flex justify-between items-center" style="display: none;">
                             <span class="bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
                                 <i data-lucide="percent" class="w-3 h-3"></i>
-                                Desconto Pix
+                                <?php echo htmlspecialchars(checkout_t('discount_pix')); ?>
                             </span>
                             <span class="pix-discount-value font-medium text-green-600">- R$ 0,00</span>
                         </div>
                         <?php endif; ?>
                         <hr class="border-gray-200">
-                        <div class="flex justify-between items-center"><span class="text-lg font-bold text-gray-800">Total a pagar</span><span id="final-total-price" class="text-2xl font-bold text-[#348535]" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span></div>
-                        <div class="text-center text-gray-500 text-sm mt-4"><i data-lucide="lock" class="w-4 h-4 inline-block -mt-1"></i> Compra segura</div>
+                        <div class="flex justify-between items-center"><span class="text-lg font-bold text-gray-800"><?php echo htmlspecialchars(checkout_t('total_pay')); ?></span><span id="final-total-price" class="text-2xl font-bold text-[#348535]" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span></div>
+                        <div class="text-center text-gray-500 text-sm mt-4"><i data-lucide="lock" class="w-4 h-4 inline-block -mt-1"></i> <?php echo htmlspecialchars(checkout_t('secure_purchase')); ?></div>
                     </div>
                     <?php if (!empty($sideBanners)): ?>
                     <div class="space-y-4"><?php foreach ($sideBanners as $side_banner_url): ?><img src="<?php echo htmlspecialchars($side_banner_url); ?>" alt="Banner Lateral" class="w-full h-auto object-cover rounded-lg shadow-md"><?php endforeach; ?></div>
@@ -1121,20 +1134,20 @@ function render_sales_notification($config, $produto_nome_fallback) {
     <footer id="mobile-footer" class="lg:hidden fixed bottom-0 left-0 right-0 bg-white shadow-lg p-4 border-t border-gray-200">
         <div id="mobile-summary-items" class="mb-2 text-sm text-gray-700 space-y-1 max-h-20 overflow-y-auto pr-2"></div>
         <div id="coupon-discount-row-mobile" class="flex justify-between items-center mb-2" style="display: none;">
-            <span class="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1"><i data-lucide="ticket" class="w-3 h-3"></i>Cupom</span>
+            <span class="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1"><i data-lucide="ticket" class="w-3 h-3"></i><?php echo htmlspecialchars(checkout_t('coupon_label')); ?></span>
             <span id="coupon-discount-value-mobile" class="font-medium text-amber-600 text-sm">- R$ 0,00</span>
         </div>
         <?php if ($pix_discount_enabled && $pix_discount_value > 0): ?>
         <div id="pix-discount-row-mobile" class="flex justify-between items-center mb-2" style="display: none;">
             <span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
                 <i data-lucide="percent" class="w-3 h-3"></i>
-                Desconto Pix
+                <?php echo htmlspecialchars(checkout_t('discount_pix')); ?>
             </span>
             <span class="pix-discount-value font-medium text-green-600 text-sm">- R$ 0,00</span>
         </div>
         <?php endif; ?>
-        <div class="flex justify-between items-center mb-3 pt-2 border-t"><span class="text-lg font-bold text-gray-800">Total a pagar</span><span id="final-total-price-mobile" class="text-2xl font-bold text-[#348535]" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span></div>
-        <p class="text-center text-xs text-gray-500 flex items-center justify-center space-x-1"><i data-lucide="lock" class="w-3 h-3"></i><span>Compra segura processada pela <?php echo strtoupper(htmlspecialchars($nome_plataforma)); ?></span></p>
+        <div class="flex justify-between items-center mb-3 pt-2 border-t"><span class="text-lg font-bold text-gray-800"><?php echo htmlspecialchars(checkout_t('total_pay')); ?></span><span id="final-total-price-mobile" class="text-2xl font-bold text-[#348535]" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span></div>
+        <p class="text-center text-xs text-gray-500 flex items-center justify-center space-x-1"><i data-lucide="lock" class="w-3 h-3"></i><span><?php echo htmlspecialchars(checkout_t('footer_secure')); ?> <?php echo strtoupper(htmlspecialchars($nome_plataforma)); ?></span></p>
     </footer>
     <div id="mobile-footer-spacer" class="lg:hidden" style="height: 128px;"></div>
 
@@ -1144,14 +1157,14 @@ function render_sales_notification($config, $produto_nome_fallback) {
     <div id="why-data-modal-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center p-4 hidden opacity-0 transition-opacity duration-300">
         <div id="why-data-modal-content" class="bg-white rounded-xl shadow-2xl w-full max-w-sm transform scale-95 opacity-0 transition-all duration-300">
             <div class="p-6">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">Sobre CPF/CNPJ</h2>
+                <h2 class="text-xl font-bold text-gray-800 mb-4"><?php echo htmlspecialchars(checkout_t('modal_why_cpf_title')); ?></h2>
                 <p class="text-gray-600 text-sm leading-relaxed">
-                    Esse dado é necessário para garantir a segurança da sua compra e cadastro em nossa plataforma, essa informação também pode ser usada para emissão de Nota Fiscal.
+                    <?php echo htmlspecialchars(checkout_t('modal_why_cpf_text')); ?>
                 </p>
             </div>
             <div class="px-6 pb-6">
                 <button type="button" onclick="closeWhyDataModal()" class="w-full text-white font-semibold py-3 rounded-lg transition-colors" style="background-color: #2DD05E;">
-                    OK
+                    <?php echo htmlspecialchars(checkout_t('modal_ok')); ?>
                 </button>
             </div>
         </div>
@@ -1162,30 +1175,30 @@ function render_sales_notification($config, $produto_nome_fallback) {
         <div id="pix-modal-content" class="bg-white rounded-xl shadow-2xl w-full max-w-md transform scale-95 opacity-0 my-4 max-h-[90vh] overflow-y-auto">
             <div id="pix-waiting-state" class="p-4 sm:p-6 text-center">
                 <img src="<?php echo htmlspecialchars($logo_checkout_url); ?>" alt="Logo" class="h-8 sm:h-10 mx-auto mb-4">
-                <h2 class="text-lg sm:text-xl font-bold text-gray-800 mb-2">Escaneie para pagar com PIX</h2>
-                <p class="text-xs sm:text-sm text-gray-600 mb-4">Abra o app do seu banco e aponte a câmera para o QR Code.</p>
+                <h2 class="text-lg sm:text-xl font-bold text-gray-800 mb-2"><?php echo htmlspecialchars(checkout_t('pix_scan_title')); ?></h2>
+                <p class="text-xs sm:text-sm text-gray-600 mb-4"><?php echo htmlspecialchars(checkout_t('pix_scan_desc')); ?></p>
                 <div class="w-full max-w-[220px] sm:max-w-[260px] mx-auto mb-4">
                     <div class="aspect-square p-1.5 sm:p-2 bg-white border-4 rounded-lg shadow-lg" style="border-color: <?php echo htmlspecialchars($accentColor); ?>;">
                         <img id="pix-qr-code-img" src="" alt="PIX QR Code" class="w-full h-full object-contain rounded-sm" style="image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges; filter: none;">
                     </div>
                 </div>
-                <p class="text-center text-xs sm:text-sm text-gray-600 mb-2">Ou use o PIX Copia e Cola:</p>
+                <p class="text-center text-xs sm:text-sm text-gray-600 mb-2"><?php echo htmlspecialchars(checkout_t('pix_copy_paste')); ?></p>
                 <div class="relative max-w-sm mx-auto mb-4">
                     <input type="text" id="pix-code-input" readonly class="w-full bg-gray-100 p-2.5 sm:p-3 rounded-lg text-xs sm:text-sm text-gray-800 pr-16 sm:pr-20 border border-gray-300">
-                    <button id="copy-pix-code-btn" class="absolute right-1 top-1/2 -translate-y-1/2 text-white px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-md text-xs sm:text-sm font-semibold transition-colors" style="background-color: <?php echo htmlspecialchars($accentColor); ?>;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">Copiar</button>
+                    <button id="copy-pix-code-btn" class="absolute right-1 top-1/2 -translate-y-1/2 text-white px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-md text-xs sm:text-sm font-semibold transition-colors" style="background-color: <?php echo htmlspecialchars($accentColor); ?>;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'"><?php echo htmlspecialchars(checkout_t('btn_copy')); ?></button>
                 </div>
                 <div class="mt-4 flex items-center justify-center gap-2 sm:gap-3 text-gray-500">
                     <svg class="animate-spin h-5 w-5 sm:h-6 sm:w-6" style="color: <?php echo htmlspecialchars($accentColor); ?>;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.96l2-2.669z"></path></svg>
-                    <span class="font-semibold text-sm sm:text-base">Aguardando pagamento...</span>
+                    <span class="font-semibold text-sm sm:text-base"><?php echo htmlspecialchars(checkout_t('pix_waiting')); ?></span>
                 </div>
             </div>
             <div id="pix-approved-state" class="hidden p-4 sm:p-6 text-center">
                  <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center mx-auto mb-4" style="background-color: <?php echo htmlspecialchars($accentColor); ?>20;"><i data-lucide="check" class="w-10 h-10 sm:w-12 sm:h-12" style="color: <?php echo htmlspecialchars($accentColor); ?>;"></i></div>
-                 <h2 class="text-xl sm:text-2xl font-bold text-gray-800 mb-2">Pagamento Aprovado!</h2>
-                 <p class="text-sm sm:text-base text-gray-600">Tudo certo! Você será redirecionado em instantes.</p>
+                 <h2 class="text-xl sm:text-2xl font-bold text-gray-800 mb-2"><?php echo htmlspecialchars(checkout_t('pix_approved_title')); ?></h2>
+                 <p class="text-sm sm:text-base text-gray-600"><?php echo htmlspecialchars(checkout_t('pix_approved_desc')); ?></p>
             </div>
             <div class="bg-gray-50 p-3 sm:p-4 border-t border-gray-200 rounded-b-xl text-center">
-                <p class="text-xs text-gray-600">Este pagamento será processado para <strong class="font-semibold"><?php echo htmlspecialchars($vendedor_nome); ?></strong>.</p>
+                <p class="text-xs text-gray-600"><?php echo htmlspecialchars(checkout_t('payment_processed_for')); ?> <strong class="font-semibold"><?php echo htmlspecialchars($vendedor_nome); ?></strong>.</p>
             </div>
         </div>
     </div>
@@ -1281,7 +1294,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 </div>
                 
                 <h2 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-3">Pagamento em Análise</h2>
-                <p class="text-base sm:text-lg text-gray-600 mb-6">Seu pagamento está sendo processado e será confirmado em breve.</p>
+                <p class="text-base sm:text-lg text-gray-600 mb-6"><?php echo htmlspecialchars(checkout_t('card_success_desc')); ?></p>
                 
                 <!-- Informações -->
                 <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
@@ -1336,7 +1349,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 </div>
                 
                 <h2 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-3">Pagamento Recusado</h2>
-                <p id="rejected-modal-message" class="text-base sm:text-lg text-gray-600 mb-6">Não foi possível processar seu pagamento.</p>
+                <p id="rejected-modal-message" class="text-base sm:text-lg text-gray-600 mb-6"><?php echo htmlspecialchars(checkout_t('rejected_message')); ?></p>
                 
                 <!-- Sugestões -->
                 <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
@@ -1492,6 +1505,20 @@ function render_sales_notification($config, $produto_nome_fallback) {
             // Stripe usa Checkout Session (redirecionamento) - Stripe.js carregado apenas para pix_stripe se necessário
             
             // Configuração de desconto Pix
+            // i18n: labels para JS (validação, erros)
+            window.checkoutLabels = <?php echo json_encode([
+                'alert_fill_cpf' => checkout_t('alert_fill_cpf'),
+                'alert_valid_cpf' => checkout_t('alert_valid_cpf'),
+                'error_rejected' => checkout_t('error_payment_rejected'),
+                'error_cancelled' => checkout_t('error_payment_cancelled'),
+                'error_generic' => checkout_t('error_payment_generic'),
+                'try_other_method' => checkout_t('try_other_method'),
+                'pending' => checkout_t('status_pending'),
+                'in_process' => checkout_t('status_in_process'),
+                'refunded' => checkout_t('status_refunded'),
+                'charged_back' => checkout_t('status_charged_back'),
+            ]); ?>;
+            
             const pixDiscountConfig = {
                 enabled: <?php echo $pix_discount_enabled ? 'true' : 'false'; ?>,
                 type: '<?php echo $pix_discount_type; ?>',
@@ -1836,13 +1863,14 @@ function render_sales_notification($config, $produto_nome_fallback) {
 
             // Função auxiliar para mensagens de erro por status
             function getStatusErrorMessage(status) {
+                const L = window.checkoutLabels || {};
                 const statusMsg = {
-                    'pending': 'Pagamento pendente. Aguarde a confirmação.',
-                    'in_process': 'Pagamento em processamento. Aguarde a confirmação.',
-                    'rejected': 'Pagamento recusado. Verifique os dados do cartão ou tente outro método de pagamento.',
-                    'cancelled': 'Pagamento cancelado. Tente novamente ou escolha outro método de pagamento.',
-                    'refunded': 'Pagamento reembolsado.',
-                    'charged_back': 'Pagamento contestado. Entre em contato com o suporte.'
+                    'pending': L.pending || 'Pagamento pendente. Aguarde a confirmação.',
+                    'in_process': L.in_process || 'Pagamento em processamento. Aguarde a confirmação.',
+                    'rejected': L.error_rejected || 'Pagamento recusado. Verifique os dados do cartão ou tente outro método de pagamento.',
+                    'cancelled': L.error_cancelled || 'Pagamento cancelado. Tente novamente ou escolha outro método de pagamento.',
+                    'refunded': L.refunded || 'Pagamento reembolsado.',
+                    'charged_back': L.charged_back || 'Pagamento contestado. Entre em contato com o suporte.'
                 };
                 return statusMsg[status] || null;
             }
@@ -1874,14 +1902,15 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     oferta_id: ofertaId,
                     checkout_session_uuid: checkoutSessionUUID,
                     funnel_main_payment_id: funnelMainPaymentId,
-                    funnel_step: funnelStepParam
+                    funnel_step: funnelStepParam,
+                    lang: '<?php echo htmlspecialchars($checkout_lang); ?>'
                 };
 
                 if (!payerData.name || !payerData.email) { showAlert('Por favor, preencha o nome e o e-mail.'); return null; }
                 
                 // Validação condicional baseada no estado VISUAL do campo
                 if (isPhoneActive && !payerData.phone) { showAlert('Por favor, preencha o telefone.'); return null; }
-                if (isCpfActive && !payerData.cpf) { showAlert('Por favor, preencha o CPF/CNPJ.'); return null; }
+                if (isCpfActive && !payerData.cpf) { showAlert((window.checkoutLabels || {}).alert_fill_cpf || 'Por favor, preencha o CPF/CNPJ.'); return null; }
                 
                 // Recuperação de carrinho: registra lead (fire-and-forget)
                 if (typeof recordCheckoutActivity === 'function') recordCheckoutActivity(payerData);
@@ -2555,8 +2584,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
             $should_init_mp = $has_mp_methods && !empty($public_key) && !isset($_GET['preview']);
             if ($should_init_mp): ?>
             let mp; // Declara mp antes de usar
+            const checkoutLocale = '<?php echo $checkout_lang === "pt" ? "pt-BR" : ($checkout_lang === "es" ? "es-ES" : ($checkout_lang === "fr" ? "fr-FR" : "en-US")); ?>';
             try {
-                mp = new MercadoPago('<?php echo $public_key; ?>', { locale: 'pt-BR' });
+                mp = new MercadoPago('<?php echo $public_key; ?>', { locale: checkoutLocale });
             } catch (error) {
                 console.error('Erro ao inicializar Mercado Pago:', error);
             }
