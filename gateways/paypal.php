@@ -81,11 +81,11 @@ function create_paypal_order($params) {
                 'custom_id' => $params['metadata']['checkout_session_uuid'] ?? '',
             ],
         ],
-        'application_context' => [
+        'application_context' => array_merge([
             'return_url' => $params['return_url'] ?? '',
             'cancel_url' => $params['cancel_url'] ?? '',
             'brand_name' => $params['brand_name'] ?? 'Checkout',
-        ],
+        ], !empty($params['locale']) ? ['locale' => $params['locale']] : []),
     ];
 
     $ch = curl_init($url);
