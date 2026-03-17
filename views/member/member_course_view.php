@@ -107,54 +107,63 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                 $stmt_modulos->execute([$curso['id']]);
                 $modulos = $stmt_modulos->fetchAll(PDO::FETCH_ASSOC);
 
-                // 4. Para cada módulo, busca as aulas e o progresso do aluno
+                // 4. Busca aulas, progresso e arquivos em batch (evita N+1)
+                $chk_origem = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'origem_video'");
+                $chk_cover = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'lesson_cover_type'");
+                $aulas_cols = "a.id, a.modulo_id, a.titulo, a.url_video, a.descricao, a.ordem, a.release_days, a.tipo_conteudo";
+                if ($chk_origem && $chk_origem->rowCount() > 0) $aulas_cols .= ", a.origem_video";
+                if ($chk_cover && $chk_cover->rowCount() > 0) $aulas_cols .= ", a.lesson_cover_type, a.lesson_cover_url, a.lesson_cover_path";
+                $stmt_aulas_all = $pdo->prepare("
+                    SELECT $aulas_cols
+                    FROM aulas a
+                    INNER JOIN modulos m ON a.modulo_id = m.id
+                    WHERE m.curso_id = ?
+                    ORDER BY m.ordem ASC, m.id ASC, a.ordem ASC, a.id ASC
+                ");
+                $stmt_aulas_all->execute([$curso['id']]);
+                $aulas_raw = $stmt_aulas_all->fetchAll(PDO::FETCH_ASSOC);
+                $aula_ids = array_column($aulas_raw, 'id');
+                $progresso_map = [];
+                $files_map = [];
+                if (!empty($aula_ids)) {
+                    $ph = implode(',', array_fill(0, count($aula_ids), '?'));
+                    $stmt_prog = $pdo->prepare("SELECT aula_id FROM aluno_progresso WHERE aluno_email = ? AND aula_id IN ($ph)");
+                    $stmt_prog->execute(array_merge([$cliente_email], $aula_ids));
+                    while ($r = $stmt_prog->fetch(PDO::FETCH_ASSOC)) {
+                        $progresso_map[(int)$r['aula_id']] = true;
+                    }
+                    $chk_ordem = @$pdo->query("SHOW COLUMNS FROM aula_arquivos LIKE 'ordem'");
+                    $files_order = ($chk_ordem && $chk_ordem->rowCount() > 0) ? "ORDER BY ordem ASC, id ASC" : "ORDER BY id ASC";
+                    $stmt_files = $pdo->prepare("SELECT id, aula_id, nome_original, nome_salvo FROM aula_arquivos WHERE aula_id IN ($ph) $files_order");
+                    $stmt_files->execute($aula_ids);
+                    while ($r = $stmt_files->fetch(PDO::FETCH_ASSOC)) {
+                        $aid = (int)$r['aula_id'];
+                        if (!isset($files_map[$aid])) $files_map[$aid] = [];
+                        $files_map[$aid][] = $r;
+                    }
+                }
+                $aulas_por_modulo = [];
+                foreach ($aulas_raw as $aula) {
+                    $mid = (int)$aula['modulo_id'];
+                    if (!isset($aulas_por_modulo[$mid])) $aulas_por_modulo[$mid] = [];
+                    $aulas_por_modulo[$mid][] = $aula;
+                }
+
                 foreach ($modulos as $modulo) {
-                    // Calcula a data de liberação do módulo
                     $module_release_date = clone $data_concessao;
                     $module_release_date->modify("+{$modulo['release_days']} days");
                     $modulo['is_locked'] = ($current_date < $module_release_date);
                     $modulo['available_at'] = $module_release_date->format('d/m/Y H:i');
-
-                    // Incluir tipo_conteudo, origem_video e lesson_cover (se existir)
-                    $aulas_cols = "id, modulo_id, titulo, url_video, descricao, ordem, release_days, tipo_conteudo";
-                    $chk_origem = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'origem_video'");
-                    if ($chk_origem && $chk_origem->rowCount() > 0) {
-                        $aulas_cols .= ", origem_video";
-                    }
-                    $chk_cover = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'lesson_cover_type'");
-                    if ($chk_cover && $chk_cover->rowCount() > 0) {
-                        $aulas_cols .= ", lesson_cover_type, lesson_cover_url, lesson_cover_path";
-                    }
-                    $stmt_aulas = $pdo->prepare("SELECT $aulas_cols FROM aulas WHERE modulo_id = ? ORDER BY ordem ASC, id ASC");
-                    $stmt_aulas->execute([$modulo['id']]);
-                    $aulas = $stmt_aulas->fetchAll(PDO::FETCH_ASSOC);
-                    
                     $aulas_com_progresso = [];
-                    foreach ($aulas as $aula) {
-                        // Calcula a data de liberação da aula
+                    foreach ($aulas_por_modulo[$modulo['id']] ?? [] as $aula) {
                         $lesson_release_date = clone $data_concessao;
                         $lesson_release_date->modify("+{$aula['release_days']} days");
                         $aula['is_locked'] = ($current_date < $lesson_release_date);
                         $aula['available_at'] = $lesson_release_date->format('d/m/Y H:i');
-
-                        // Soma apenas as aulas que estão DESBLOQUEADAS para o cálculo do progresso geral
-                        if (!$aula['is_locked']) {
-                            $total_aulas_desbloqueadas++;
-                        }
-
-                        $stmt_progresso = $pdo->prepare("SELECT COUNT(*) FROM aluno_progresso WHERE aluno_email = ? AND aula_id = ?");
-                        $stmt_progresso->execute([$cliente_email, $aula['id']]);
-                        $aula['concluida'] = $stmt_progresso->fetchColumn() > 0;
-                        if ($aula['concluida'] && !$aula['is_locked']) { // Só conta como concluída se estiver desbloqueada
-                            $aulas_concluidas_desbloqueadas++;
-                        }
-
-                        // NOVO: Busca arquivos da aula
-                        $stmt_files = $pdo->prepare("SELECT id, nome_original, nome_salvo FROM aula_arquivos WHERE aula_id = ? ORDER BY ordem ASC, id ASC");
-                        $stmt_files->execute([$aula['id']]);
-                        $aula['files'] = $stmt_files->fetchAll(PDO::FETCH_ASSOC);
-
-                        // Sanitizar descrição para HTML seguro (WYSIWYG ou texto) e detecção de links
+                        if (!$aula['is_locked']) $total_aulas_desbloqueadas++;
+                        $aula['concluida'] = !empty($progresso_map[(int)$aula['id']]);
+                        if ($aula['concluida'] && !$aula['is_locked']) $aulas_concluidas_desbloqueadas++;
+                        $aula['files'] = $files_map[(int)$aula['id']] ?? [];
                         $desc_raw = $aula['descricao'] ?? '';
                         if (trim($desc_raw) !== '') {
                             if (function_exists('sanitize_lesson_html')) {
@@ -172,14 +181,9 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                         } else {
                             $aula['descricao'] = '';
                         }
-
                         $aulas_com_progresso[] = $aula;
                     }
-
-                    $modulos_com_aulas[] = [
-                        'modulo' => $modulo,
-                        'aulas' => $aulas_com_progresso
-                    ];
+                    $modulos_com_aulas[] = ['modulo' => $modulo, 'aulas' => $aulas_com_progresso];
                 }
                 if ($total_aulas_desbloqueadas > 0) {
                     $progresso_percentual = round(($aulas_concluidas_desbloqueadas / $total_aulas_desbloqueadas) * 100);
@@ -443,7 +447,7 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
         $gamificacao_habilitado = $g && (int)($g['habilitado'] ?? 0) === 1;
     }
     ?>
-    <div id="course-container" class="min-h-screen member-protected-content" data-comentarios-ativos="<?php echo $comentarios_ativos; ?>" data-aluno-email="<?php echo htmlspecialchars($cliente_email); ?>" data-gamificacao="<?php echo $gamificacao_habilitado ? '1' : '0'; ?>" data-produto-id="<?php echo (int)$produto_id; ?>">
+    <div id="course-container" class="min-h-screen member-protected-content" data-comentarios-ativos="<?php echo $comentarios_ativos; ?>" data-aluno-email="<?php echo htmlspecialchars($cliente_email); ?>" data-gamificacao="<?php echo $gamificacao_habilitado ? '1' : '0'; ?>" data-produto-id="<?php echo (int)$produto_id; ?>" data-initial-aula-id="<?php echo (int)($_GET['aula_id'] ?? 0); ?>">
         <?php
         $banner_raw = $curso['banner_url'] ?? $curso['produto_foto'] ?? '';
         $banner_src = !empty($banner_raw) ? resolve_product_image_url_protected($banner_raw, $upload_dir ?? 'uploads/', $produto_id) : '';
@@ -1110,6 +1114,15 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                 }
 
                 currentLessonData = lesson;
+                // Salva última aula assistida (continuar de onde parou) - apenas se desbloqueada
+                if (lesson && !lesson.is_locked) {
+                    fetch('/api/member_api?action=save_last_lesson', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ aula_id: lesson.id, produto_id: parseInt(currentProductId, 10) }),
+                    credentials: 'same-origin'
+                }).catch(function() {});
+                }
                 // Garante que currentModuleIndex aponta para o módulo desta aula (importante ao navegar por "Próxima Aula")
                 for (let m = 0; m < allModulesData.length; m++) {
                     if ((allModulesData[m].aulas || []).some(a => a.id === lesson.id)) {
@@ -1432,10 +1445,25 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                 });
                 lucide.createIcons();
                 
-                // Auto-load the first unlocked lesson of this module, or the very first one if none are unlocked.
-                loadLesson(firstAvailableLesson || moduleData.aulas[0]);
+                // Auto-load: lessonToSelect (URL ?aula_id=), first unlocked, or first of module
+                const toLoad = lessonToSelect || firstAvailableLesson || moduleData.aulas[0];
+                loadLesson(toLoad);
             }
             
+            // Inicialização: se ?aula_id= na URL, abrir módulo e aula correspondentes
+            const initialAulaId = courseContainer && parseInt(courseContainer.dataset.initialAulaId || '0', 10);
+            if (initialAulaId > 0) {
+                for (let m = 0; m < allModulesData.length; m++) {
+                    const found = (allModulesData[m].aulas || []).find(a => a.id == initialAulaId);
+                    if (found && !found.is_locked) {
+                        playerWrapper.classList.remove('hidden');
+                        displayLessonsForModule(m, found);
+                        playerWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        break;
+                    }
+                }
+            }
+
             // Event listeners for module cards
             moduleCards.forEach(card => {
                 card.addEventListener('click', () => {
