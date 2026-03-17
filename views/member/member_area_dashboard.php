@@ -103,45 +103,73 @@ try {
     $stmt_expirados->execute([$cliente_email]);
     $cursos_expirados = $stmt_expirados->fetchAll(PDO::FETCH_ASSOC);
     
-    // Calcula o progresso de cada curso considerando aulas desbloqueadas
+    // Calcula o progresso de cada curso considerando aulas desbloqueadas (otimizado: evita N+1)
+    $curso_ids = array_filter(array_map('intval', array_column($cursos_raw, 'curso_id')));
+    $aulas_por_curso = [];
+    $progresso_aluno = [];
+    if (!empty($curso_ids)) {
+        $placeholders = implode(',', array_fill(0, count($curso_ids), '?'));
+        $stmt_all_aulas = $pdo->prepare("
+            SELECT a.id, a.release_days, m.curso_id
+            FROM aulas a
+            INNER JOIN modulos m ON a.modulo_id = m.id
+            WHERE m.curso_id IN ($placeholders)
+        ");
+        $stmt_all_aulas->execute(array_values($curso_ids));
+        while ($row = $stmt_all_aulas->fetch(PDO::FETCH_ASSOC)) {
+            $cid = (int)$row['curso_id'];
+            if (!isset($aulas_por_curso[$cid])) $aulas_por_curso[$cid] = [];
+            $aulas_por_curso[$cid][] = $row;
+        }
+        $stmt_prog = $pdo->prepare("
+            SELECT ap.aula_id, m.curso_id
+            FROM aluno_progresso ap
+            JOIN aulas a ON ap.aula_id = a.id
+            JOIN modulos m ON a.modulo_id = m.id
+            WHERE ap.aluno_email = ? AND m.curso_id IN ($placeholders)
+        ");
+        $params = array_merge([$cliente_email], array_values($curso_ids));
+        $stmt_prog->execute($params);
+        while ($row = $stmt_prog->fetch(PDO::FETCH_ASSOC)) {
+            $progresso_aluno[(int)$row['aula_id']] = true;
+        }
+    }
     $cursos_adquiridos = [];
     foreach ($cursos_raw as $curso) {
         $total_aulas_desbloqueadas = 0;
         $aulas_concluidas = 0;
-        
-        if (!empty($curso['curso_id'])) {
+        $curso_id = (int)($curso['curso_id'] ?? 0);
+        if ($curso_id && isset($aulas_por_curso[$curso_id])) {
             $data_concessao = new DateTime($curso['data_concessao']);
             $hoje = new DateTime();
             $dias_desde_compra = $data_concessao->diff($hoje)->days;
-            
-            // Busca todas as aulas do curso
-            $stmt_aulas = $pdo->prepare("
-                SELECT a.id, a.release_days
-                FROM aulas a
-                INNER JOIN modulos m ON a.modulo_id = m.id
-                WHERE m.curso_id = ?
-            ");
-            $stmt_aulas->execute([$curso['curso_id']]);
-            $aulas = $stmt_aulas->fetchAll(PDO::FETCH_ASSOC);
-            
-            foreach ($aulas as $aula) {
-                // Verifica se a aula está desbloqueada
+            foreach ($aulas_por_curso[$curso_id] as $aula) {
                 if ($aula['release_days'] <= $dias_desde_compra) {
                     $total_aulas_desbloqueadas++;
-                    
-                    // Verifica se o aluno concluiu esta aula
-                    $stmt_prog = $pdo->prepare("SELECT COUNT(*) FROM aluno_progresso WHERE aluno_email = ? AND aula_id = ?");
-                    $stmt_prog->execute([$cliente_email, $aula['id']]);
-                    if ($stmt_prog->fetchColumn() > 0) {
-                        $aulas_concluidas++;
-                    }
+                    if (!empty($progresso_aluno[(int)$aula['id']])) $aulas_concluidas++;
                 }
             }
         }
-        
         $curso['total_aulas'] = $total_aulas_desbloqueadas;
         $curso['aulas_concluidas'] = $aulas_concluidas;
         $cursos_adquiridos[] = $curso;
+    }
+
+    // Continuar de onde parou: última aula por produto
+    $ultima_aula_por_produto = [];
+    $chk_aua = @$pdo->query("SHOW TABLES LIKE 'aluno_ultima_aula'");
+    if ($chk_aua && $chk_aua->rowCount() > 0 && !empty($cursos_adquiridos)) {
+        $pids = array_map('intval', array_column($cursos_adquiridos, 'produto_id'));
+        $placeholders = implode(',', array_fill(0, count($pids), '?'));
+        $stmt_aua = $pdo->prepare("SELECT produto_id, aula_id FROM aluno_ultima_aula WHERE LOWER(TRIM(aluno_email)) = LOWER(?) AND produto_id IN ($placeholders)");
+        $stmt_aua->execute(array_merge([$cliente_email], $pids));
+        while ($row = $stmt_aua->fetch(PDO::FETCH_ASSOC)) {
+            $ultima_aula_por_produto[(int)$row['produto_id']] = (int)$row['aula_id'];
+        }
+        foreach ($cursos_adquiridos as &$c) {
+            $c['ultima_aula_id'] = $ultima_aula_por_produto[(int)$c['produto_id']] ?? null;
+        }
+        unset($c);
     }
 
     // Banners do infoprodutor para exibir no dashboard do cliente (com badge)
@@ -513,8 +541,14 @@ if (!isset($feed_items_biblioteca)) {
                 <?php if ($seg['type'] === 'courses'): ?>
                     <!-- Grid de cards de cursos (2 ou 3 por linha) -->
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6 biblioteca-course-grid">
-                        <?php foreach ($seg['items'] as $curso): ?>
-                            <a href="/member_course_view?produto_id=<?php echo $curso['produto_id']; ?>"
+                        <?php foreach ($seg['items'] as $curso):
+                            $progresso_pct = (int)($curso['total_aulas'] ?? 0) > 0 ? round((($curso['aulas_concluidas'] ?? 0) / $curso['total_aulas']) * 100) : 0;
+                            $ultima_aula_id = (int)($curso['ultima_aula_id'] ?? 0);
+                            $mostrar_continuar = $ultima_aula_id > 0 && $progresso_pct > 0 && $progresso_pct < 100;
+                            $href = '/member_course_view?produto_id=' . (int)$curso['produto_id'];
+                            if ($mostrar_continuar) $href .= '&aula_id=' . $ultima_aula_id;
+                            ?>
+                            <a href="<?php echo htmlspecialchars($href); ?>"
                                class="group bg-gray-800 rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] border border-gray-700/50 flex flex-col biblioteca-course-card"
                                data-product-type="<?php echo htmlspecialchars($curso['produto_type'] ?? ''); ?>">
                                 <div class="relative aspect-video overflow-hidden">
@@ -537,6 +571,11 @@ if (!isset($feed_items_biblioteca)) {
                                     <?php if (!empty($curso['produto_is_showcase']) && $curso['produto_is_showcase'] == 1): ?>
                                     <span class="absolute top-2 left-2 z-10 bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1">
                                         <i data-lucide="star" class="w-3 h-3"></i> VITRINE
+                                    </span>
+                                    <?php endif; ?>
+                                    <?php if ($mostrar_continuar): ?>
+                                    <span class="absolute top-2 right-2 z-10 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1">
+                                        <i data-lucide="play" class="w-3 h-3"></i> CONTINUAR
                                     </span>
                                     <?php endif; ?>
                                     <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
