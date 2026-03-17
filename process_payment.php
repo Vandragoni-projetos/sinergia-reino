@@ -705,6 +705,9 @@ try {
         $cancel_hash = $data['checkout_hash'] ?? '';
         $cancel_url = $base_url . 'checkout' . ($cancel_hash ? '?p=' . urlencode($cancel_hash) . '&' : '?') . 'canceled=1';
 
+        $checkout_lang = $data['lang'] ?? 'pt';
+        if (!in_array($checkout_lang, ['pt', 'es', 'fr', 'en'], true)) $checkout_lang = 'pt';
+
         $stripe_params = [
             'secret_key' => $stripe_secret,
             'amount' => $amount,
@@ -719,6 +722,7 @@ try {
                 'checkout_session_uuid' => $checkout_session_uuid,
             ],
             'test_mode' => (strpos($stripe_secret, 'sk_test_') === 0),
+            'locale' => $checkout_lang,
         ];
 
         $stripe_result = create_stripe_checkout_session($stripe_params);
@@ -770,11 +774,16 @@ try {
         $cancel_hash = $data['checkout_hash'] ?? '';
         $cancel_url = $base_url . 'checkout' . ($cancel_hash ? '?p=' . urlencode($cancel_hash) . '&' : '?') . 'canceled=1';
 
+        $paypal_lang = $data['lang'] ?? 'pt';
+        if (!in_array($paypal_lang, ['pt', 'es', 'fr', 'en'], true)) $paypal_lang = 'pt';
+        $paypal_locale = ['pt' => 'pt-BR', 'es' => 'es-ES', 'fr' => 'fr-FR', 'en' => 'en-US'][$paypal_lang];
+
         $paypal_params = [
             'client_id' => $paypal_client,
             'client_secret' => $paypal_secret,
             'amount' => $amount,
             'currency' => $currency,
+            'locale' => $paypal_locale,
             'product_name' => $main_product_name,
             'return_url' => $return_url,
             'cancel_url' => $cancel_url,
