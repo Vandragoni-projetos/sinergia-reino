@@ -60,6 +60,20 @@ CREATE TABLE IF NOT EXISTS `aluno_progresso` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
+-- Estrutura: aluno_ultima_aula (continuar de onde parou)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `aluno_ultima_aula` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `aluno_email` varchar(255) NOT NULL,
+  `produto_id` int(11) NOT NULL,
+  `aula_id` int(11) NOT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_aluno_produto` (`aluno_email`(191), `produto_id`),
+  KEY `idx_aluno` (`aluno_email`(191))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- --------------------------------------------------------
 -- Estrutura: aulas
 -- --------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `aulas` (
