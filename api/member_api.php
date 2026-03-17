@@ -28,6 +28,16 @@ if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true || (isset($_
 
 $aluno_email_logado = $_SESSION['usuario']; // E-mail do cliente logado
 
+// Rate limiting: 120 req/min por usuário+IP
+$ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+$user_key = ($aluno_email_logado ?? '') . '_' . $ip;
+if (file_exists(__DIR__ . '/../helpers/rate_limit_helper.php')) {
+    require_once __DIR__ . '/../helpers/rate_limit_helper.php';
+    if (function_exists('check_rate_limit_member_api') && !check_rate_limit_member_api($user_key, 120, 60)) {
+        sendJsonResponse(false, ['error' => 'Muitas requisições. Aguarde um momento.'], 429);
+    }
+}
+
 // Obtém a ação da requisição
 $action = $_GET['action'] ?? '';
 
@@ -157,6 +167,33 @@ switch ($action) {
         } catch (PDOException $e) {
             error_log("Erro check_conquistas: " . $e->getMessage());
             sendJsonResponse(false, ['error' => 'Erro ao verificar conquistas.'], 500);
+        }
+        break;
+
+    case 'save_last_lesson':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            sendJsonResponse(false, ['error' => 'Método não permitido.'], 405);
+        }
+        $aula_id_save = (int)($input['aula_id'] ?? 0);
+        $produto_id_save = (int)($input['produto_id'] ?? 0);
+        if ($aula_id_save <= 0 || $produto_id_save <= 0) {
+            sendJsonResponse(false, ['error' => 'Parâmetros inválidos.'], 400);
+        }
+        try {
+            $stmt_ac = $pdo->prepare("SELECT 1 FROM alunos_acessos WHERE LOWER(TRIM(aluno_email)) = LOWER(?) AND produto_id = ? AND (data_expiracao IS NULL OR data_expiracao > NOW())");
+            $stmt_ac->execute([$aluno_email_logado, $produto_id_save]);
+            if (!$stmt_ac->fetch()) {
+                sendJsonResponse(false, ['error' => 'Sem acesso a este produto.'], 403);
+            }
+            $chk = @$pdo->query("SHOW TABLES LIKE 'aluno_ultima_aula'");
+            if ($chk && $chk->rowCount() > 0) {
+                $stmt = $pdo->prepare("INSERT INTO aluno_ultima_aula (aluno_email, produto_id, aula_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE aula_id = ?, updated_at = NOW()");
+                $stmt->execute([$aluno_email_logado, $produto_id_save, $aula_id_save, $aula_id_save]);
+            }
+            sendJsonResponse(true, ['message' => 'OK']);
+        } catch (PDOException $e) {
+            error_log("Erro save_last_lesson: " . $e->getMessage());
+            sendJsonResponse(false, ['error' => 'Erro ao salvar.'], 500);
         }
         break;
 
