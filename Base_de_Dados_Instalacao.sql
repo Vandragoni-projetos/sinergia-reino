@@ -30,14 +30,14 @@ USE `checkout`;
 -- Desabilitar FKs para DROP
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TRIGGER IF EXISTS `after_produto_insert`;
-DROP TABLE IF EXISTS `alunos_acessos`, `aluno_progresso`, `aula_arquivos`, `aulas`, `notificacoes`, `vendas`, `gatewaypro_tracking_events`, `gatewaypro_tracking_products`, `modulos`, `cursos`, `order_bumps`, `product_exclusive_offers`, `produto_ofertas`, `products_feed_items`, `cloned_site_settings`, `cloned_sites`, `saas_assinaturas`, `saas_limites_uso`, `evolution_messages`, `utmfy_integrations`, `webhooks`, `produtos`, `banners`, `licencas_geradas`, `security_events`, `security_logs`, `login_attempts`, `configuracoes`, `configuracoes_sistema`, `communities`, `banner_badges`, `saas_config_admin`, `saas_planos`, `plugins`, `usuarios`;
+DROP TABLE IF EXISTS `aluno_conquistas`, `curso_conquistas`, `curso_gamificacao`, `aula_comentarios`, `alunos_acessos`, `aluno_progresso`, `aula_arquivos`, `aulas`, `notificacoes`, `vendas`, `gatewaypro_tracking_events`, `gatewaypro_tracking_products`, `modulos`, `cursos`, `order_bumps`, `product_exclusive_offers`, `product_type_categories`, `cupom_produtos`, `cupons`, `produto_ofertas`, `products_feed_items`, `cloned_site_settings`, `cloned_sites`, `saas_assinaturas`, `saas_limites_uso`, `evolution_messages`, `utmfy_integrations`, `webhooks`, `produtos`, `banners`, `licencas_geradas`, `security_events`, `security_logs`, `login_attempts`, `configuracoes`, `configuracoes_sistema`, `communities`, `banner_badges`, `saas_config_admin`, `saas_planos`, `plugins`, `usuarios`;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- --------------------------------------------------------
 -- Estrutura: alunos_acessos
 -- --------------------------------------------------------
-CREATE TABLE `alunos_acessos` (
+CREATE TABLE IF NOT EXISTS `alunos_acessos` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `aluno_email` varchar(255) NOT NULL,
   `produto_id` int(11) NOT NULL,
@@ -51,7 +51,7 @@ CREATE TABLE `alunos_acessos` (
 -- --------------------------------------------------------
 -- Estrutura: aluno_progresso
 -- --------------------------------------------------------
-CREATE TABLE `aluno_progresso` (
+CREATE TABLE IF NOT EXISTS `aluno_progresso` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `aluno_email` varchar(255) NOT NULL,
   `aula_id` int(11) NOT NULL,
@@ -62,14 +62,14 @@ CREATE TABLE `aluno_progresso` (
 -- --------------------------------------------------------
 -- Estrutura: aulas
 -- --------------------------------------------------------
-CREATE TABLE `aulas` (
+CREATE TABLE IF NOT EXISTS `aulas` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `modulo_id` int(11) NOT NULL,
   `community_id` int(11) DEFAULT 1 COMMENT 'Comunidade (subdomínio)',
   `titulo` varchar(255) NOT NULL,
   `url_video` text DEFAULT NULL COMMENT 'URL do vídeo ou código embed',
   `origem_video` varchar(32) NOT NULL DEFAULT 'youtube' COMMENT 'youtube, vimeo, url_externa, codigo_incorporado',
-  `descricao` text DEFAULT NULL,
+  `descricao` longtext DEFAULT NULL,
   `ordem` int(11) NOT NULL DEFAULT 0,
   `release_days` int(11) NOT NULL DEFAULT 0 COMMENT 'Número de dias após a compra para a aula ser liberada',
   `tipo_conteudo` enum('video','files','mixed') NOT NULL DEFAULT 'video' COMMENT 'Tipo de conteúdo da aula: video, files ou mixed',
@@ -82,7 +82,7 @@ CREATE TABLE `aulas` (
 -- --------------------------------------------------------
 -- Estrutura: aula_arquivos
 -- --------------------------------------------------------
-CREATE TABLE `aula_arquivos` (
+CREATE TABLE IF NOT EXISTS `aula_arquivos` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `aula_id` int(11) NOT NULL,
   `nome_original` varchar(255) NOT NULL COMMENT 'Nome original do arquivo',
@@ -96,9 +96,27 @@ CREATE TABLE `aula_arquivos` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
+-- Estrutura: aula_comentarios
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `aula_comentarios` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `aula_id` int(11) NOT NULL,
+  `aluno_email` varchar(255) NOT NULL,
+  `nome_aluno` varchar(255) DEFAULT NULL,
+  `texto` text NOT NULL,
+  `status` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+  `resposta_infoprodutor` text DEFAULT NULL COMMENT 'Resposta do infoprodutor ao comentário',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_aula_comentarios_aula` (`aula_id`),
+  KEY `idx_aula_comentarios_status` (`status`),
+  CONSTRAINT `fk_aula_comentarios_aula` FOREIGN KEY (`aula_id`) REFERENCES `aulas` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
 -- Estrutura: banners
 -- --------------------------------------------------------
-CREATE TABLE `banners` (
+CREATE TABLE IF NOT EXISTS `banners` (
   `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT,
   `community_id` int(11) UNSIGNED DEFAULT NULL COMMENT 'Para multi-tenant (FK lógico)',
   `usuario_id` int(11) UNSIGNED NOT NULL COMMENT 'Infoprodutor owner',
@@ -112,6 +130,7 @@ CREATE TABLE `banners` (
   `show_in_products_grid` tinyint(1) NOT NULL DEFAULT 1 COMMENT 'Mostrar no grid de produtos (infoprodutor)',
   `show_in_member_dashboard` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Mostrar no dashboard do cliente',
   `show_in_offers_section` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Mostrar na seção Ofertas Exclusivas',
+  `product_id` int(11) DEFAULT NULL COMMENT 'Produto vinculado: se o cliente possuir, o banner não é exibido',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`)
@@ -120,7 +139,7 @@ CREATE TABLE `banners` (
 -- --------------------------------------------------------
 -- Estrutura: banner_badges
 -- --------------------------------------------------------
-CREATE TABLE `banner_badges` (
+CREATE TABLE IF NOT EXISTS `banner_badges` (
   `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT,
   `slug` varchar(64) NOT NULL,
   `icon` varchar(8) NOT NULL COMMENT 'Emoji ou caractere (ex: ?)',
@@ -131,10 +150,34 @@ CREATE TABLE `banner_badges` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Opções de badge para banners publicitários';
 
+-- Dados seed: banner_badges (expansão)
+
+INSERT INTO `banner_badges`
+(`id`, `slug`, `icon`, `label`, `is_active`, `sort_order`, `created_at`)
+VALUES
+(1,  'premium',        '🥇', 'Destaque premium',        1,  10, '2026-02-03 01:38:46'),
+(2,  'warning',        '🔔', 'Aviso importante',        1,  20, '2026-02-03 01:38:46'),
+(3,  'bonus',          '🎁', 'Bônus / Promoção',        1,  30, '2026-02-03 01:38:46'),
+(4,  'partners',       '🤝', 'Parceiros',               1,  40, '2026-02-03 01:38:46'),
+(5,  'news',           '🚀', 'Novidade',                1,  50, '2026-02-03 01:38:46'),
+(6,  'exclusive',      '💎', 'Exclusivo',               1,  60, '2026-02-03 01:38:46'),
+
+(7,  'bestseller',     '🏆', 'Mais vendido',            1,  70, '2026-02-03 01:38:46'),
+(8,  'tips',           '💡', 'Dica rápida',             1,  80, '2026-02-03 01:38:46'),
+(9,  'review',         '⭐', 'Avaliação',               1,  90, '2026-02-03 01:38:46'),
+(10, 'recommend',      '✅', 'Recomendado',             1, 100, '2026-02-03 01:38:46'),
+(11, 'digital',        '💳', 'Já vende no digital?',    1, 110, '2026-02-03 01:38:46'),
+
+(12, 'limited',        '⏳', 'Tempo limitado',          1, 120, '2026-02-03 01:38:46'),
+(13, 'hot',            '🔥', 'Em alta',                 1, 130, '2026-02-03 01:38:46'),
+(14, 'free',           '🆓', 'Grátis',                  1, 140, '2026-02-03 01:38:46'),
+(15, 'community',      '📣', 'Comunidade',              1, 150, '2026-02-03 01:38:46'),
+(16, 'support',        '🛟', 'Precisa de ajuda?',       1, 160, '2026-02-03 01:38:46');
+
 -- --------------------------------------------------------
 -- Estrutura: cloned_sites
 -- --------------------------------------------------------
-CREATE TABLE `cloned_sites` (
+CREATE TABLE IF NOT EXISTS `cloned_sites` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `usuario_id` int(11) NOT NULL COMMENT 'ID do infoprodutor dono do site clonado',
   `original_url` varchar(2048) NOT NULL COMMENT 'URL do site original que foi clonado',
@@ -151,7 +194,7 @@ CREATE TABLE `cloned_sites` (
 -- --------------------------------------------------------
 -- Estrutura: cloned_site_settings
 -- --------------------------------------------------------
-CREATE TABLE `cloned_site_settings` (
+CREATE TABLE IF NOT EXISTS `cloned_site_settings` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `cloned_site_id` int(11) NOT NULL COMMENT 'ID do site clonado associado',
   `facebook_pixel_id` varchar(255) DEFAULT NULL COMMENT 'ID do Facebook Pixel',
@@ -165,7 +208,7 @@ CREATE TABLE `cloned_site_settings` (
 -- --------------------------------------------------------
 -- Estrutura: communities
 -- --------------------------------------------------------
-CREATE TABLE `communities` (
+CREATE TABLE IF NOT EXISTS `communities` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `slug` varchar(64) NOT NULL COMMENT 'Subdomínio: mktd, club, flow, kids',
   `name` varchar(255) NOT NULL,
@@ -175,53 +218,171 @@ CREATE TABLE `communities` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+--
+-- Despejando dados para a tabela `communities`
+--
+
+INSERT INTO `communities` (`id`, `slug`, `name`, `theme_json`, `primary_color`, `created_at`) VALUES
+(1, 'club', 'SinergIA Club', NULL, '#32e768', '2026-02-01 22:44:40'),
+(2, 'prime', 'SinergIA Prime', NULL, '#32e768', '2026-02-13 20:15:16');
+
+
 -- --------------------------------------------------------
 -- Estrutura: configuracoes
 -- --------------------------------------------------------
-CREATE TABLE `configuracoes` (
+CREATE TABLE IF NOT EXISTS `configuracoes` (
   `chave` varchar(255) NOT NULL,
   `valor` text NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+INSERT INTO `configuracoes` (`chave`, `valor`) VALUES
+('email_template_delivery_html', '<!DOCTYPE html>\n<html lang=\"pt-br\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\n    <title>Bem-vindo(a)!</title>\n    <style>\n        @import url(\'https://www.google.com/url?sa=E&source=gmail&q=https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700%26display=swap\');\n        /* Estilos para responsividade */\n        @media screen and (max-width: 600px) {\n            .container {\n                width: 100% !important;\n                padding: 10px !important;\n            }\n            .content {\n                padding: 25px 20px !important;\n            }\n            .header-img {\n                width: 150px !important;\n            }\n            h1 {\n                font-size: 24px !important;\n            }\n        }\n    </style>\n</head>\n<body style=\"margin: 0; padding: 0; background-color: #f1f5f9; font-family: \'Inter\', -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, Helvetica, Arial, sans-serif;\">\n    <!-- Preheader (texto de visualização no cliente de e-mail) -->\n    <div style=\"display: none; max-height: 0; overflow: hidden;\">Tudo pronto! Seu acesso aos produtos já está disponível.</div>\n    <table align=\"center\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"border-collapse: collapse;\">\n        <tr>\n            <td align=\"center\" style=\"padding: 20px 0;\">\n                <table class=\"container\" align=\"center\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"600\" style=\"border-collapse: collapse; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); overflow: hidden; border: 1px solid #e2e8f0;\">\n                    <!-- Cabeçalho com a Nova Logo -->\n                    <tr>\n                        <td align=\"center\" bgcolor=\"#1e1e2f\" style=\"padding: 30px 20px; background-color: #1e1e2f;\">\n                            <div>\n                                <img class=\"header-img\" src=\"https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png\" alt=\"Logo GarewayPro\" width=\"200\" style=\"display: block; border: 0;\" />\n                            </div>\n                        </td>\n                    </tr>\n                    <!-- Corpo Principal -->\n                    <tr>\n                        <td class=\"content\" style=\"padding: 40px 35px;\">\n                            <h1 style=\"font-size: 28px; font-weight: 700; color: #0f172a; margin: 0 0 15px 0;\">Parabéns, {CLIENT_NAME}!</h1>\n                            <p style=\"margin: 0 0 25px 0; font-size: 16px; line-height: 1.6; color: #475569;\">\n                                Seus produtos adquiridos foram liberados com sucesso! Abaixo estão os detalhes de acesso para cada um deles:\n                            </p>\n                            <!-- Início do Loop de Produtos -->\n                            <!-- LOOP_PRODUCTS_START -->\n                            <div style=\"background-color: #ffffff; border: 1px solid #2DD05E; border-radius: 12px; padding: 25px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.03);\">\n                                <h2 style=\"font-size: 20px; font-weight: 600; color: #1e293b; margin: 0 0 15px 0;\">{PRODUCT_NAME}</h2>\n                                \n                                <!-- Bloco para Área de Membros -->\n                                <!-- IF_PRODUCT_TYPE_MEMBER_AREA -->\n                                <p style=\"margin: 0 0 10px 0; font-size: 15px; color: #475569;\">Este produto está disponível em sua área de membros.</p>\n                                <p style=\"margin: 0 0 5px 0; font-size: 15px; color: #475569;\"><strong>Seu login:</strong> {CLIENT_EMAIL}</p>\n                                <p style=\"margin: 0 0 20px 0; font-size: 15px; color: #475569;\"><strong>Sua senha:</strong> {MEMBER_AREA_PASSWORD}</p>\n                                <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse: collapse;\">\n                                    <tr>\n                                        <td align=\"center\" style=\"background-color: #2DD05E; border-radius: 8px;\">\n                                            <a href=\"{MEMBER_AREA_LOGIN_URL}\" target=\"_blank\" style=\"color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 600; padding: 14px 28px; border: 19px solid #2DD05E; display: inline-block; border-radius: 8px;\">Acessar sua Área de Membros</a>\n                                        </td>\n                                    </tr>\n                                </table>\n                                <!-- END_IF_PRODUCT_TYPE_MEMBER_AREA -->\n\n                                <!-- Bloco para Link -->\n                                <!-- IF_PRODUCT_TYPE_LINK -->\n                                <p style=\"margin: 0 0 15px 0; font-size: 15px; color: #475569;\"><strong>Link de Acesso:</strong></p>\n                                <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse: collapse; margin-bottom: 10px;\">\n                                    <tr>\n                                        <td align=\"center\" style=\"background-color: #2DD05E; border-radius: 8px;\">\n                                            <!-- ### CORREÇÃO AQUI ### -->\n                                            <!-- Eu mudei o \'border: 1px\' para \'border: 19px\' para bater com o botão da área de membros. -->\n                                            <!-- Isso força o Outlook e outros clientes de e-mail a tornar toda a área do botão clicável. -->\n                                            <a href=\"{PRODUCT_LINK}\" target=\"_blank\" style=\"color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 600; padding: 14px 28px; border: 19px solid #2DD05E; display: inline-block; border-radius: 8px;\">Acessar {PRODUCT_NAME}</a>\n                                        </td>\n                                    </tr>\n                                </table>\n                                <p style=\"word-break: break-all; font-size: 12px; color: #64748b;\">Se o botão não funcionar, copie e cole o link: <a href=\"{PRODUCT_LINK}\" style=\"color: #2DD05E;\">{PRODUCT_LINK}</a></p>\n                                <!-- END_IF_PRODUCT_TYPE_LINK -->\n\n                                <!-- Bloco para PDF -->\n                                <!-- IF_PRODUCT_TYPE_PDF -->\n                                <p style=\"margin: 0 0 10px 0; font-size: 15px; color: #475569;\">Seu PDF está anexado a este e-mail. Faça o download para começar a aproveitar!</p>\n                                <!-- END_IF_PRODUCT_TYPE_PDF -->\n                            </div>\n                            <!-- Fim do Loop de Produtos -->\n                            <!-- LOOP_PRODUCTS_END -->\n\n                            <p style=\"margin: 30px 0 0 0; font-size: 16px; line-height: 1.6; color: #475569;\">\n                                Caso tenha alguma dúvida ou precise de suporte, entre em contato conosco.\n                            </p>\n                            <p style=\"margin: 15px 0 0 0; font-size: 16px; line-height: 1.6; color: #475569;\">\n                                Obrigado e aproveite seus novos produtos!\n                            </p>\n                        </td>\n                    </tr>\n                    <!-- Rodapé -->\n                    <tr>\n                        <td align=\"center\" style=\"padding: 25px 30px; background-color: #f8fafc; border-top: 1px solid #e2e8f0;\">\n                            <p style=\"margin: 0; font-size: 13px; color: #64748b;\">\n                                Este é um e-mail automático, por favor, não responda.\n                            </p>\n                            <p style=\"margin: 10px 0 0 0; font-size: 13px; color: #94a3b8;\">\n                                SinergIA Classe A &copy; 2025. Todos os direitos reservados.\n                            </p>\n                        </td>\n                    </tr>\n                </table>\n            </td>\n        </tr>\n    </table>\n</body>\n</html>'),
+('email_template_delivery_subject', 'Acesso ao seu Produto Plataforma SinergIA Club!'),
+('member_area_login_url', 'https://core.vitrineacademy.com.br/member_login.php'),
+('mercado_pago_enable_credit_card', '1'),
+('mercado_pago_enable_pix', '1'),
+('mercado_pago_max_installments', '24'),
+('smtp_encryption', 'ssl'),
+('smtp_from_email', 'sinergiaclubmembers@gmail.com'),
+('smtp_from_name', 'SinergIAClasseA'),
+('smtp_host', 'smtp.gmail.com'),
+('smtp_password', 'fnhzvuyjlgceixjf'),
+('smtp_port', '465'),
+('smtp_username', 'sinergiaclubmembers@gmail.com');
+
+
 -- --------------------------------------------------------
 -- Estrutura: configuracoes_sistema
 -- --------------------------------------------------------
-CREATE TABLE `configuracoes_sistema` (
+CREATE TABLE IF NOT EXISTS `configuracoes_sistema` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `community_id` int(11) DEFAULT NULL COMMENT 'NULL=global, 1+=por comunidade',
   `chave` varchar(100) NOT NULL,
   `valor` text DEFAULT NULL,
   `tipo` varchar(50) DEFAULT 'text',
-  `descricao` text DEFAULT NULL,
+  `descricao` longtext DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Dados seed: configuracoes_sistema
+INSERT INTO `configuracoes_sistema` (`id`, `community_id`, `chave`, `valor`, `tipo`, `descricao`, `created_at`, `updated_at`) VALUES
+(1, NULL, 'cor_primaria', '#32e768', 'color', 'Cor primária do sistema', NOW(), NOW()),
+(2, NULL, 'logo_url', '', 'image', 'URL da logo do sistema', NOW(), NOW()),
+(3, NULL, 'login_image_url', '', 'image', 'URL da imagem de fundo da tela de login', NOW(), NOW()),
+(13, NULL, 'nome_plataforma', 'GatewayPro', 'text', NULL, NOW(), NOW()),
+(14, NULL, 'logo_checkout_url', '', 'text', NULL, NOW(), NOW()),
+(15, NULL, 'favicon_url', '', 'text', NULL, NOW(), NOW()),
+(16, NULL, 'master_panel_url', '', 'text', 'URL do painel master para validação de licenças', NOW(), NOW()),
+(17, NULL, 'master_panel_api_token', '', 'text', 'Token de autenticação da API do painel master', NOW(), NOW()),
+(18, NULL, 'license_key', '', 'text', 'Chave de licença ativada', NOW(), NOW()),
+(19, NULL, 'license_status', 'active', 'text', 'Status da licença: active, expired, invalid', NOW(), NOW()),
+(20, NULL, 'license_expiration', 'lifetime', 'text', 'Data de expiração da licença ou lifetime', NOW(), NOW()),
+(21, NULL, 'license_activated_at', NULL, 'text', 'Data/hora da ativação da licença', NOW(), NOW()),
+(22, NULL, 'license_last_check', NULL, 'text', 'Última verificação da licença', NOW(), NOW()),
+(23, NULL, 'license_type', 'Vitalício', 'text', 'Tipo da licença: VITALICIO, ANUAL, SEMESTRAL, MENSAL', NOW(), NOW()),
+(24, NULL, 'license_days', '', 'text', 'Dias de validade da licença', NOW(), NOW()),
+(25, NULL, 'system_id', '', 'text', 'ID único desta instalação (gerado na 1ª ativação)', NOW(), NOW()),
+(26, NULL, 'security_seal_url', '', 'text', NULL, NOW(), NOW()),
+(27, NULL, 'theme_json', '{\"primary\":\"#32e768\",\"primaryHover\":\"#2dd05e\",\"bg\":\"#080e16\",\"text\":\"rgba(255,255,255,0.9)\",\"textMuted\":\"rgba(255,255,255,0.5)\",\"card\":\"#1f3147\",\"cardElevated\":\"#0f1419\",\"border\":\"rgba(255,255,255,0.1)\",\"radius\":\"1.5rem\",\"shadow\":\"0 4px 6px -1px rgba(0,0,0,0.3)\",\"fontSans\":\"Montserrat,sans-serif\"}', 'json', 'Configurações visuais white-label', NOW(), NOW()),
+(28, NULL, 'is_master_panel', '0', 'text', NULL, NOW(), NOW()),
+(29, NULL, 'master_secret_key', '', 'text', NULL, NOW(), NOW()),
+(30, NULL, 'license_api_token', '', 'text', NULL, NOW(), NOW()),
+(31, NULL, 'notification_image_url', '', 'text', NULL, NOW(), NOW()),
+(32, NULL, 'PROTECT_MEMBER_AREA', 'true', 'boolean', 'Proteção área de membros', NOW(), NOW()),
+(33, NULL, 'PROTECT_MEMBER_AREA_BY_COMMUNITY', '{}', 'json', 'Override por community_id', NOW(), NOW()),
+(34, NULL, 'blocked_offers_grayscale', '0', 'boolean', 'Ofertas bloqueadas: 1 = preto e branco, 0 = colorido (área do cliente)', NOW(), NOW()),
+(36, NULL, 'pwa_activated', '0', 'text', NULL, NOW(), NOW()),
+(37, NULL, 'session_timeout_minutes', '30', 'text', NULL, NOW(), NOW()),
+(38, NULL, 'payment_routing_enabled', '0', 'bool', 'Ativa roteamento BR=Efí / Internacional=Stripe', NOW(), NOW()),
+(39, NULL, 'stripe_enabled', '0', 'bool', 'Habilita Stripe para checkout internacional', NOW(), NOW()),
+(40, NULL, 'paypal_enabled', '0', 'bool', 'Habilita PayPal como fallback internacional', NOW(), NOW()),
+(41, NULL, 'default_currency', 'BRL', 'text', 'Moeda padrão', NOW(), NOW()),
+(42, NULL, 'allowed_currencies', 'BRL,USD,EUR', 'text', 'Moedas permitidas', NOW(), NOW()),
+(43, NULL, 'usd_rate', '5.00', 'text', 'Taxa BRL->USD quando price_usd não definido', NOW(), NOW());
+
 -- --------------------------------------------------------
 -- Estrutura: cursos
 -- --------------------------------------------------------
-CREATE TABLE `cursos` (
+CREATE TABLE IF NOT EXISTS `cursos` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `produto_id` int(11) NOT NULL,
   `community_id` int(11) DEFAULT 1 COMMENT 'Comunidade (subdomínio)',
   `titulo` varchar(255) NOT NULL,
-  `descricao` text DEFAULT NULL,
+  `descricao` longtext DEFAULT NULL,
   `imagem_url` varchar(255) DEFAULT NULL,
   `banner_url` varchar(255) DEFAULT NULL,
+  `comentarios_ativos` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1=comentários ativos nas aulas',
+  `comentarios_exigem_aprovacao` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1=comentários exigem aprovação',
+  `certificado_habilitado` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1=emitir certificado ao concluir',
+  `certificado_conclusao_minima` int(11) NOT NULL DEFAULT 100 COMMENT '% mínimo para liberar certificado',
+  `certificado_duracao` varchar(100) DEFAULT NULL COMMENT 'Ex: 40 horas',
+  `certificado_texto_assinatura` varchar(255) DEFAULT NULL COMMENT 'Ex: Diretor, Escola XYZ',
+  `certificado_nome_plataforma` varchar(255) DEFAULT NULL COMMENT 'Override: deixe vazio para usar nome do sistema',
+  `certificado_cor_primaria` varchar(20) DEFAULT '#32e768',
+  `certificado_imagem_fundo` varchar(500) DEFAULT NULL COMMENT 'Path da imagem de fundo (opcional)',
   `data_criacao` timestamp NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
+-- Estrutura: curso_gamificacao
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `curso_gamificacao` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `curso_id` int(11) NOT NULL,
+  `habilitado` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `curso_id` (`curso_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+-- Estrutura: curso_conquistas
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `curso_conquistas` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `curso_id` int(11) NOT NULL,
+  `titulo` varchar(255) NOT NULL,
+  `descricao` text DEFAULT NULL,
+  `gatilho_tipo` varchar(50) NOT NULL,
+  `gatilho_valor` int(11) DEFAULT NULL,
+  `modulo_id` int(11) DEFAULT NULL,
+  `badge_url` varchar(500) DEFAULT NULL,
+  `ordem` int(11) NOT NULL DEFAULT 0,
+  `recompensa_tipo` enum('badge','cupom','mensagem','cupom_mensagem') NOT NULL DEFAULT 'badge' COMMENT 'badge=apenas badge; cupom=cupom; mensagem=gatilho urgência; cupom_mensagem=ambos',
+  `cupom_id` int(11) UNSIGNED DEFAULT NULL COMMENT 'FK cupons - cupom de desconto',
+  `mensagem_urgencia` text DEFAULT NULL COMMENT 'Mensagem de urgência no modal de conquista',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_curso_ordem` (`curso_id`, `ordem`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+-- Estrutura: aluno_conquistas
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `aluno_conquistas` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `aluno_email` varchar(255) NOT NULL,
+  `conquista_id` int(11) NOT NULL,
+  `data_desbloqueio` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `aluno_conquista` (`aluno_email`, `conquista_id`),
+  KEY `idx_aluno` (`aluno_email`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
 -- Estrutura: evolution_messages
 -- --------------------------------------------------------
-CREATE TABLE `evolution_messages` (
+CREATE TABLE IF NOT EXISTS `evolution_messages` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `usuario_id` int(11) NOT NULL COMMENT 'ID do infoprodutor dono da mensagem',
   `produto_id` int(11) DEFAULT NULL COMMENT 'ID do produto específico (NULL para todos)',
   `name` varchar(255) NOT NULL COMMENT 'Nome identificador da mensagem',
-  `event_type` enum('approved','pending','rejected','refunded','charged_back') NOT NULL COMMENT 'Evento que dispara a mensagem',
+  `event_type` enum('approved','pending','rejected','refunded','charged_back','info_filled') NOT NULL COMMENT 'Evento que dispara a mensagem (info_filled=carrinho abandonado)',
   `message_template` text NOT NULL COMMENT 'Template da mensagem com variáveis',
   `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1=ativo, 0=inativo',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -230,9 +391,27 @@ CREATE TABLE `evolution_messages` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
+-- Estrutura: funnel_events
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `funnel_events` (
+  `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `community_id` int(11) NOT NULL DEFAULT 1,
+  `main_payment_id` varchar(255) NOT NULL COMMENT 'transacao_id da compra principal',
+  `step` enum('upsell','downsell') NOT NULL,
+  `offer_product_id` int(11) NOT NULL,
+  `decision` enum('shown','accepted','declined','skipped') NOT NULL DEFAULT 'shown',
+  `offer_payment_id` varchar(255) DEFAULT NULL COMMENT 'transacao_id do pagamento do upsell/downsell quando existir',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='Eventos do funil: shown=exibiu oferta, accepted/declined/skipped=decisão final';
+
+
+-- --------------------------------------------------------
 -- Estrutura: gatewaypro_tracking_events
 -- --------------------------------------------------------
-CREATE TABLE `gatewaypro_tracking_events` (
+CREATE TABLE IF NOT EXISTS `gatewaypro_tracking_events` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `tracking_product_id` int(11) NOT NULL COMMENT 'ID do produto rastreado em gatewaypro_tracking_products',
   `session_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'ID único da sessão do usuário',
@@ -245,7 +424,7 @@ CREATE TABLE `gatewaypro_tracking_events` (
 -- --------------------------------------------------------
 -- Estrutura: gatewaypro_tracking_products
 -- --------------------------------------------------------
-CREATE TABLE `gatewaypro_tracking_products` (
+CREATE TABLE IF NOT EXISTS `gatewaypro_tracking_products` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `usuario_id` int(11) NOT NULL COMMENT 'ID do infoprodutor dono do produto',
   `produto_id` int(11) NOT NULL COMMENT 'ID do produto real sendo rastreado',
@@ -258,7 +437,7 @@ CREATE TABLE `gatewaypro_tracking_products` (
 -- --------------------------------------------------------
 -- Estrutura: licencas_geradas
 -- --------------------------------------------------------
-CREATE TABLE `licencas_geradas` (
+CREATE TABLE IF NOT EXISTS `licencas_geradas` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `chave_licenca` varchar(64) NOT NULL COMMENT 'Chave única de ativação',
   `tipo_licenca` varchar(32) NOT NULL DEFAULT 'VITALICIO' COMMENT 'VITALICIO, MENSAL, ANUAL, SEMESTRAL',
@@ -284,7 +463,7 @@ CREATE TABLE `licencas_geradas` (
 -- --------------------------------------------------------
 -- Estrutura: login_attempts
 -- --------------------------------------------------------
-CREATE TABLE `login_attempts` (
+CREATE TABLE IF NOT EXISTS `login_attempts` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `ip_address` varchar(45) NOT NULL COMMENT 'Endereço IP do cliente',
   `email` varchar(255) DEFAULT NULL COMMENT 'Email/usuário tentado (opcional)',
@@ -297,7 +476,7 @@ CREATE TABLE `login_attempts` (
 -- --------------------------------------------------------
 -- Estrutura: modulos
 -- --------------------------------------------------------
-CREATE TABLE `modulos` (
+CREATE TABLE IF NOT EXISTS `modulos` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `curso_id` int(11) NOT NULL,
   `community_id` int(11) DEFAULT 1 COMMENT 'Comunidade (subdomínio)',
@@ -311,7 +490,7 @@ CREATE TABLE `modulos` (
 -- --------------------------------------------------------
 -- Estrutura: notificacoes
 -- --------------------------------------------------------
-CREATE TABLE `notificacoes` (
+CREATE TABLE IF NOT EXISTS `notificacoes` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `usuario_id` int(11) NOT NULL COMMENT 'ID do infoprodutor que deve receber a notificação',
   `tipo` varchar(50) NOT NULL COMMENT 'Tipo de evento (ex: Compra Aprovada, Pix Gerado, Boleto Pago)',
@@ -329,7 +508,7 @@ CREATE TABLE `notificacoes` (
 -- --------------------------------------------------------
 -- Estrutura: order_bumps
 -- --------------------------------------------------------
-CREATE TABLE `order_bumps` (
+CREATE TABLE IF NOT EXISTS `order_bumps` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `main_product_id` int(11) NOT NULL COMMENT 'ID do produto principal (o do checkout)',
   `offer_product_id` int(11) NOT NULL COMMENT 'ID do produto que está sendo ofertado',
@@ -340,10 +519,29 @@ CREATE TABLE `order_bumps` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Estrutura para tabela `payment_decline_logs`
+--
+
+CREATE TABLE IF NOT EXISTS `payment_decline_logs` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `ts` timestamp NULL DEFAULT current_timestamp(),
+  `gateway` varchar(50) NOT NULL,
+  `payment_id` varchar(255) DEFAULT NULL,
+  `status` varchar(50) DEFAULT NULL,
+  `status_detail` varchar(100) DEFAULT NULL,
+  `decline_code` varchar(100) DEFAULT NULL,
+  `product_id` int(11) DEFAULT NULL,
+  `country` varchar(2) DEFAULT NULL,
+  `ip` varchar(45) DEFAULT NULL,
+  `raw` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`raw`)),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- --------------------------------------------------------
 -- Estrutura: products_feed_items
 -- --------------------------------------------------------
-CREATE TABLE `products_feed_items` (
+CREATE TABLE IF NOT EXISTS `products_feed_items` (
   `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT,
   `community_id` int(11) UNSIGNED DEFAULT NULL COMMENT 'Para multi-tenant',
   `usuario_id` int(11) UNSIGNED NOT NULL COMMENT 'Infoprodutor owner',
@@ -358,7 +556,7 @@ CREATE TABLE `products_feed_items` (
 -- --------------------------------------------------------
 -- Estrutura: product_exclusive_offers
 -- --------------------------------------------------------
-CREATE TABLE `product_exclusive_offers` (
+CREATE TABLE IF NOT EXISTS `product_exclusive_offers` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `source_product_id` int(11) NOT NULL COMMENT 'ID do produto que o cliente já possui e que gera a oferta',
   `offer_product_id` int(11) NOT NULL COMMENT 'ID do produto (tipo area_membros) ofertado',
@@ -369,14 +567,36 @@ CREATE TABLE `product_exclusive_offers` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+CREATE TABLE IF NOT EXISTS `product_funnels` (
+  `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `main_product_id` int(11) NOT NULL COMMENT 'FK produtos.id (signed no schema original)',
+  `community_id` int(11) UNSIGNED DEFAULT NULL,
+  `upsell_product_id` int(11) DEFAULT NULL COMMENT 'FK produtos.id',
+  `downsell_product_id` int(11) DEFAULT NULL COMMENT 'FK produtos.id',
+  `is_active` tinyint(1) NOT NULL DEFAULT 0,
+  `upsell_custom_config` text DEFAULT NULL COMMENT 'JSON: banner_header, banner_side, description, cover_image',
+  `downsell_custom_config` text DEFAULT NULL COMMENT 'JSON: banner_header, banner_side, description, cover_image',
+  `offer_theme` text DEFAULT NULL COMMENT 'JSON: primary_color, secondary_color, logo_url, page_bg, header_label_upsell, header_headline_upsell, header_label_downsell, header_headline_downsell',
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Despejando dados para a tabela `product_funnels`
+--
+
+
 -- --------------------------------------------------------
 -- Estrutura: produtos
 -- --------------------------------------------------------
-CREATE TABLE `produtos` (
+CREATE TABLE IF NOT EXISTS `produtos` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `nome` varchar(255) NOT NULL,
   `descricao` text DEFAULT NULL,
   `preco` decimal(10,2) NOT NULL,
+  `price_usd` decimal(10,2) DEFAULT NULL COMMENT 'Preço em USD para checkout internacional',
+  `price_eur` decimal(10,2) DEFAULT NULL COMMENT 'Preço em EUR para checkout internacional',
   `is_free` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Se o produto é gratuito (1=grátis, 0=pago)',
   `is_showcase` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Se o produto é vitrine para registro gratuito (1=vitrine, 0=normal)',
   `foto` varchar(255) DEFAULT NULL,
@@ -391,13 +611,70 @@ CREATE TABLE `produtos` (
   `gateway` varchar(50) DEFAULT 'mercadopago',
   `gera_licenca` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Se este produto permite gerar licenças (apenas no painel master)',
   `ordem` int(11) NOT NULL DEFAULT 0 COMMENT 'Ordem manual para exibição (drag & drop)',
+  `product_type` varchar(40) DEFAULT NULL COMMENT 'Categorias: PLR, QUIZ, ADS, E_BOOKS, IMAGENS, etc.',
+  `product_tagline` varchar(40) DEFAULT NULL COMMENT 'Ex: Conteúdo para revenda, Quiz interativo',
+  `sales_page_url` varchar(512) DEFAULT NULL COMMENT 'URL da página de vendas (se preenchida, botão vira Saiba Mais)',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
+-- Estrutura: product_type_categories (CRUD categorias por infoprodutor)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `product_type_categories` (
+  `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `usuario_id` int(11) NOT NULL COMMENT 'Infoprodutor dono da categoria',
+  `group_name` varchar(80) NOT NULL COMMENT 'Grupo (ex: Nichos, Produtos Digitais)',
+  `value` varchar(40) NOT NULL COMMENT 'Valor interno (ex: CRISTAO, PLR)',
+  `label` varchar(100) NOT NULL COMMENT 'Label exibido (ex: ✝️ Cristão)',
+  `icon` varchar(10) DEFAULT NULL COMMENT 'Emoji/ícone (ex: ✝️)',
+  `ordem` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_usuario_value` (`usuario_id`, `value`),
+  KEY `idx_usuario` (`usuario_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- Estrutura: cupons (cupons de desconto por infoprodutor)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `cupons` (
+  `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `usuario_id` int(11) NOT NULL COMMENT 'Infoprodutor dono do cupom',
+  `codigo` varchar(50) NOT NULL COMMENT 'Código único (ex: PROMO20, BLACKFRIDAY)',
+  `tipo` enum('percentual','fixo') NOT NULL DEFAULT 'percentual' COMMENT 'percentual = %, fixo = R$',
+  `valor` decimal(10,2) NOT NULL COMMENT 'Valor: % (0-100) ou R$ conforme tipo',
+  `pedido_minimo` decimal(10,2) DEFAULT NULL COMMENT 'Valor mínimo do pedido (opcional)',
+  `max_usos` int(11) DEFAULT NULL COMMENT 'Máximo de usos total (NULL = ilimitado)',
+  `usos_atual` int(11) NOT NULL DEFAULT 0 COMMENT 'Usos já realizados',
+  `valido_de` datetime DEFAULT NULL COMMENT 'Início da validade (NULL = sem início)',
+  `valido_ate` datetime DEFAULT NULL COMMENT 'Fim da validade (NULL = sem fim)',
+  `ativo` tinyint(1) NOT NULL DEFAULT 1 COMMENT '1=ativo, 0=inativo',
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_usuario_codigo` (`usuario_id`,`codigo`),
+  KEY `idx_usuario` (`usuario_id`),
+  KEY `idx_codigo` (`codigo`),
+  KEY `idx_ativo_validade` (`ativo`,`valido_de`,`valido_ate`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- Estrutura: cupom_produtos (produtos onde o cupom vale; vazio = todos)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `cupom_produtos` (
+  `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `cupom_id` int(11) UNSIGNED NOT NULL,
+  `produto_id` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_cupom_produto` (`cupom_id`,`produto_id`),
+  KEY `idx_cupom` (`cupom_id`),
+  KEY `idx_produto` (`produto_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
 -- Estrutura: produto_ofertas
 -- --------------------------------------------------------
-CREATE TABLE `produto_ofertas` (
+CREATE TABLE IF NOT EXISTS `produto_ofertas` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `produto_id` int(11) NOT NULL COMMENT 'ID do produto principal',
   `nome` varchar(255) NOT NULL COMMENT 'Nome da oferta (ex: Black Friday, Lançamento)',
@@ -410,10 +687,77 @@ CREATE TABLE `produto_ofertas` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Estrutura para tabela `pwa_config`
+--
+
+CREATE TABLE IF NOT EXISTS `pwa_config` (
+  `id` int(11) UNSIGNED NOT NULL,
+  `app_name` varchar(255) NOT NULL DEFAULT 'Plataforma',
+  `short_name` varchar(50) NOT NULL DEFAULT 'App',
+  `description` text DEFAULT NULL,
+  `icon_path` varchar(500) DEFAULT NULL,
+  `theme_color` varchar(20) NOT NULL DEFAULT '#32e768',
+  `background_color` varchar(20) NOT NULL DEFAULT '#ffffff',
+  `display_mode` varchar(30) NOT NULL DEFAULT 'standalone',
+  `start_url` varchar(255) NOT NULL DEFAULT '/',
+  `scope` varchar(255) NOT NULL DEFAULT '/',
+  `push_enabled` tinyint(1) NOT NULL DEFAULT 0,
+  `vapid_public_key` text DEFAULT NULL,
+  `vapid_private_key` text DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Despejando dados para a tabela `pwa_config`
+--
+
+
+--
+-- Estrutura para tabela `pwa_push_notifications`
+--
+
+CREATE TABLE IF NOT EXISTS `pwa_push_notifications` (
+  `id` int(11) UNSIGNED NOT NULL,
+  `title` varchar(255) NOT NULL,
+  `message` text DEFAULT NULL,
+  `url` varchar(500) DEFAULT NULL,
+  `icon` varchar(500) DEFAULT NULL,
+  `sent_count` int(11) NOT NULL DEFAULT 0,
+  `failed_count` int(11) NOT NULL DEFAULT 0,
+  `created_by` int(11) UNSIGNED DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Despejando dados para a tabela `pwa_push_notifications`
+--
+
+--
+-- Estrutura para tabela `pwa_push_subscriptions`
+--
+
+CREATE TABLE IF NOT EXISTS `pwa_push_subscriptions` (
+  `id` int(11) UNSIGNED NOT NULL,
+  `usuario_id` int(11) UNSIGNED NOT NULL,
+  `endpoint` varchar(500) NOT NULL,
+  `p256dh` varchar(255) NOT NULL,
+  `auth` varchar(255) NOT NULL,
+  `user_agent` varchar(500) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Despejando dados para a tabela `pwa_push_subscriptions`
+--
+
+
 -- --------------------------------------------------------
 -- Estrutura: saas_assinaturas
 -- --------------------------------------------------------
-CREATE TABLE `saas_assinaturas` (
+CREATE TABLE IF NOT EXISTS `saas_assinaturas` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `usuario_id` int(11) NOT NULL,
   `plano_id` int(11) NOT NULL,
@@ -433,7 +777,7 @@ CREATE TABLE `saas_assinaturas` (
 -- --------------------------------------------------------
 -- Estrutura: saas_config_admin
 -- --------------------------------------------------------
-CREATE TABLE `saas_config_admin` (
+CREATE TABLE IF NOT EXISTS `saas_config_admin` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `mp_access_token` text DEFAULT NULL,
   `mp_public_key` varchar(255) DEFAULT NULL,
@@ -447,7 +791,7 @@ CREATE TABLE `saas_config_admin` (
 -- --------------------------------------------------------
 -- Estrutura: saas_limites_uso
 -- --------------------------------------------------------
-CREATE TABLE `saas_limites_uso` (
+CREATE TABLE IF NOT EXISTS `saas_limites_uso` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `usuario_id` int(11) NOT NULL,
   `mes_ano` varchar(7) NOT NULL COMMENT 'Formato: YYYY-MM',
@@ -460,7 +804,7 @@ CREATE TABLE `saas_limites_uso` (
 -- --------------------------------------------------------
 -- Estrutura: saas_planos
 -- --------------------------------------------------------
-CREATE TABLE `saas_planos` (
+CREATE TABLE IF NOT EXISTS `saas_planos` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `nome` varchar(100) NOT NULL,
   `descricao` text DEFAULT NULL,
@@ -475,10 +819,20 @@ CREATE TABLE `saas_planos` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+--
+-- Despejando dados para a tabela `saas_planos`
+--
+
+INSERT INTO `saas_planos` (`id`, `nome`, `descricao`, `preco`, `periodo`, `max_produtos`, `max_pedidos_mes`, `tracking_enabled`, `ativo`, `criado_em`, `atualizado_em`) VALUES
+(1, 'Plano Free', 'Plano gratuito para começar', 0.00, 'mensal', 3, 10, 0, 1, '2025-12-27 19:52:55', '2025-12-27 19:52:55'),
+(2, 'Premium', 'Descr', 35.00, 'mensal', NULL, NULL, 1, 1, '2025-12-27 20:02:00', '2025-12-27 20:02:00');
+
+-- --------------------------------------------------------
+
 -- --------------------------------------------------------
 -- Estrutura: security_events
 -- --------------------------------------------------------
-CREATE TABLE `security_events` (
+CREATE TABLE IF NOT EXISTS `security_events` (
   `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT,
   `community_id` int(10) UNSIGNED DEFAULT NULL,
   `user_id` int(10) UNSIGNED DEFAULT NULL,
@@ -493,7 +847,7 @@ CREATE TABLE `security_events` (
 -- --------------------------------------------------------
 -- Estrutura: security_logs
 -- --------------------------------------------------------
-CREATE TABLE `security_logs` (
+CREATE TABLE IF NOT EXISTS `security_logs` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `event_type` varchar(50) NOT NULL COMMENT 'Tipo do evento (failed_login_attempt, blocked_login_attempt, unauthorized_access, etc)',
   `user_id` int(11) DEFAULT NULL COMMENT 'ID do usuário (se aplicável)',
@@ -506,7 +860,7 @@ CREATE TABLE `security_logs` (
 -- --------------------------------------------------------
 -- Estrutura: plugins
 -- --------------------------------------------------------
-CREATE TABLE `plugins` (
+CREATE TABLE IF NOT EXISTS `plugins` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `nome` varchar(100) NOT NULL,
   `pasta` varchar(100) NOT NULL,
@@ -517,10 +871,14 @@ CREATE TABLE `plugins` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Dados seed: plugins
+INSERT INTO `plugins` (`id`, `nome`, `pasta`, `versao`, `ativo`, `instalado_em`, `atualizado_em`) VALUES
+(4, 'Modo SaaS', 'saas', '1.0.0', 0, '2025-12-28 10:05:12', '2025-12-28 10:05:12');
+
 -- --------------------------------------------------------
 -- Estrutura: usuarios
 -- --------------------------------------------------------
-CREATE TABLE `usuarios` (
+CREATE TABLE IF NOT EXISTS `usuarios` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `usuario` varchar(255) NOT NULL,
   `nome` varchar(255) DEFAULT NULL,
@@ -558,10 +916,14 @@ CREATE TABLE `usuarios` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- Dados seed: usuarios (admin padrão)
+INSERT INTO `usuarios` (`id`, `usuario`, `nome`, `senha`, `tipo`, `data_cadastro`) VALUES
+(1, 'admin@example.com', 'Administrador', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin', NOW());
+
 -- --------------------------------------------------------
 -- Estrutura: utmfy_integrations
 -- --------------------------------------------------------
-CREATE TABLE `utmfy_integrations` (
+CREATE TABLE IF NOT EXISTS `utmfy_integrations` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `usuario_id` int(11) NOT NULL COMMENT 'ID do infoprodutor dono da integração',
   `name` varchar(255) NOT NULL COMMENT 'Nome amigável da integração (ex: Campanha de Lançamento X)',
@@ -581,7 +943,7 @@ CREATE TABLE `utmfy_integrations` (
 -- --------------------------------------------------------
 -- Estrutura: vendas
 -- --------------------------------------------------------
-CREATE TABLE `vendas` (
+CREATE TABLE IF NOT EXISTS `vendas` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `produto_id` int(11) NOT NULL,
   `community_id` int(11) DEFAULT 1 COMMENT 'Comunidade (subdomínio)',
@@ -596,6 +958,8 @@ CREATE TABLE `vendas` (
   `transacao_id` varchar(255) DEFAULT NULL,
   `metodo_pagamento` varchar(50) DEFAULT NULL,
   `checkout_session_uuid` varchar(255) DEFAULT NULL COMMENT 'UUID para agrupar vendas de um mesmo checkout (principal + order bumps)',
+  `cupom_id` int(11) UNSIGNED DEFAULT NULL COMMENT 'Cupom aplicado nesta venda',
+  `valor_desconto` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Valor do desconto aplicado',
   `email_entrega_enviado` tinyint(1) NOT NULL DEFAULT 0 COMMENT '0 = Não enviado, 1 = Enviado',
   `utm_source` varchar(255) DEFAULT NULL,
   `utm_campaign` varchar(255) DEFAULT NULL,
@@ -610,7 +974,7 @@ CREATE TABLE `vendas` (
 -- --------------------------------------------------------
 -- Estrutura: webhooks
 -- --------------------------------------------------------
-CREATE TABLE `webhooks` (
+CREATE TABLE IF NOT EXISTS `webhooks` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `usuario_id` int(11) NOT NULL COMMENT 'ID do infoprodutor dono do webhook',
   `produto_id` int(11) DEFAULT NULL COMMENT 'ID do produto específico que dispara o webhook (NULL para todos os produtos do infoprodutor)',
@@ -624,103 +988,6 @@ CREATE TABLE `webhooks` (
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- Dados seed: communities
-INSERT INTO `communities` (`id`, `slug`, `name`, `theme_json`, `primary_color`, `created_at`) VALUES
-(1, 'club', 'SinergIA Club', NULL, '#32e768', '2026-02-01 22:44:40'),
-(2, 'mkd', 'SinergIA Mkd', NULL, '#32e768', '2026-02-01 22:44:40'),
-(3, 'flow', 'SinergIA Flow', NULL, '#32e768', '2026-02-01 22:44:40'),
-(4, 'kids', 'SinergIA Kids', NULL, '#32e768', '2026-02-01 22:44:40');
-
-
--- Dados seed: banner_badges (expansão)
-
-INSERT INTO `banner_badges`
-(`id`, `slug`, `icon`, `label`, `is_active`, `sort_order`, `created_at`)
-VALUES
-(1,  'premium',        '🥇', 'Destaque premium',        1,  10, '2026-02-03 01:38:46'),
-(2,  'warning',        '🔔', 'Aviso importante',        1,  20, '2026-02-03 01:38:46'),
-(3,  'bonus',          '🎁', 'Bônus / Promoção',        1,  30, '2026-02-03 01:38:46'),
-(4,  'partners',       '🤝', 'Parceiros',               1,  40, '2026-02-03 01:38:46'),
-(5,  'news',           '🚀', 'Novidade',                1,  50, '2026-02-03 01:38:46'),
-(6,  'exclusive',      '💎', 'Exclusivo',               1,  60, '2026-02-03 01:38:46'),
-
-(7,  'bestseller',     '🏆', 'Mais vendido',            1,  70, '2026-02-03 01:38:46'),
-(8,  'tips',           '💡', 'Dica rápida',             1,  80, '2026-02-03 01:38:46'),
-(9,  'review',         '⭐', 'Avaliação',               1,  90, '2026-02-03 01:38:46'),
-(10, 'recommend',      '✅', 'Recomendado',             1, 100, '2026-02-03 01:38:46'),
-(11, 'digital',        '💳', 'Já vende no digital?',    1, 110, '2026-02-03 01:38:46'),
-
-(12, 'limited',        '⏳', 'Tempo limitado',          1, 120, '2026-02-03 01:38:46'),
-(13, 'hot',            '🔥', 'Em alta',                 1, 130, '2026-02-03 01:38:46'),
-(14, 'free',           '🆓', 'Grátis',                  1, 140, '2026-02-03 01:38:46'),
-(15, 'community',      '📣', 'Comunidade',              1, 150, '2026-02-03 01:38:46'),
-(16, 'support',        '🛟', 'Precisa de ajuda?',       1, 160, '2026-02-03 01:38:46');
-
-
-
--- Dados seed: configuracoes
-INSERT INTO `configuracoes` (`chave`, `valor`) VALUES
-('email_template_delivery_html', '<!DOCTYPE html>\n<html lang=\"pt-br\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <meta http-equiv=\"X-UA-Compatible\" content=\"ie=edge\">\n    <title>Bem-vindo(a)!</title>\n    <style>\n        @import url(\'https://www.google.com/url?sa=E&source=gmail&q=https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700%26display=swap\');\n        /* Estilos para responsividade */\n        @media screen and (max-width: 600px) {\n            .container {\n                width: 100% !important;\n                padding: 10px !important;\n            }\n            .content {\n                padding: 25px 20px !important;\n            }\n            .header-img {\n                width: 150px !important;\n            }\n            h1 {\n                font-size: 24px !important;\n            }\n        }\n    </style>\n</head>\n<body style=\"margin: 0; padding: 0; background-color: #f1f5f9; font-family: \'Inter\', -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, Helvetica, Arial, sans-serif;\">\n    <!-- Preheader (texto de visualização no cliente de e-mail) -->\n    <div style=\"display: none; max-height: 0; overflow: hidden;\">Tudo pronto! Seu acesso aos produtos já está disponível.</div>\n    <table align=\"center\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"100%\" style=\"border-collapse: collapse;\">\n        <tr>\n            <td align=\"center\" style=\"padding: 20px 0;\">\n                <table class=\"container\" align=\"center\" border=\"0\" cellpadding=\"0\" cellspacing=\"0\" width=\"600\" style=\"border-collapse: collapse; background-color: #ffffff; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); overflow: hidden; border: 1px solid #e2e8f0;\">\n                    <!-- Cabeçalho com a Nova Logo -->\n                    <tr>\n                        <td align=\"center\" bgcolor=\"#1e1e2f\" style=\"padding: 30px 20px; background-color: #1e1e2f;\">\n                            <div>\n                                <img class=\"header-img\" src=\"https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png\" alt=\"Logo GarewayPro\" width=\"200\" style=\"display: block; border: 0;\" />\n                            </div>\n                        </td>\n                    </tr>\n                    <!-- Corpo Principal -->\n                    <tr>\n                        <td class=\"content\" style=\"padding: 40px 35px;\">\n                            <h1 style=\"font-size: 28px; font-weight: 700; color: #0f172a; margin: 0 0 15px 0;\">Parabéns, {CLIENT_NAME}!</h1>\n                            <p style=\"margin: 0 0 25px 0; font-size: 16px; line-height: 1.6; color: #475569;\">\n                                Seus produtos adquiridos foram liberados com sucesso! Abaixo estão os detalhes de acesso para cada um deles:\n                            </p>\n                            <!-- Início do Loop de Produtos -->\n                            <!-- LOOP_PRODUCTS_START -->\n                            <div style=\"background-color: #ffffff; border: 1px solid #2DD05E; border-radius: 12px; padding: 25px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.03);\">\n                                <h2 style=\"font-size: 20px; font-weight: 600; color: #1e293b; margin: 0 0 15px 0;\">{PRODUCT_NAME}</h2>\n                                \n                                <!-- Bloco para Área de Membros -->\n                                <!-- IF_PRODUCT_TYPE_MEMBER_AREA -->\n                                <p style=\"margin: 0 0 10px 0; font-size: 15px; color: #475569;\">Este produto está disponível em sua área de membros.</p>\n                                <p style=\"margin: 0 0 5px 0; font-size: 15px; color: #475569;\"><strong>Seu login:</strong> {CLIENT_EMAIL}</p>\n                                <p style=\"margin: 0 0 20px 0; font-size: 15px; color: #475569;\"><strong>Sua senha:</strong> {MEMBER_AREA_PASSWORD}</p>\n                                <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse: collapse;\">\n                                    <tr>\n                                        <td align=\"center\" style=\"background-color: #2DD05E; border-radius: 8px;\">\n                                            <a href=\"{MEMBER_AREA_LOGIN_URL}\" target=\"_blank\" style=\"color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 600; padding: 14px 28px; border: 19px solid #2DD05E; display: inline-block; border-radius: 8px;\">Acessar sua Área de Membros</a>\n                                        </td>\n                                    </tr>\n                                </table>\n                                <!-- END_IF_PRODUCT_TYPE_MEMBER_AREA -->\n\n                                <!-- Bloco para Link -->\n                                <!-- IF_PRODUCT_TYPE_LINK -->\n                                <p style=\"margin: 0 0 15px 0; font-size: 15px; color: #475569;\"><strong>Link de Acesso:</strong></p>\n                                <table border=\"0\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse: collapse; margin-bottom: 10px;\">\n                                    <tr>\n                                        <td align=\"center\" style=\"background-color: #2DD05E; border-radius: 8px;\">\n                                            <!-- ### CORREÇÃO AQUI ### -->\n                                            <!-- Eu mudei o \'border: 1px\' para \'border: 19px\' para bater com o botão da área de membros. -->\n                                            <!-- Isso força o Outlook e outros clientes de e-mail a tornar toda a área do botão clicável. -->\n                                            <a href=\"{PRODUCT_LINK}\" target=\"_blank\" style=\"color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 600; padding: 14px 28px; border: 19px solid #2DD05E; display: inline-block; border-radius: 8px;\">Acessar {PRODUCT_NAME}</a>\n                                        </td>\n                                    </tr>\n                                </table>\n                                <p style=\"word-break: break-all; font-size: 12px; color: #64748b;\">Se o botão não funcionar, copie e cole o link: <a href=\"{PRODUCT_LINK}\" style=\"color: #2DD05E;\">{PRODUCT_LINK}</a></p>\n                                <!-- END_IF_PRODUCT_TYPE_LINK -->\n\n                                <!-- Bloco para PDF -->\n                                <!-- IF_PRODUCT_TYPE_PDF -->\n                                <p style=\"margin: 0 0 10px 0; font-size: 15px; color: #475569;\">Seu PDF está anexado a este e-mail. Faça o download para começar a aproveitar!</p>\n                                <!-- END_IF_PRODUCT_TYPE_PDF -->\n                            </div>\n                            <!-- Fim do Loop de Produtos -->\n                            <!-- LOOP_PRODUCTS_END -->\n\n                            <p style=\"margin: 30px 0 0 0; font-size: 16px; line-height: 1.6; color: #475569;\">\n                                Caso tenha alguma dúvida ou precise de suporte, entre em contato conosco.\n                            </p>\n                            <p style=\"margin: 15px 0 0 0; font-size: 16px; line-height: 1.6; color: #475569;\">\n                                Obrigado e aproveite seus novos produtos!\n                            </p>\n                        </td>\n                    </tr>\n                    <!-- Rodapé -->\n                    <tr>\n                        <td align=\"center\" style=\"padding: 25px 30px; background-color: #f8fafc; border-top: 1px solid #e2e8f0;\">\n                            <p style=\"margin: 0; font-size: 13px; color: #64748b;\">\n                                Este é um e-mail automático, por favor, não responda.\n                            </p>\n                            <p style=\"margin: 10px 0 0 0; font-size: 13px; color: #94a3b8;\">\n                                GatewayPro &copy; 2025. Todos os direitos reservados.\n                            </p>\n                        </td>\n                    </tr>\n                </table>\n            </td>\n        </tr>\n    </table>\n</body>\n</html>'),
-('email_template_delivery_subject', 'Acesso ao seu Produto GatewayPro!'),
-('member_area_login_url', ''),
-('mercado_pago_enable_credit_card', '1'),
-('mercado_pago_enable_pix', '1'),
-('mercado_pago_max_installments', '24'),
-('smtp_encryption', 'ssl'),
-('smtp_from_email', ''),
-('smtp_from_name', 'GatewayPro'),
-('smtp_host', 'smtp.gmail.com'),
-('smtp_password', 'senha_app'),
-('smtp_port', '465'),
-('smtp_username', '');
-
--- Dados seed: configuracoes_sistema
-INSERT INTO `configuracoes_sistema` (`id`, `community_id`, `chave`, `valor`, `tipo`, `descricao`, `created_at`, `updated_at`) VALUES
-(1, NULL, 'cor_primaria', '#32e768', 'color', 'Cor primária do sistema', NOW(), NOW()),
-(2, NULL, 'logo_url', '', 'image', 'URL da logo do sistema', NOW(), NOW()),
-(3, NULL, 'login_image_url', '', 'image', 'URL da imagem de fundo da tela de login', NOW(), NOW()),
-(13, NULL, 'nome_plataforma', 'GatewayPro', 'text', NULL, NOW(), NOW()),
-(14, NULL, 'logo_checkout_url', '', 'text', NULL, NOW(), NOW()),
-(15, NULL, 'favicon_url', '', 'text', NULL, NOW(), NOW()),
-(16, NULL, 'master_panel_url', '', 'text', 'URL do painel master para validação de licenças', NOW(), NOW()),
-(17, NULL, 'master_panel_api_token', '', 'text', 'Token de autenticação da API do painel master', NOW(), NOW()),
-(18, NULL, 'license_key', '', 'text', 'Chave de licença ativada', NOW(), NOW()),
-(19, NULL, 'license_status', 'active', 'text', 'Status da licença: active, expired, invalid', NOW(), NOW()),
-(20, NULL, 'license_expiration', 'lifetime', 'text', 'Data de expiração da licença ou lifetime', NOW(), NOW()),
-(21, NULL, 'license_activated_at', NULL, 'text', 'Data/hora da ativação da licença', NOW(), NOW()),
-(22, NULL, 'license_last_check', NULL, 'text', 'Última verificação da licença', NOW(), NOW()),
-(23, NULL, 'license_type', 'Vitalício', 'text', 'Tipo da licença: VITALICIO, ANUAL, SEMESTRAL, MENSAL', NOW(), NOW()),
-(24, NULL, 'license_days', '', 'text', 'Dias de validade da licença', NOW(), NOW()),
-(25, NULL, 'system_id', '', 'text', 'ID único desta instalação (gerado na 1ª ativação)', NOW(), NOW()),
-(26, NULL, 'security_seal_url', '', 'text', NULL, NOW(), NOW()),
-(27, NULL, 'theme_json', '{\"primary\":\"#32e768\",\"primaryHover\":\"#2dd05e\",\"bg\":\"#080e16\",\"text\":\"rgba(255,255,255,0.9)\",\"textMuted\":\"rgba(255,255,255,0.5)\",\"card\":\"#1f3147\",\"cardElevated\":\"#0f1419\",\"border\":\"rgba(255,255,255,0.1)\",\"radius\":\"1.5rem\",\"shadow\":\"0 4px 6px -1px rgba(0,0,0,0.3)\",\"fontSans\":\"Montserrat,sans-serif\"}', 'json', 'Configurações visuais white-label', NOW(), NOW()),
-(28, NULL, 'is_master_panel', '0', 'text', NULL, NOW(), NOW()),
-(29, NULL, 'master_secret_key', '', 'text', NULL, NOW(), NOW()),
-(30, NULL, 'license_api_token', '', 'text', NULL, NOW(), NOW()),
-(31, NULL, 'notification_image_url', '', 'text', NULL, NOW(), NOW()),
-(32, NULL, 'PROTECT_MEMBER_AREA', 'true', 'boolean', 'Proteção área de membros', NOW(), NOW()),
-(33, NULL, 'PROTECT_MEMBER_AREA_BY_COMMUNITY', '{}', 'json', 'Override por community_id', NOW(), NOW()),
-(34, NULL, 'blocked_offers_grayscale', '0', 'boolean', 'Ofertas bloqueadas: 1 = preto e branco, 0 = colorido (área do cliente)', NOW(), NOW());
-
-
--- Dados seed: saas_planos
-INSERT INTO `saas_planos` (`id`, `nome`, `descricao`, `preco`, `periodo`, `max_produtos`, `max_pedidos_mes`, `tracking_enabled`, `ativo`, `criado_em`, `atualizado_em`) VALUES
-(1, 'Plano Free', 'Plano gratuito para começar', 0.00, 'mensal', 3, 10, 0, 1, '2025-12-27 19:52:55', '2025-12-27 19:52:55'),
-(2, 'Premium', 'Descr', 35.00, 'mensal', NULL, NULL, 1, 1, '2025-12-27 20:02:00', '2025-12-27 20:02:00');
-
--- Dados seed: saas_config_admin
-INSERT INTO `saas_config_admin` (`id`, `mp_access_token`, `mp_public_key`, `pushinpay_token`, `ativo`, `atualizado_em`, `payment_methods`) VALUES
-(1, 'APP_USR-000', 'APP_USR-000', '58271|000', 1, '2025-12-27 22:00:11', '{\"pix\":{\"gateway\":\"pushinpay\",\"enabled\":true},\"credit_card\":{\"gateway\":\"mercadopago\",\"enabled\":true},\"ticket\":{\"gateway\":\"mercadopago\",\"enabled\":true}}'),
-(2, NULL, NULL, NULL, 1, '2025-12-27 20:14:54', NULL);
-
--- Dados seed: plugins
-INSERT INTO `plugins` (`id`, `nome`, `pasta`, `versao`, `ativo`, `instalado_em`, `atualizado_em`) VALUES
-(4, 'Modo SaaS', 'saas', '1.0.0', 0, '2025-12-28 10:05:12', '2025-12-28 10:05:12');
-
--- Dados seed: usuarios
-INSERT INTO `usuarios` (`id`, `usuario`, `nome`, `telefone`, `senha`, `tipo`, `data_cadastro`, `mp_public_key`, `mp_access_token`, `foto_perfil`, `ultima_visualizacao_notificacoes`, `pushinpay_token`, `evolution_name`, `evolution_server_url`, `evolution_api_key`, `evolution_instance`, `efi_client_id`, `efi_client_secret`, `efi_certificate_path`, `efi_pix_key`, `efi_payee_code`, `beehive_secret_key`, `beehive_public_key`, `hypercash_secret_key`, `hypercash_public_key`, `pagarme_api_key`, `pagarme_api_secret`, `pagarme_webhook_secret`, `paypal_client_id`, `paypal_client_secret`, `paypal_webhook_secret`, `stripe_publishable_key`, `stripe_secret_key`, `stripe_webhook_secret`) VALUES
-(1, 'admin@example.com', 'Administrador', NULL, '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin', NOW(), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 
 -- Trigger after_produto_insert: não incluso (evita erro #1419 em ambientes com binary logging).
@@ -774,6 +1041,7 @@ ALTER TABLE `banners`
 ALTER TABLE `banner_badges`
   ADD UNIQUE KEY `idx_slug` (`slug`);
 
+
 --
 -- Índices de tabela `cloned_sites`
 --
@@ -786,6 +1054,7 @@ ALTER TABLE `cloned_sites`
 ALTER TABLE `cloned_site_settings`
   ADD UNIQUE KEY `idx_cloned_site_settings_unique` (`cloned_site_id`),
   ADD KEY `fk_cloned_site_settings_site` (`cloned_site_id`);
+
 
 --
 -- Índices de tabela `communities`
@@ -804,14 +1073,14 @@ ALTER TABLE `configuracoes`
 --
 ALTER TABLE `configuracoes_sistema`
   ADD UNIQUE KEY `chave` (`chave`);
-
+  
 --
 -- Índices de tabela `cursos`
 --
 ALTER TABLE `cursos`
   ADD KEY `idx_produto_id_cursos` (`produto_id`),
   ADD KEY `idx_community_id` (`community_id`);
-
+  
 --
 -- Índices de tabela `evolution_messages`
 --
@@ -821,6 +1090,15 @@ ALTER TABLE `evolution_messages`
   ADD KEY `idx_event_type` (`event_type`),
   ADD KEY `idx_is_active` (`is_active`);
 
+
+--
+-- Índices de tabela `funnel_events`
+--
+ALTER TABLE `funnel_events`
+  ADD UNIQUE KEY `uq_main_step_offer` (`main_payment_id`,`step`,`offer_product_id`),
+  ADD KEY `idx_main_payment` (`main_payment_id`),
+  ADD KEY `idx_community` (`community_id`);
+
 --
 -- Índices de tabela `gatewaypro_tracking_events`
 --
@@ -829,6 +1107,7 @@ ALTER TABLE `gatewaypro_tracking_events`
   ADD KEY `idx_session_id` (`session_id`),
   ADD KEY `idx_event_type` (`event_type`),
   ADD KEY `idx_created_at` (`created_at`);
+
 
 --
 -- Índices de tabela `gatewaypro_tracking_products`
@@ -848,6 +1127,7 @@ ALTER TABLE `licencas_geradas`
   ADD KEY `idx_owner` (`owner_user_id`),
   ADD KEY `idx_assigned` (`assigned_user_id`),
   ADD KEY `idx_escopo` (`escopo`);
+
 
 --
 -- Índices de tabela `login_attempts`
@@ -882,6 +1162,14 @@ ALTER TABLE `order_bumps`
   ADD KEY `fk_order_bumps_offer_product` (`offer_product_id`);
 
 --
+-- Índices de tabela `payment_decline_logs`
+--
+ALTER TABLE `payment_decline_logs`
+  ADD KEY `idx_gateway_ts` (`gateway`,`ts`),
+  ADD KEY `idx_product` (`product_id`);
+
+
+--
 -- Índices de tabela `plugins`
 --
 ALTER TABLE `plugins`
@@ -889,6 +1177,7 @@ ALTER TABLE `plugins`
   ADD UNIQUE KEY `pasta` (`pasta`),
   ADD KEY `idx_ativo` (`ativo`),
   ADD KEY `idx_pasta` (`pasta`);
+
 
 --
 -- Índices de tabela `products_feed_items`
@@ -904,7 +1193,16 @@ ALTER TABLE `product_exclusive_offers`
   ADD UNIQUE KEY `idx_unique_product_offer` (`source_product_id`,`offer_product_id`),
   ADD KEY `fk_offer_source_product` (`source_product_id`),
   ADD KEY `fk_offer_target_product` (`offer_product_id`);
-
+  
+  
+--
+-- Índices de tabela `product_funnels`
+--
+ALTER TABLE `product_funnels`
+  ADD UNIQUE KEY `uniq_main_product` (`main_product_id`),
+  ADD KEY `idx_community` (`community_id`);
+  
+  
 --
 -- Índices de tabela `produtos`
 --
@@ -919,7 +1217,28 @@ ALTER TABLE `produto_ofertas`
   ADD UNIQUE KEY `idx_hash` (`hash`),
   ADD KEY `idx_produto_id` (`produto_id`),
   ADD KEY `idx_ativo` (`ativo`);
+  
+--
+-- Índices de tabela `pwa_config`
+--
+ALTER TABLE `pwa_config`
+  ADD PRIMARY KEY (`id`);
 
+--
+-- Índices de tabela `pwa_push_notifications`
+--
+ALTER TABLE `pwa_push_notifications`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `created_by` (`created_by`);
+  
+--
+-- Índices de tabela `pwa_push_subscriptions`
+--
+ALTER TABLE `pwa_push_subscriptions`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `usuario_id` (`usuario_id`),
+  ADD KEY `idx_endpoint` (`endpoint`(191));
+  
 --
 -- Índices de tabela `saas_assinaturas`
 --
@@ -936,6 +1255,8 @@ ALTER TABLE `saas_limites_uso`
   ADD UNIQUE KEY `unique_usuario_mes` (`usuario_id`,`mes_ano`),
   ADD KEY `idx_usuario_mes` (`usuario_id`,`mes_ano`);
 
+
+--
 --
 -- Índices de tabela `saas_planos`
 --
@@ -959,7 +1280,7 @@ ALTER TABLE `security_logs`
   ADD KEY `idx_user_id` (`user_id`),
   ADD KEY `idx_ip_address` (`ip_address`),
   ADD KEY `idx_created_at` (`created_at`);
-
+  
 --
 -- Índices de tabela `usuarios`
 --
@@ -1065,7 +1386,11 @@ ALTER TABLE `cursos`
 ALTER TABLE `evolution_messages`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
+-- AUTO_INCREMENT de tabela `funnel_events`
 --
+ALTER TABLE `funnel_events`
+  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+  
 -- AUTO_INCREMENT de tabela `gatewaypro_tracking_events`
 --
 ALTER TABLE `gatewaypro_tracking_events`
@@ -1112,6 +1437,12 @@ ALTER TABLE `order_bumps`
 --
 ALTER TABLE `plugins`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  
+--
+-- AUTO_INCREMENT de tabela `payment_decline_logs`
+--
+ALTER TABLE `payment_decline_logs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT de tabela `products_feed_items`
@@ -1136,6 +1467,25 @@ ALTER TABLE `produtos`
 --
 ALTER TABLE `produto_ofertas`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT de tabela `pwa_config`
+--
+ALTER TABLE `pwa_config`
+  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT de tabela `pwa_push_notifications`
+--
+ALTER TABLE `pwa_push_notifications`
+  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=60;
+
+--
+-- AUTO_INCREMENT de tabela `pwa_push_subscriptions`
+--
+ALTER TABLE `pwa_push_subscriptions`
+  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+
 
 --
 -- AUTO_INCREMENT de tabela `saas_assinaturas`
@@ -1244,6 +1594,24 @@ ALTER TABLE `cursos`
   ADD CONSTRAINT `fk_cursos_produto` FOREIGN KEY (`produto_id`) REFERENCES `produtos` (`id`) ON DELETE CASCADE;
 
 --
+-- Restrições para tabelas `curso_gamificacao`
+--
+ALTER TABLE `curso_gamificacao`
+  ADD CONSTRAINT `fk_gamificacao_curso` FOREIGN KEY (`curso_id`) REFERENCES `cursos` (`id`) ON DELETE CASCADE;
+
+--
+-- Restrições para tabelas `curso_conquistas`
+--
+ALTER TABLE `curso_conquistas`
+  ADD CONSTRAINT `fk_conquistas_curso` FOREIGN KEY (`curso_id`) REFERENCES `cursos` (`id`) ON DELETE CASCADE;
+
+--
+-- Restrições para tabelas `aluno_conquistas`
+--
+ALTER TABLE `aluno_conquistas`
+  ADD CONSTRAINT `fk_aluno_conquista` FOREIGN KEY (`conquista_id`) REFERENCES `curso_conquistas` (`id`) ON DELETE CASCADE;
+
+--
 -- Restrições para tabelas `gatewaypro_tracking_events`
 --
 ALTER TABLE `gatewaypro_tracking_events`
@@ -1282,7 +1650,12 @@ ALTER TABLE `order_bumps`
 ALTER TABLE `product_exclusive_offers`
   ADD CONSTRAINT `fk_offer_source_product` FOREIGN KEY (`source_product_id`) REFERENCES `produtos` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `fk_offer_target_product` FOREIGN KEY (`offer_product_id`) REFERENCES `produtos` (`id`) ON DELETE CASCADE;
-
+  
+-- Restrições para tabelas `product_funnels`
+--
+ALTER TABLE `product_funnels`
+  ADD CONSTRAINT `fk_product_funnels_main_product` FOREIGN KEY (`main_product_id`) REFERENCES `produtos` (`id`) ON DELETE CASCADE;
+  
 --
 -- Restrições para tabelas `produtos`
 --
