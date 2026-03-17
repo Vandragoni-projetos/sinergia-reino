@@ -92,6 +92,12 @@ function create_stripe_checkout_session($params) {
             $session_params['customer_email'] = $params['customer_email'];
         }
 
+        // locale: pt, es, fr, en, etc. (Stripe Checkout exibe formulário no idioma)
+        $locale_map = ['pt' => 'pt-BR', 'es' => 'es', 'fr' => 'fr', 'en' => 'en'];
+        if (!empty($params['locale']) && isset($locale_map[$params['locale']])) {
+            $session_params['locale'] = $locale_map[$params['locale']];
+        }
+
         $session = \Stripe\Checkout\Session::create($session_params);
 
         $payment_intent_id = null;
