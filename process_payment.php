@@ -132,8 +132,12 @@ if (!$data) {
     returnJsonError('Dados inválidos.', 400);
 }
 
-// Campos comuns
-$required_fields = ['transaction_amount', 'email', 'cpf', 'name', 'phone', 'product_id'];
+// Campos comuns (cpf opcional quando lang != pt - checkout internacional)
+$checkout_lang = $data['lang'] ?? 'pt';
+$required_fields = ['transaction_amount', 'email', 'name', 'phone', 'product_id'];
+if ($checkout_lang === 'pt') {
+    $required_fields[] = 'cpf';
+}
 foreach ($required_fields as $field) {
     if (empty($data[$field])) {
         returnJsonError("Campo obrigatório ausente: $field", 400);
@@ -168,15 +172,19 @@ try {
     $domainName = $_SERVER['HTTP_HOST'];
     $scriptDir = dirname($_SERVER['PHP_SELF']);
     $path = rtrim(str_replace('\\', '/', $scriptDir), '/');
-    $webhook_url = "https://" . $domainName . $path . '/notification.php';
     
     // URL Obrigado (ou funil de vendas se ativo)
     $stmt_prod_conf = $pdo->prepare("SELECT checkout_config FROM produtos WHERE id = ?");
     $stmt_prod_conf->execute([$main_product_id]);
     $p_conf = $stmt_prod_conf->fetch(PDO::FETCH_ASSOC);
     $checkout_config = json_decode($p_conf['checkout_config'] ?? '{}', true);
-    $redirect_url_after_approval = $checkout_config['redirectUrl'] ?? ("https://" . $domainName . $path . '/obrigado');
-    $base_url_funnel = 'https://' . $domainName . ($path ? $path . '/' : '/');
+    // Base URL sem barras duplas (Stripe exige URLs absolutas válidas)
+    $path_clean = $path ? '/' . trim($path, '/') : '';
+    $base_url_funnel = 'https://' . $domainName . ($path_clean ? $path_clean . '/' : '/');
+    $redirect_url_raw = trim($checkout_config['redirectUrl'] ?? '');
+    $redirect_url_after_approval = ($redirect_url_raw !== '' && filter_var($redirect_url_raw, FILTER_VALIDATE_URL))
+        ? $redirect_url_raw
+        : ($base_url_funnel . 'obrigado');
     if (file_exists(__DIR__ . '/helpers/funnel_helper.php')) {
         require_once __DIR__ . '/helpers/funnel_helper.php';
     }
@@ -699,11 +707,15 @@ try {
             $currency = 'brl';
         }
 
-        $base_url = 'https://' . $domainName . ($path ? $path . '/' : '/');
         $obrigado_base = rtrim($redirect_url_after_approval, '?');
         $success_url = $obrigado_base . (strpos($obrigado_base, '?') !== false ? '&' : '?') . 'payment_id={CHECKOUT_SESSION_ID}';
         $cancel_hash = $data['checkout_hash'] ?? '';
-        $cancel_url = $base_url . 'checkout' . ($cancel_hash ? '?p=' . urlencode($cancel_hash) . '&' : '?') . 'canceled=1';
+        $cancel_url = $base_url_funnel . 'checkout' . ($cancel_hash ? '?p=' . urlencode($cancel_hash) . '&' : '?') . 'canceled=1';
+        // Garantir URLs absolutas válidas (Stripe rejeita URLs relativas ou malformadas)
+        if (empty($obrigado_base) || strpos($obrigado_base, 'http') !== 0 || !filter_var($cancel_url, FILTER_VALIDATE_URL)) {
+            log_process("Stripe URLs inválidas - success_base: " . $obrigado_base . " cancel: " . $cancel_url);
+            throw new Exception("Configuração de URL inválida. Verifique a URL de redirecionamento do checkout.");
+        }
 
         $checkout_lang = $data['lang'] ?? 'pt';
         if (!in_array($checkout_lang, ['pt', 'es', 'fr', 'en'], true)) $checkout_lang = 'pt';

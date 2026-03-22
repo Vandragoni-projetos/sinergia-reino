@@ -30,7 +30,7 @@ USE `checkout`;
 -- Desabilitar FKs para DROP
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TRIGGER IF EXISTS `after_produto_insert`;
-DROP TABLE IF EXISTS `aluno_conquistas`, `curso_conquistas`, `curso_gamificacao`, `aula_comentarios`, `alunos_acessos`, `aluno_progresso`, `aula_arquivos`, `aulas`, `notificacoes`, `vendas`, `gatewaypro_tracking_events`, `gatewaypro_tracking_products`, `modulos`, `cursos`, `order_bumps`, `product_exclusive_offers`, `product_type_categories`, `cupom_produtos`, `cupons`, `produto_ofertas`, `products_feed_items`, `cloned_site_settings`, `cloned_sites`, `saas_assinaturas`, `saas_limites_uso`, `evolution_messages`, `utmfy_integrations`, `webhooks`, `produtos`, `banners`, `licencas_geradas`, `security_events`, `security_logs`, `login_attempts`, `configuracoes`, `configuracoes_sistema`, `communities`, `banner_badges`, `saas_config_admin`, `saas_planos`, `plugins`, `usuarios`;
+DROP TABLE IF EXISTS `aula_download_term_acceptances`, `aluno_conquistas`, `curso_conquistas`, `curso_gamificacao`, `aula_comentarios`, `alunos_acessos`, `aluno_progresso`, `aula_arquivos`, `aulas`, `notificacoes`, `vendas`, `gatewaypro_tracking_events`, `gatewaypro_tracking_products`, `modulos`, `cursos`, `order_bumps`, `product_exclusive_offers`, `product_type_categories`, `cupom_produtos`, `cupons`, `produto_ofertas`, `products_feed_items`, `cloned_site_settings`, `cloned_sites`, `saas_assinaturas`, `saas_limites_uso`, `evolution_messages`, `utmfy_integrations`, `webhooks`, `produtos`, `banners`, `licencas_geradas`, `security_events`, `security_logs`, `login_attempts`, `configuracoes`, `configuracoes_sistema`, `communities`, `banner_badges`, `saas_config_admin`, `saas_planos`, `plugins`, `usuarios`;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -90,7 +90,26 @@ CREATE TABLE IF NOT EXISTS `aulas` (
   `lesson_cover_type` enum('upload','url') DEFAULT NULL COMMENT 'upload ou url',
   `lesson_cover_url` varchar(512) DEFAULT NULL COMMENT 'URL externa da imagem',
   `lesson_cover_path` varchar(512) DEFAULT NULL COMMENT 'Caminho relativo do upload',
+  `require_download_terms` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1=exigir aceite de termo antes do download (config. infoprodutor)',
+  `download_terms_text` text DEFAULT NULL COMMENT 'Texto do termo (personalizável pelo infoprodutor)',
   PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+-- Estrutura: aula_download_term_acceptances (termo de aceite antes do download)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `aula_download_term_acceptances` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `aluno_email` varchar(255) NOT NULL,
+  `aula_id` int(11) NOT NULL,
+  `file_id` int(11) NOT NULL COMMENT 'aula_arquivos.id',
+  `term_text_snapshot` text DEFAULT NULL COMMENT 'Snapshot do texto aceito no momento',
+  `accepted_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` varchar(512) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_acceptance_lookup` (`aluno_email`, `aula_id`, `file_id`),
+  KEY `idx_aula_file` (`aula_id`, `file_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -1351,6 +1370,12 @@ ALTER TABLE `aulas`
 --
 ALTER TABLE `aula_arquivos`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=23;
+
+--
+-- AUTO_INCREMENT de tabela `aula_download_term_acceptances`
+--
+ALTER TABLE `aula_download_term_acceptances`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT de tabela `banners`

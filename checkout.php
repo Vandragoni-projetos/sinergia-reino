@@ -195,6 +195,10 @@ if (empty($payment_methods_config) || !isset($payment_methods_config['pix']['gat
 }
 
 $customer_fields_config = $checkout_config['customer_fields'] ?? ['enable_cpf' => true, 'enable_phone' => true];
+// Para checkouts internacionais (lang != pt), ocultar CPF automaticamente - não é usado fora do Brasil
+if ($checkout_lang !== 'pt') {
+    $customer_fields_config['enable_cpf'] = false;
+}
 
 // Calcular variáveis de métodos de pagamento habilitados no escopo global
 // (necessário para inicialização do JavaScript do Mercado Pago, Beehive e Hypercash)
@@ -269,6 +273,12 @@ $formattedMainPrice = $is_free_product ? 'Grátis' : 'R$ ' . number_format($main
 $formattedMainPriceUsd = ($main_price_usd !== null && !$is_free_product) ? 'US$ ' . number_format($main_price_usd, 2, ',', '.') : null;
 $preco_anterior_raw = !empty($produto['preco_anterior']) ? floatval($produto['preco_anterior']) : null;
 $formattedPrecoAnterior = ($preco_anterior_raw && !$is_free_product) ? 'R$ ' . number_format($preco_anterior_raw, 2, ',', '.') : null;
+// Preço anterior em USD (proporcional) quando produto tem price_usd
+$formattedPrecoAnteriorUsd = null;
+if ($preco_anterior_raw && !$is_free_product && $main_price_usd !== null && $main_price > 0) {
+    $preco_anterior_usd = $preco_anterior_raw * ($main_price_usd / $main_price);
+    $formattedPrecoAnteriorUsd = 'US$ ' . number_format($preco_anterior_usd, 2, ',', '.');
+}
 $discount_text = $checkout_config['summary']['discount_text'] ?? '';
 
 // Desconto Pix
@@ -373,40 +383,41 @@ function render_payment_methods_selector($pix_pushinpay_enabled, $pix_mercadopag
     $available_methods = [];
     
     // Pix - prioridade PushinPay > Efí > Pagar.me > Stripe > Mercado Pago
+    $pix_name = checkout_t('pix');
     if ($pix_pushinpay_enabled) {
-        $available_methods[] = ['type' => 'pix_pushinpay', 'name' => 'Pix', 'icon' => 'qr-code', 'gateway' => 'pushinpay'];
+        $available_methods[] = ['type' => 'pix_pushinpay', 'name' => $pix_name, 'icon' => 'qr-code', 'gateway' => 'pushinpay'];
     } elseif ($pix_efi_enabled) {
-        $available_methods[] = ['type' => 'pix_efi', 'name' => 'Pix', 'icon' => 'qr-code', 'gateway' => 'efi'];
+        $available_methods[] = ['type' => 'pix_efi', 'name' => $pix_name, 'icon' => 'qr-code', 'gateway' => 'efi'];
     } elseif ($pix_pagarme_enabled) {
-        $available_methods[] = ['type' => 'pix_pagarme', 'name' => 'Pix', 'icon' => 'qr-code', 'gateway' => 'pagarme'];
+        $available_methods[] = ['type' => 'pix_pagarme', 'name' => $pix_name, 'icon' => 'qr-code', 'gateway' => 'pagarme'];
     } elseif ($pix_stripe_enabled) {
-        $available_methods[] = ['type' => 'pix_stripe', 'name' => 'Pix', 'icon' => 'qr-code', 'gateway' => 'stripe'];
+        $available_methods[] = ['type' => 'pix_stripe', 'name' => $pix_name, 'icon' => 'qr-code', 'gateway' => 'stripe'];
     } elseif ($pix_mercadopago_enabled) {
-        $available_methods[] = ['type' => 'pix_mercadopago', 'name' => 'Pix', 'icon' => 'qr-code', 'gateway' => 'mercadopago'];
+        $available_methods[] = ['type' => 'pix_mercadopago', 'name' => $pix_name, 'icon' => 'qr-code', 'gateway' => 'mercadopago'];
     }
     
-    // Cartão de Crédito - prioridade Stripe > PayPal > Pagar.me > Hypercash > Beehive > Efí > Mercado Pago
-    $cc_name = checkout_t('credit_card');
+    // Cartão de Crédito - prioridade Stripe > PayPal > Pagar.me > Hypercash > Beehive > Efí > Mercado Pago (i18n)
     if ($credit_card_stripe_enabled) {
-        $available_methods[] = ['type' => 'credit_card_stripe', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'stripe'];
+        $available_methods[] = ['type' => 'credit_card_stripe', 'name' => checkout_t('credit_card_stripe'), 'icon' => 'credit-card', 'gateway' => 'stripe'];
     } elseif ($credit_card_paypal_enabled) {
-        $available_methods[] = ['type' => 'credit_card_paypal', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'paypal'];
+        $available_methods[] = ['type' => 'credit_card_paypal', 'name' => checkout_t('credit_card_paypal'), 'icon' => 'credit-card', 'gateway' => 'paypal'];
     } elseif ($credit_card_pagarme_enabled) {
-        $available_methods[] = ['type' => 'credit_card_pagarme', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'pagarme'];
+        $available_methods[] = ['type' => 'credit_card_pagarme', 'name' => checkout_t('credit_card_pagarme'), 'icon' => 'credit-card', 'gateway' => 'pagarme'];
     } elseif ($credit_card_hypercash_enabled) {
-        $available_methods[] = ['type' => 'credit_card_hypercash', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'hypercash'];
+        $available_methods[] = ['type' => 'credit_card_hypercash', 'name' => checkout_t('credit_card'), 'icon' => 'credit-card', 'gateway' => 'hypercash'];
     } elseif ($credit_card_beehive_enabled) {
-        $available_methods[] = ['type' => 'credit_card_beehive', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'beehive'];
+        $available_methods[] = ['type' => 'credit_card_beehive', 'name' => checkout_t('credit_card'), 'icon' => 'credit-card', 'gateway' => 'beehive'];
     } elseif ($credit_card_efi_enabled) {
-        $available_methods[] = ['type' => 'credit_card_efi', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'efi'];
+        $available_methods[] = ['type' => 'credit_card_efi', 'name' => checkout_t('credit_card'), 'icon' => 'credit-card', 'gateway' => 'efi'];
     } elseif ($credit_card_mercadopago_enabled) {
-        $available_methods[] = ['type' => 'credit_card', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'mercadopago'];
+        $available_methods[] = ['type' => 'credit_card', 'name' => checkout_t('credit_card'), 'icon' => 'credit-card', 'gateway' => 'mercadopago'];
     } elseif ($credit_card_enabled) {
-        $available_methods[] = ['type' => 'credit_card', 'name' => $cc_name, 'icon' => 'credit-card', 'gateway' => 'mercadopago'];
+        $available_methods[] = ['type' => 'credit_card', 'name' => checkout_t('credit_card'), 'icon' => 'credit-card', 'gateway' => 'mercadopago'];
     }
     
     if ($ticket_enabled) {
-        $available_methods[] = ['type' => $ticket_pagarme_enabled ? 'ticket_pagarme' : 'ticket', 'name' => 'Boleto', 'icon' => 'file-text', 'gateway' => $ticket_pagarme_enabled ? 'pagarme' : 'mercadopago'];
+        $ticket_name = $ticket_pagarme_enabled ? checkout_t('ticket_pagarme') : checkout_t('ticket');
+        $available_methods[] = ['type' => $ticket_pagarme_enabled ? 'ticket_pagarme' : 'ticket', 'name' => $ticket_name, 'icon' => 'file-text', 'gateway' => $ticket_pagarme_enabled ? 'pagarme' : 'mercadopago'];
     }
     
     if (empty($available_methods)) {
@@ -563,12 +574,12 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         $html .= "</div>";
         
         $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'>";
-            $html .= "<p>• Liberação imediata do acesso</p>";
-            $html .= "<p>• É simples, só usar o aplicativo de seu banco para pagar Pix</p>";
+            $html .= "<p>• " . htmlspecialchars(checkout_t('pix_immediate_release')) . "</p>";
+            $html .= "<p>• " . htmlspecialchars(checkout_t('pix_simple_bank')) . "</p>";
         $html .= "</div>";
         
         $html .= "<button id='btn-pagar-pushinpay' class='w-full bg-green-600 text-white font-bold py-4 rounded-lg hover:bg-green-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95'>";
-            $html .= "<i data-lucide='qr-code' class='w-6 h-6'></i> GERAR PIX AGORA";
+            $html .= "<i data-lucide='qr-code' class='w-6 h-6'></i> " . htmlspecialchars(checkout_t('btn_generate_pix'));
         $html .= "</button>";
         
         $html .= "</div>";
@@ -601,12 +612,12 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         $html .= "</div>";
         
         $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'>";
-            $html .= "<p>• Liberação imediata do acesso</p>";
-            $html .= "<p>• É simples, só usar o aplicativo de seu banco para pagar Pix</p>";
+            $html .= "<p>• " . htmlspecialchars(checkout_t('pix_immediate_release')) . "</p>";
+            $html .= "<p>• " . htmlspecialchars(checkout_t('pix_simple_bank')) . "</p>";
         $html .= "</div>";
         
         $html .= "<button id='btn-pagar-efi' class='w-full bg-green-600 text-white font-bold py-4 rounded-lg hover:bg-green-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95'>";
-            $html .= "<i data-lucide='qr-code' class='w-6 h-6'></i> GERAR PIX AGORA";
+            $html .= "<i data-lucide='qr-code' class='w-6 h-6'></i> " . htmlspecialchars(checkout_t('btn_generate_pix'));
         $html .= "</button>";
         
         $html .= "</div>";
@@ -617,9 +628,9 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
     if (isset($pix_pagarme_enabled) && $pix_pagarme_enabled) {
         $html .= "<div class='payment-method-container hidden' data-method-type='pix_pagarme'>";
         $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
-        $html .= "<div class='border-2 border-teal-500 bg-teal-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><img src='/assets/pix.svg' class='h-6 w-auto' alt='Pix'><span class='font-bold text-gray-800'>Pix (Pagar.me)</span></div><div class='w-5 h-5 rounded-full border-4 border-teal-500'></div></div>";
-        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Liberação imediata do acesso</p><p>• Pague via Pix usando o aplicativo do seu banco</p></div>";
-        $html .= "<button id='btn-pagar-pagarme-pix' class='w-full bg-teal-600 text-white font-bold py-4 rounded-lg hover:bg-teal-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='qr-code' class='w-6 h-6'></i> GERAR PIX AGORA</button>";
+        $html .= "<div class='border-2 border-teal-500 bg-teal-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><img src='/assets/pix.svg' class='h-6 w-auto' alt='Pix'><span class='font-bold text-gray-800'>" . htmlspecialchars(checkout_t('pix')) . " (Pagar.me)</span></div><div class='w-5 h-5 rounded-full border-4 border-teal-500'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• " . htmlspecialchars(checkout_t('pix_immediate_release')) . "</p><p>• " . htmlspecialchars(checkout_t('pix_pay_bank_app')) . "</p></div>";
+        $html .= "<button id='btn-pagar-pagarme-pix' class='w-full bg-teal-600 text-white font-bold py-4 rounded-lg hover:bg-teal-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='qr-code' class='w-6 h-6'></i> " . htmlspecialchars(checkout_t('btn_generate_pix')) . "</button>";
         $html .= "</div></div>";
     }
     
@@ -627,9 +638,9 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
     if ($pix_stripe_enabled) {
         $html .= "<div class='payment-method-container hidden' data-method-type='pix_stripe'>";
         $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
-        $html .= "<div class='border-2 border-indigo-500 bg-indigo-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><img src='/assets/pix.svg' class='h-6 w-auto' alt='Pix'><span class='font-bold text-gray-800'>Pix (Stripe)</span></div><div class='w-5 h-5 rounded-full border-4 border-indigo-500'></div></div>";
-        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Liberação imediata do acesso</p><p>• Pague via Pix usando o aplicativo do seu banco</p></div>";
-        $html .= "<button id='btn-pagar-stripe-pix' class='w-full bg-indigo-600 text-white font-bold py-4 rounded-lg hover:bg-indigo-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='qr-code' class='w-6 h-6'></i> GERAR PIX AGORA</button>";
+        $html .= "<div class='border-2 border-indigo-500 bg-indigo-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><img src='/assets/pix.svg' class='h-6 w-auto' alt='Pix'><span class='font-bold text-gray-800'>" . htmlspecialchars(checkout_t('pix')) . " (Stripe)</span></div><div class='w-5 h-5 rounded-full border-4 border-indigo-500'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• " . htmlspecialchars(checkout_t('pix_immediate_release')) . "</p><p>• " . htmlspecialchars(checkout_t('pix_pay_bank_app')) . "</p></div>";
+        $html .= "<button id='btn-pagar-stripe-pix' class='w-full bg-indigo-600 text-white font-bold py-4 rounded-lg hover:bg-indigo-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='qr-code' class='w-6 h-6'></i> " . htmlspecialchars(checkout_t('btn_generate_pix')) . "</button>";
         $html .= "</div></div>";
     }
     
@@ -662,7 +673,7 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         $html .= "<div class='border-2 border-yellow-500 bg-yellow-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'>";
             $html .= "<div class='flex items-center gap-3'>";
                 $html .= "<i data-lucide='credit-card' class='w-6 h-6 text-yellow-600'></i>";
-                $html .= "<span class='font-bold text-gray-800'>Cartão de Crédito</span>";
+                $html .= "<span class='font-bold text-gray-800'>" . htmlspecialchars(checkout_t('credit_card')) . "</span>";
             $html .= "</div>";
             $html .= "<div class='w-5 h-5 rounded-full border-4 border-yellow-500'></div>";
         $html .= "</div>";
@@ -683,7 +694,7 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         $html .= "<div class='border-2 border-indigo-500 bg-indigo-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'>";
             $html .= "<div class='flex items-center gap-3'>";
                 $html .= "<i data-lucide='credit-card' class='w-6 h-6 text-indigo-600'></i>";
-                $html .= "<span class='font-bold text-gray-800'>Cartão de Crédito</span>";
+                $html .= "<span class='font-bold text-gray-800'>" . htmlspecialchars(checkout_t('credit_card')) . "</span>";
             $html .= "</div>";
             $html .= "<div class='w-5 h-5 rounded-full border-4 border-indigo-500'></div>";
         $html .= "</div>";
@@ -692,8 +703,8 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         $html .= "<div><label class='block text-sm font-medium text-gray-700 mb-2'>Número do Cartão</label><input type='text' id='hypercash-card-number' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500' placeholder='0000 0000 0000 0000' maxlength='19'></div>";
         $html .= "<div><label class='block text-sm font-medium text-gray-700 mb-2'>Nome no Cartão</label><input type='text' id='hypercash-card-holder' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500' placeholder='NOME COMPLETO'></div>";
         $html .= "<div class='grid grid-cols-2 gap-4'><div><label class='block text-sm font-medium text-gray-700 mb-2'>Validade</label><input type='text' id='hypercash-card-expiry' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500' placeholder='MM/AA' maxlength='5'></div><div><label class='block text-sm font-medium text-gray-700 mb-2'>CVV</label><input type='text' id='hypercash-card-cvv' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500' placeholder='123' maxlength='4'></div></div>";
-        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Aprovação imediata do acesso.</p><p>• 100% Seguro e criptografado.</p></div>";
-        $html .= "<button type='button' id='btn-pagar-hypercash' class='w-full bg-indigo-600 text-white font-bold py-4 rounded-lg hover:bg-indigo-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• " . htmlspecialchars(checkout_t('card_immediate_approval')) . "</p><p>• " . htmlspecialchars(checkout_t('card_secure_encrypted')) . "</p></div>";
+        $html .= "<button type='button' id='btn-pagar-hypercash' class='w-full bg-indigo-600 text-white font-bold py-4 rounded-lg hover:bg-indigo-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95'><i data-lucide='credit-card' class='w-6 h-6'></i> " . htmlspecialchars(checkout_t('btn_finish_payment')) . "</button>";
         $html .= "</form></div></div>";
     }
     
@@ -704,7 +715,7 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         $html .= "<div class='border-2 border-green-500 bg-green-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'>";
             $html .= "<div class='flex items-center gap-3'>";
                 $html .= "<i data-lucide='credit-card' class='w-6 h-6 text-green-600'></i>";
-                $html .= "<span class='font-bold text-gray-800'>Cartão de Crédito</span>";
+                $html .= "<span class='font-bold text-gray-800'>" . htmlspecialchars(checkout_t('credit_card')) . "</span>";
             $html .= "</div>";
             $html .= "<div class='w-5 h-5 rounded-full border-4 border-green-500'></div>";
         $html .= "</div>";
@@ -713,8 +724,8 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
         $html .= "<div><label class='block text-sm font-medium text-gray-700 mb-2'>Número do Cartão</label><input type='text' id='efi-card-number' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500' placeholder='0000 0000 0000 0000' maxlength='19'></div>";
         $html .= "<div><label class='block text-sm font-medium text-gray-700 mb-2'>Nome no Cartão</label><input type='text' id='efi-card-holder' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500' placeholder='NOME COMPLETO'></div>";
         $html .= "<div class='grid grid-cols-2 gap-4'><div><label class='block text-sm font-medium text-gray-700 mb-2'>Validade</label><input type='text' id='efi-card-expiry' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500' placeholder='MM/AA' maxlength='5'></div><div><label class='block text-sm font-medium text-gray-700 mb-2'>CVV</label><input type='text' id='efi-card-cvv' class='w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500' placeholder='123' maxlength='4'></div></div>";
-        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Aprovação imediata do acesso.</p><p>• 100% Seguro e criptografado.</p></div>";
-        $html .= "<button type='button' id='btn-pagar-efi-card' class='w-full bg-green-600 text-white font-bold py-4 rounded-lg hover:bg-green-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• " . htmlspecialchars(checkout_t('card_immediate_approval')) . "</p><p>• " . htmlspecialchars(checkout_t('card_secure_encrypted')) . "</p></div>";
+        $html .= "<button type='button' id='btn-pagar-efi-card' class='w-full bg-green-600 text-white font-bold py-4 rounded-lg hover:bg-green-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg hover:shadow-xl transform active:scale-95'><i data-lucide='credit-card' class='w-6 h-6'></i> " . htmlspecialchars(checkout_t('btn_finish_payment')) . "</button>";
         $html .= "</form></div></div>";
     }
     
@@ -722,9 +733,9 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
     if (isset($credit_card_pagarme_enabled) && $credit_card_pagarme_enabled) {
         $html .= "<div class='payment-method-container hidden' data-method-type='credit_card_pagarme'>";
         $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
-        $html .= "<div class='border-2 border-teal-500 bg-teal-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='credit-card' class='w-6 h-6 text-teal-600'></i><span class='font-bold text-gray-800'>Cartão de Crédito (Pagar.me)</span></div><div class='w-5 h-5 rounded-full border-4 border-teal-500'></div></div>";
-        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Aprovação imediata</p><p>• 100% Seguro e criptografado</p></div>";
-        $html .= "<button type='button' id='btn-pagar-pagarme-card' class='w-full bg-teal-600 text-white font-bold py-4 rounded-lg hover:bg-teal-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
+        $html .= "<div class='border-2 border-teal-500 bg-teal-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='credit-card' class='w-6 h-6 text-teal-600'></i><span class='font-bold text-gray-800'>" . htmlspecialchars(checkout_t('credit_card_pagarme')) . "</span></div><div class='w-5 h-5 rounded-full border-4 border-teal-500'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• " . htmlspecialchars(checkout_t('card_immediate_approval_short')) . "</p><p>• " . htmlspecialchars(checkout_t('card_secure_encrypted_short')) . "</p></div>";
+        $html .= "<button type='button' id='btn-pagar-pagarme-card' class='w-full bg-teal-600 text-white font-bold py-4 rounded-lg hover:bg-teal-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='credit-card' class='w-6 h-6'></i> " . htmlspecialchars(checkout_t('btn_finish_payment')) . "</button>";
         $html .= "</div></div>";
     }
     
@@ -732,9 +743,9 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
     if (isset($credit_card_paypal_enabled) && $credit_card_paypal_enabled) {
         $html .= "<div class='payment-method-container hidden' data-method-type='credit_card_paypal'>";
         $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
-        $html .= "<div class='border-2 border-blue-500 bg-blue-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='credit-card' class='w-6 h-6 text-blue-600'></i><span class='font-bold text-gray-800'>Cartão / Conta PayPal</span></div><div class='w-5 h-5 rounded-full border-4 border-blue-500'></div></div>";
-        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Pague com PayPal ou cartão</p><p>• 100% Seguro</p></div>";
-        $html .= "<button type='button' id='btn-pagar-paypal' class='w-full bg-blue-600 text-white font-bold py-4 rounded-lg hover:bg-blue-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
+        $html .= "<div class='border-2 border-blue-500 bg-blue-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='credit-card' class='w-6 h-6 text-blue-600'></i><span class='font-bold text-gray-800'>" . htmlspecialchars(checkout_t('credit_card_paypal')) . "</span></div><div class='w-5 h-5 rounded-full border-4 border-blue-500'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• " . htmlspecialchars(checkout_t('paypal_pay_card')) . "</p><p>• " . htmlspecialchars(checkout_t('card_100_secure')) . "</p></div>";
+        $html .= "<button type='button' id='btn-pagar-paypal' class='w-full bg-blue-600 text-white font-bold py-4 rounded-lg hover:bg-blue-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='credit-card' class='w-6 h-6'></i> " . htmlspecialchars(checkout_t('btn_finish_payment')) . "</button>";
         $html .= "</div></div>";
     }
     
@@ -742,9 +753,9 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
     if ($credit_card_stripe_enabled) {
         $html .= "<div class='payment-method-container hidden' data-method-type='credit_card_stripe'>";
         $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
-        $html .= "<div class='border-2 border-indigo-500 bg-indigo-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='credit-card' class='w-6 h-6 text-indigo-600'></i><span class='font-bold text-gray-800'>Cartão de Crédito (Stripe)</span></div><div class='w-5 h-5 rounded-full border-4 border-indigo-500'></div></div>";
-        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Aprovação imediata</p><p>• 100% Seguro e criptografado</p><p class='mt-2 text-indigo-600 font-medium'>Clique no botão abaixo para ser redirecionado à página segura do Stripe.</p></div>";
-        $html .= "<button type='button' id='btn-pagar-stripe-card' class='w-full bg-indigo-600 text-white font-bold py-4 rounded-lg hover:bg-indigo-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='credit-card' class='w-6 h-6'></i> FINALIZAR PAGAMENTO</button>";
+        $html .= "<div class='border-2 border-indigo-500 bg-indigo-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='credit-card' class='w-6 h-6 text-indigo-600'></i><span class='font-bold text-gray-800'>" . htmlspecialchars(checkout_t('credit_card_stripe')) . "</span></div><div class='w-5 h-5 rounded-full border-4 border-indigo-500'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• " . htmlspecialchars(checkout_t('card_immediate_approval_short')) . "</p><p>• " . htmlspecialchars(checkout_t('card_secure_encrypted_short')) . "</p><p class='mt-2 text-indigo-600 font-medium'>" . htmlspecialchars(checkout_t('stripe_redirect_hint')) . "</p></div>";
+        $html .= "<button type='button' id='btn-pagar-stripe-card' class='w-full bg-indigo-600 text-white font-bold py-4 rounded-lg hover:bg-indigo-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='credit-card' class='w-6 h-6'></i> " . htmlspecialchars(checkout_t('btn_finish_payment')) . "</button>";
         $html .= "</div></div>";
     }
     
@@ -752,9 +763,9 @@ function render_payment_section($gateway, $accentColor, $payment_methods_config,
     if (isset($ticket_pagarme_enabled) && $ticket_pagarme_enabled) {
         $html .= "<div class='payment-method-container hidden' data-method-type='ticket_pagarme'>";
         $html .= "<div class='bg-white rounded-lg border border-gray-200 p-5 shadow-sm'>";
-        $html .= "<div class='border-2 border-teal-500 bg-teal-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='file-text' class='w-6 h-6 text-teal-600'></i><span class='font-bold text-gray-800'>Boleto (Pagar.me)</span></div><div class='w-5 h-5 rounded-full border-4 border-teal-500'></div></div>";
-        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• Liberação em até 3 dias úteis</p><p>• Pague em qualquer banco ou lotérica</p></div>";
-        $html .= "<button id='btn-pagar-pagarme-ticket' class='w-full bg-teal-600 text-white font-bold py-4 rounded-lg hover:bg-teal-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='file-text' class='w-6 h-6'></i> GERAR BOLETO</button>";
+        $html .= "<div class='border-2 border-teal-500 bg-teal-50 rounded-lg p-4 flex items-center justify-between cursor-default mb-4'><div class='flex items-center gap-3'><i data-lucide='file-text' class='w-6 h-6 text-teal-600'></i><span class='font-bold text-gray-800'>" . htmlspecialchars(checkout_t('ticket_pagarme')) . "</span></div><div class='w-5 h-5 rounded-full border-4 border-teal-500'></div></div>";
+        $html .= "<div class='text-sm text-gray-600 bg-gray-50 p-3 rounded border border-gray-200 mb-4'><p>• " . htmlspecialchars(checkout_t('ticket_release_days')) . "</p><p>• " . htmlspecialchars(checkout_t('ticket_pay_anywhere')) . "</p></div>";
+        $html .= "<button id='btn-pagar-pagarme-ticket' class='w-full bg-teal-600 text-white font-bold py-4 rounded-lg hover:bg-teal-700 transition duration-300 text-lg flex items-center justify-center gap-2 shadow-lg'><i data-lucide='file-text' class='w-6 h-6'></i> " . htmlspecialchars(checkout_t('btn_generate_ticket')) . "</button>";
         $html .= "</div></div>";
     }
     
@@ -789,21 +800,21 @@ function render_security_info($vendedor_nome, $privacy_url = '', $terms_url = ''
     $nome_plataforma_html = htmlspecialchars($nome_plataforma);
     $html = "<div data-id='security_info' class='text-center text-xs text-gray-500 space-y-4'>"; 
     $html .= "<img src='{$logo_html}' alt='Logo {$nome_plataforma_html}' class='h-10 mx-auto mb-4'>";
-    $html .= "<p><strong>{$nome_plataforma_html}</strong> está processando este pagamento para o vendedor <strong>{$vendedor_nome_html}</strong>.</p>";
+    $html .= "<p><strong>{$nome_plataforma_html}</strong> " . htmlspecialchars(checkout_t('security_info')) . " <strong>{$vendedor_nome_html}</strong>.</p>";
     
     // Se tiver selo de segurança, exibe a imagem; senão, exibe o texto padrão
     if (!empty($security_seal_url)) {
         $html .= "<div class='flex items-center justify-center'><img src='" . htmlspecialchars($security_seal_url) . "' alt='Selo de Segurança' class='max-h-16 mx-auto'></div>";
     } else {
-        $html .= "<div class='flex items-center justify-center space-x-4'><div class='flex items-center space-x-1.5'><i data-lucide='shield-check' class='w-4 h-4 text-gray-400'></i><span>Compra 100% segura</span></div></div>";
+        $html .= "<div class='flex items-center justify-center space-x-4'><div class='flex items-center space-x-1.5'><i data-lucide='shield-check' class='w-4 h-4 text-gray-400'></i><span>" . htmlspecialchars(checkout_t('security_100_secure')) . "</span></div></div>";
     }
     
     // Links de Política e Termos
-    $privacy_link = !empty($privacy_url) ? "<a href='" . htmlspecialchars($privacy_url) . "' target='_blank' class='underline hover:text-gray-700'>Política de privacidade</a>" : "<a href='#' class='underline hover:text-gray-700'>Política de privacidade</a>";
-    $terms_link = !empty($terms_url) ? "<a href='" . htmlspecialchars($terms_url) . "' target='_blank' class='underline hover:text-gray-700'>Termos de serviço</a>" : "<a href='#' class='underline hover:text-gray-700'>Termos de serviço</a>";
+    $privacy_link = !empty($privacy_url) ? "<a href='" . htmlspecialchars($privacy_url) . "' target='_blank' class='underline hover:text-gray-700'>" . htmlspecialchars(checkout_t('privacy_policy')) . "</a>" : "<a href='#' class='underline hover:text-gray-700'>" . htmlspecialchars(checkout_t('privacy_policy')) . "</a>";
+    $terms_link = !empty($terms_url) ? "<a href='" . htmlspecialchars($terms_url) . "' target='_blank' class='underline hover:text-gray-700'>" . htmlspecialchars(checkout_t('terms_of_service')) . "</a>" : "<a href='#' class='underline hover:text-gray-700'>" . htmlspecialchars(checkout_t('terms_of_service')) . "</a>";
     
-    $html .= "<p>Este site é protegido pelo reCAPTCHA do Google<br>{$privacy_link} e {$terms_link}.</p>";
-    $html .= "<p class='pt-4 text-gray-400'>Copyright &copy; " . date("Y") . ". Todos os direitos reservados.</p>";
+    $html .= "<p>" . htmlspecialchars(checkout_t('recaptcha_notice')) . "<br>{$privacy_link} " . htmlspecialchars(checkout_t('and_connector')) . " {$terms_link}.</p>";
+    $html .= "<p class='pt-4 text-gray-400'>Copyright &copy; " . date("Y") . ". " . htmlspecialchars(checkout_t('copyright_all_rights')) . "</p>";
     $html .= "</div>";
     return $html;
 }
@@ -811,11 +822,12 @@ function render_security_info($vendedor_nome, $privacy_url = '', $terms_url = ''
 function render_sales_notification($config, $produto_nome_fallback) {
     if (!($config['enabled'] ?? false) || empty($config['names'])) return '';
     $notification_product_display = !empty($config['product']) ? $config['product'] : $produto_nome_fallback;
-    return "<div id='sales-notification' class='fixed lg:bottom-4 left-4 w-80 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-lg p-4 flex items-center space-x-4 transform translate-y-full opacity-0 transition-all duration-500 z-[9999]'><div class='bg-blue-100 text-blue-600 p-2 rounded-full'><i data-lucide='shopping-cart'></i></div><div><p class='text-sm font-semibold text-gray-900'><span id='notification-name'></span> acabou de comprar!</p><p class='text-xs text-gray-600' id='notification-product' data-fallback-product-name='".htmlspecialchars($notification_product_display)."'></p></div></div>";
+    $suffix = htmlspecialchars(checkout_t('sales_notification_suffix'));
+    return "<div id='sales-notification' class='fixed lg:bottom-4 left-4 w-80 bg-white/95 backdrop-blur-sm border border-gray-200 rounded-lg shadow-lg p-4 flex items-center space-x-4 transform translate-y-full opacity-0 transition-all duration-500 z-[9999]'><div class='bg-blue-100 text-blue-600 p-2 rounded-full'><i data-lucide='shopping-cart'></i></div><div><p class='text-sm font-semibold text-gray-900'><span id='notification-name'></span> {$suffix}</p><p class='text-xs text-gray-600' id='notification-product' data-fallback-product-name='".htmlspecialchars($notification_product_display)."'></p></div></div>";
 }
 ?>
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="<?php echo $checkout_lang === 'pt' ? 'pt-BR' : ($checkout_lang === 'en' ? 'en' : $checkout_lang); ?>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1000,7 +1012,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             <h1 class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($main_name); ?></h1>
                             <div class="flex items-baseline flex-wrap gap-x-3 gap-y-1 mt-2">
                                 <span id="hero-main-price" class="text-2xl font-bold" style="color: <?php echo htmlspecialchars($accentColor); ?>;" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span>
-                                <?php if ($formattedPrecoAnterior): ?><span id="hero-preco-anterior" class="text-lg text-gray-400 line-through" data-brl="<?php echo htmlspecialchars($formattedPrecoAnterior); ?>"><?php echo $formattedPrecoAnterior; ?></span><?php endif; ?>
+                                <?php if ($formattedPrecoAnterior): ?><span id="hero-preco-anterior" class="text-lg text-gray-400 line-through" data-price-brl="<?php echo htmlspecialchars($formattedPrecoAnterior); ?>" data-price-usd="<?php echo $formattedPrecoAnteriorUsd ? htmlspecialchars($formattedPrecoAnteriorUsd) : ''; ?>"><?php echo $formattedPrecoAnteriorUsd ?: $formattedPrecoAnterior; ?></span><?php endif; ?>
                             </div>
                             <div class="flex flex-wrap gap-2 mt-2">
                                 <?php if ($is_free_product): ?>
@@ -1077,7 +1089,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             <div class="flex justify-between text-gray-700">
                                 <span><?php echo htmlspecialchars($main_name); ?></span>
                                 <div class="flex items-baseline gap-2">
-                                    <?php if ($formattedPrecoAnterior): ?><span id="summary-preco-anterior" class="text-sm text-gray-400 line-through" data-brl="<?php echo htmlspecialchars($formattedPrecoAnterior); ?>"><?php echo $formattedPrecoAnterior; ?></span><?php endif; ?>
+                                    <?php if ($formattedPrecoAnterior): ?><span id="summary-preco-anterior" class="text-sm text-gray-400 line-through" data-price-brl="<?php echo htmlspecialchars($formattedPrecoAnterior); ?>" data-price-usd="<?php echo $formattedPrecoAnteriorUsd ? htmlspecialchars($formattedPrecoAnteriorUsd) : ''; ?>"><?php echo $formattedPrecoAnteriorUsd ?: $formattedPrecoAnterior; ?></span><?php endif; ?>
                                     <span id="summary-main-price" class="font-medium" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span>
                                 </div>
                             </div>
@@ -1491,6 +1503,8 @@ function render_sales_notification($config, $produto_nome_fallback) {
             const mainProductPrice = <?php echo (float)$main_price; ?>;
             const mainProductPriceUsd = <?php echo $main_price_usd !== null ? (float)$main_price_usd : 'null'; ?>;
             const productCurrency = '<?php echo (!empty($produto['price_usd']) && $produto['price_usd'] > 0) ? 'usd' : 'brl'; ?>';
+            const mainPrecoAnteriorBrl = <?php echo $formattedPrecoAnterior ? json_encode($formattedPrecoAnterior) : 'null'; ?>;
+            const mainPrecoAnteriorUsd = <?php echo $formattedPrecoAnteriorUsd ? json_encode($formattedPrecoAnteriorUsd) : 'null'; ?>;
             const checkoutHash = '<?php echo htmlspecialchars($checkout_hash ?? '', ENT_QUOTES, 'UTF-8'); ?>';
             const infoprodutorId = <?php echo (int)$infoprodutor_id; ?>;
             const mainProductId = <?php echo (int)$produto['id']; ?>;
@@ -1505,10 +1519,14 @@ function render_sales_notification($config, $produto_nome_fallback) {
             // Stripe usa Checkout Session (redirecionamento) - Stripe.js carregado apenas para pix_stripe se necessário
             
             // Configuração de desconto Pix
-            // i18n: labels para JS (validação, erros)
+            // i18n: labels para JS (validação, erros, Pix)
             window.checkoutLabels = <?php echo json_encode([
                 'alert_fill_cpf' => checkout_t('alert_fill_cpf'),
                 'alert_valid_cpf' => checkout_t('alert_valid_cpf'),
+                'alert_fill_name_email' => checkout_t('alert_fill_name_email'),
+                'alert_fill_phone' => checkout_t('alert_fill_phone'),
+                'btn_generate_pix' => checkout_t('btn_generate_pix'),
+                'loading_generating_pix' => checkout_t('loading_generating_pix'),
                 'error_rejected' => checkout_t('error_payment_rejected'),
                 'error_cancelled' => checkout_t('error_payment_cancelled'),
                 'error_generic' => checkout_t('error_payment_generic'),
@@ -1691,9 +1709,17 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 const heroPrice = document.getElementById('hero-main-price');
                 const heroPrev = document.getElementById('hero-preco-anterior');
                 const summaryPrice = document.getElementById('summary-main-price');
+                const summaryPrev = document.getElementById('summary-preco-anterior');
                 if (heroPrice) heroPrice.textContent = useUsd && heroPrice.dataset.priceUsd ? heroPrice.dataset.priceUsd : heroPrice.dataset.priceBrl;
-                if (heroPrev && heroPrev.dataset.brl) heroPrev.style.display = useUsd ? 'none' : '';
+                if (heroPrev) {
+                    if (useUsd && heroPrev.dataset.priceUsd) heroPrev.textContent = heroPrev.dataset.priceUsd;
+                    else if (heroPrev.dataset.priceBrl) heroPrev.textContent = heroPrev.dataset.priceBrl;
+                }
                 if (summaryPrice) summaryPrice.textContent = useUsd && summaryPrice.dataset.priceUsd ? summaryPrice.dataset.priceUsd : summaryPrice.dataset.priceBrl;
+                if (summaryPrev) {
+                    if (useUsd && summaryPrev.dataset.priceUsd) summaryPrev.textContent = summaryPrev.dataset.priceUsd;
+                    else if (summaryPrev.dataset.priceBrl) summaryPrev.textContent = summaryPrev.dataset.priceBrl;
+                }
                 document.querySelectorAll('.orderbump-summary-item .ob-price').forEach(el => {
                     const row = el.closest('.orderbump-summary-item');
                     if (row && row.dataset.priceUsd) el.textContent = useUsd ? row.dataset.priceUsd : row.dataset.priceBrl;
@@ -1708,9 +1734,10 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 if (mobileSummaryItemsContainer) {
                     mobileSummaryItemsContainer.innerHTML = '';
                     const mainPriceDisplay = shouldDisplayUsd() && mainProductPriceUsd ? `US$ ${mainProductPriceUsd.toFixed(2).replace('.', ',')}` : `R$ ${mainProductPrice.toFixed(2).replace('.', ',')}`;
+                    const mainPrecoAnteriorDisplay = (mainPrecoAnteriorBrl || mainPrecoAnteriorUsd) ? (shouldDisplayUsd() && mainPrecoAnteriorUsd ? mainPrecoAnteriorUsd : mainPrecoAnteriorBrl) : null;
                     const mainItemEl = document.createElement('div');
                     mainItemEl.className = 'flex justify-between';
-                    mainItemEl.innerHTML = `<span><?php echo htmlspecialchars(addslashes($main_name)); ?></span><div class="flex items-baseline gap-2"><?php if ($formattedPrecoAnterior): ?><span class="text-sm text-gray-400 line-through"><?php echo $formattedPrecoAnterior; ?></span><?php endif; ?><span class="font-medium">${mainPriceDisplay}</span></div>`;
+                    mainItemEl.innerHTML = `<span><?php echo htmlspecialchars(addslashes($main_name)); ?></span><div class="flex items-baseline gap-2">${mainPrecoAnteriorDisplay ? `<span class="text-sm text-gray-400 line-through">${mainPrecoAnteriorDisplay}</span>` : ''}<span class="font-medium">${mainPriceDisplay}</span></div>`;
                     mobileSummaryItemsContainer.appendChild(mainItemEl);
                 }
                 orderbumpCheckboxes.forEach(checkbox => {
@@ -1906,10 +1933,10 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     lang: '<?php echo htmlspecialchars($checkout_lang); ?>'
                 };
 
-                if (!payerData.name || !payerData.email) { showAlert('Por favor, preencha o nome e o e-mail.'); return null; }
+                if (!payerData.name || !payerData.email) { showAlert((window.checkoutLabels || {}).alert_fill_name_email || 'Por favor, preencha o nome e o e-mail.'); return null; }
                 
                 // Validação condicional baseada no estado VISUAL do campo
-                if (isPhoneActive && !payerData.phone) { showAlert('Por favor, preencha o telefone.'); return null; }
+                if (isPhoneActive && !payerData.phone) { showAlert((window.checkoutLabels || {}).alert_fill_phone || 'Por favor, preencha o telefone.'); return null; }
                 if (isCpfActive && !payerData.cpf) { showAlert((window.checkoutLabels || {}).alert_fill_cpf || 'Por favor, preencha o CPF/CNPJ.'); return null; }
                 
                 // Recuperação de carrinho: registra lead (fire-and-forget)
@@ -2012,7 +2039,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     if (!payerData) return;
 
                     btnPagarPushin.disabled = true;
-                    btnPagarPushin.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Gerando Pix...';
+                    btnPagarPushin.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> ' + ((window.checkoutLabels || {}).loading_generating_pix || 'Gerando Pix...');
                     lucide.createIcons();
 
                     try {
@@ -2056,7 +2083,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         }
                     } finally {
                         btnPagarPushin.disabled = false;
-                        btnPagarPushin.innerHTML = '<i data-lucide="qr-code" class="w-6 h-6"></i> GERAR PIX AGORA';
+                        btnPagarPushin.innerHTML = '<i data-lucide="qr-code" class="w-6 h-6"></i> ' + ((window.checkoutLabels || {}).btn_generate_pix || 'GERAR PIX AGORA');
                         lucide.createIcons();
                     }
                 });
@@ -2070,7 +2097,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     if (!payerData) return;
 
                     btnPagarEfi.disabled = true;
-                    btnPagarEfi.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Gerando Pix...';
+                    btnPagarEfi.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> ' + ((window.checkoutLabels || {}).loading_generating_pix || 'Gerando Pix...');
                     lucide.createIcons();
 
                     try {
@@ -2109,7 +2136,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         showAlert('Erro de conexão. Verifique sua internet e tente novamente.');
                     } finally {
                         btnPagarEfi.disabled = false;
-                        btnPagarEfi.innerHTML = '<i data-lucide="qr-code" class="w-6 h-6"></i> GERAR PIX AGORA';
+                        btnPagarEfi.innerHTML = '<i data-lucide="qr-code" class="w-6 h-6"></i> ' + ((window.checkoutLabels || {}).btn_generate_pix || 'GERAR PIX AGORA');
                         lucide.createIcons();
                     }
                 });
@@ -2122,7 +2149,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     const payerData = validateForm();
                     if (!payerData) return;
                     btnPagarPagarmePix.disabled = true;
-                    btnPagarPagarmePix.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Gerando Pix...';
+                    btnPagarPagarmePix.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> ' + ((window.checkoutLabels || {}).loading_generating_pix || 'Gerando Pix...');
                     lucide.createIcons();
                     try {
                         const response = await fetch('/process_payment', {
@@ -2137,7 +2164,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             showRejectedModal(result.error || 'Erro ao gerar Pix.');
                         }
                     } catch (e) { showRejectedModal('Erro de conexão. Tente novamente.'); }
-                    finally { btnPagarPagarmePix.disabled = false; btnPagarPagarmePix.innerHTML = '<i data-lucide="qr-code" class="w-6 h-6"></i> GERAR PIX AGORA'; lucide.createIcons(); }
+                    finally { btnPagarPagarmePix.disabled = false; btnPagarPagarmePix.innerHTML = '<i data-lucide="qr-code" class="w-6 h-6"></i> ' + ((window.checkoutLabels || {}).btn_generate_pix || 'GERAR PIX AGORA'); lucide.createIcons(); }
                 });
             }
 
@@ -2148,7 +2175,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     const payerData = validateForm();
                     if (!payerData) return;
                     btnPagarStripePix.disabled = true;
-                    btnPagarStripePix.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> Gerando Pix...';
+                    btnPagarStripePix.innerHTML = '<i class="animate-spin h-6 w-6 mr-2" data-lucide="loader-2"></i> ' + ((window.checkoutLabels || {}).loading_generating_pix || 'Gerando Pix...');
                     lucide.createIcons();
                     try {
                         const response = await fetch('/process_payment', {
@@ -2165,7 +2192,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             showRejectedModal(result.error || 'Erro ao gerar Pix.');
                         }
                     } catch (e) { showRejectedModal('Erro de conexão. Tente novamente.'); }
-                    finally { btnPagarStripePix.disabled = false; btnPagarStripePix.innerHTML = '<i data-lucide="qr-code" class="w-6 h-6"></i> GERAR PIX AGORA'; lucide.createIcons(); }
+                    finally { btnPagarStripePix.disabled = false; btnPagarStripePix.innerHTML = '<i data-lucide="qr-code" class="w-6 h-6"></i> ' + ((window.checkoutLabels || {}).btn_generate_pix || 'GERAR PIX AGORA'); lucide.createIcons(); }
                 });
             }
 
