@@ -110,9 +110,11 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                 // 4. Busca aulas, progresso e arquivos em batch (evita N+1)
                 $chk_origem = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'origem_video'");
                 $chk_cover = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'lesson_cover_type'");
+                $chk_termo = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'require_download_terms'");
                 $aulas_cols = "a.id, a.modulo_id, a.titulo, a.url_video, a.descricao, a.ordem, a.release_days, a.tipo_conteudo";
                 if ($chk_origem && $chk_origem->rowCount() > 0) $aulas_cols .= ", a.origem_video";
                 if ($chk_cover && $chk_cover->rowCount() > 0) $aulas_cols .= ", a.lesson_cover_type, a.lesson_cover_url, a.lesson_cover_path";
+                if ($chk_termo && $chk_termo->rowCount() > 0) $aulas_cols .= ", a.require_download_terms, a.download_terms_text";
                 $stmt_aulas_all = $pdo->prepare("
                     SELECT $aulas_cols
                     FROM aulas a
@@ -450,7 +452,8 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
     <div id="course-container" class="min-h-screen member-protected-content" data-comentarios-ativos="<?php echo $comentarios_ativos; ?>" data-aluno-email="<?php echo htmlspecialchars($cliente_email); ?>" data-gamificacao="<?php echo $gamificacao_habilitado ? '1' : '0'; ?>" data-produto-id="<?php echo (int)$produto_id; ?>" data-initial-aula-id="<?php echo (int)($_GET['aula_id'] ?? 0); ?>">
         <?php
         $banner_raw = $curso['banner_url'] ?? $curso['produto_foto'] ?? '';
-        $banner_src = !empty($banner_raw) ? resolve_product_image_url_protected($banner_raw, $upload_dir ?? 'uploads/', $produto_id) : '';
+        // Acesso já validado em verificar_acesso_aluno. Usa caminho direto para evitar 403 em /media.
+        $banner_src = !empty($banner_raw) ? resolve_product_image_url($banner_raw, $upload_dir ?? 'uploads/') : '';
         $banner_src = $banner_src ? htmlspecialchars($banner_src) : '';
         ?>
         <!-- Banner do Topo do Curso (URL protegida) -->
@@ -614,8 +617,9 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                                 <!-- IMAGEM (banner do módulo) -->
                                 <div class="relative aspect-[712/1080] bg-gray-700 overflow-hidden">
                                     <?php 
+                                    // Acesso já validado em verificar_acesso_aluno. Usa caminho direto para evitar 403 em /media.
                                     $module_img_url = !empty($module['imagem_capa_url'])
-                                        ? resolve_product_image_url_protected($module['imagem_capa_url'], $upload_dir ?? 'uploads/', $produto_id)
+                                        ? resolve_product_image_url($module['imagem_capa_url'], $upload_dir ?? 'uploads/')
                                         : '';
                                     $locked_cap = $is_module_locked ? 'grayscale brightness-75 contrast-125' : '';
                                     ?>
@@ -1230,16 +1234,18 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                 // Adicionar arquivos de apoio como botões CTA
                 if ((lesson.tipo_conteudo === 'files' || lesson.tipo_conteudo === 'mixed') && lesson.files && lesson.files.length > 0) {
                     descriptionHtml += '<h4 class="text-lg font-bold text-white mt-6 mb-3">Materiais de Apoio</h4>';
-                    descriptionHtml += '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">';
+                    descriptionHtml += '<div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="lesson-files-grid">';
+                    const requireTerms = !!(lesson.require_download_terms);
+                    const termText = (lesson.download_terms_text || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
                     lesson.files.forEach(file => {
                         const displayName = (file.nome_original && file.nome_original.trim()) ? file.nome_original.trim() : (file.nome_salvo || 'Download');
-                        const downloadUrl = `/media?file_id=${file.id}&produto_id=${currentProductId}`;
-                        descriptionHtml += `
-                            <a href="${downloadUrl}" target="_blank" rel="noopener noreferrer" class="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition duration-300 text-base flex items-center justify-center space-x-2">
-                                <i data-lucide="download" class="w-5 h-5 flex-shrink-0"></i>
-                                <span class="truncate" title="${displayName.replace(/"/g, '&quot;')}">${displayName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
-                            </a>
-                        `;
+                        const safeName = displayName.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                        if (requireTerms) {
+                            descriptionHtml += `<button type="button" class="download-term-btn bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition duration-300 text-base flex items-center justify-center space-x-2 w-full" data-file-id="${file.id}" data-aula-id="${lesson.id}" data-file-name="${safeName}" data-term-text="${termText}"><i data-lucide="download" class="w-5 h-5 flex-shrink-0"></i><span class="truncate" title="${safeName}">${safeName}</span></button>`;
+                        } else {
+                            const downloadUrl = `/media?file_id=${file.id}&produto_id=${currentProductId}`;
+                            descriptionHtml += `<a href="${downloadUrl}" target="_blank" rel="noopener noreferrer" class="bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition duration-300 text-base flex items-center justify-center space-x-2"><i data-lucide="download" class="w-5 h-5 flex-shrink-0"></i><span class="truncate" title="${safeName}">${safeName}</span></a>`;
+                        }
                     });
                     descriptionHtml += '</div>'; // Close the grid div
                 } else if ((lesson.tipo_conteudo === 'files' || lesson.tipo_conteudo === 'mixed') && (!lesson.files || lesson.files.length === 0)) {
@@ -1287,6 +1293,88 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                 lucide.createIcons(); // Renderiza os novos ícones (check-square ou x-square)
             }
             // [FIM DA MUDANÇA] Função de atualização do botão
+
+            // Termo de aceite antes do download: delegação de eventos
+            let pendingDownload = null;
+            function isTermScrolledToBottom() {
+                const el = document.getElementById('download-term-text');
+                if (!el) return true;
+                const sh = el.scrollHeight, ch = el.clientHeight, st = el.scrollTop;
+                // Conteúdo curto (sem scroll): considera no final
+                if (sh <= ch + 20) return true;
+                // Mobile: threshold maior (40px) por diferenças de layout/arredondamento em iOS/Android
+                const threshold = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ? 40 : 15;
+                return st + ch >= sh - threshold;
+            }
+            function updateDownloadTermAcceptButton() {
+                const acceptBtn = document.getElementById('download-term-accept');
+                const checkbox = document.getElementById('download-term-checkbox');
+                if (!acceptBtn || !checkbox) return;
+                acceptBtn.disabled = !(checkbox.checked && isTermScrolledToBottom());
+            }
+            document.addEventListener('click', function(e) {
+                const btn = e.target.closest('.download-term-btn');
+                if (!btn) return;
+                e.preventDefault();
+                const fileId = btn.dataset.fileId;
+                const aulaId = btn.dataset.aulaId;
+                const rawTerm = (btn.dataset.termText || '').replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>');
+                const safeHtml = rawTerm.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+                pendingDownload = { file_id: parseInt(fileId,10), aula_id: parseInt(aulaId,10), produto_id: parseInt(currentProductId,10) };
+                const modal = document.getElementById('download-term-modal');
+                const textEl = document.getElementById('download-term-text');
+                const checkbox = document.getElementById('download-term-checkbox');
+                if (modal && textEl && checkbox) {
+                    textEl.innerHTML = safeHtml || 'Este material é disponibilizado exclusivamente para uso pessoal e individual.';
+                    checkbox.checked = false;
+                    const acceptBtn = document.getElementById('download-term-accept');
+                    if (acceptBtn) { acceptBtn.disabled = true; acceptBtn.textContent = 'Aceitar e baixar'; }
+                    modal.classList.remove('hidden');
+                    textEl.scrollTop = 0;
+                    // Mobile: layout pode demorar mais; touchend para recalc após scroll touch
+                    textEl.onscroll = updateDownloadTermAcceptButton;
+                    textEl.ontouchend = function() { requestAnimationFrame(updateDownloadTermAcceptButton); };
+                    setTimeout(() => updateDownloadTermAcceptButton(), 50);
+                    setTimeout(() => updateDownloadTermAcceptButton(), 200);
+                }
+            });
+            const termCb = document.getElementById('download-term-checkbox');
+            if (termCb) {
+                termCb.addEventListener('change', updateDownloadTermAcceptButton);
+                termCb.addEventListener('input', updateDownloadTermAcceptButton);
+                termCb.addEventListener('click', function() { setTimeout(updateDownloadTermAcceptButton, 0); });
+            }
+            document.getElementById('download-term-cancel')?.addEventListener('click', function() {
+                document.getElementById('download-term-modal')?.classList.add('hidden');
+                pendingDownload = null;
+            });
+            document.getElementById('download-term-accept')?.addEventListener('click', async function() {
+                const checkbox = document.getElementById('download-term-checkbox');
+                if (!checkbox?.checked) return;
+                if (!pendingDownload) return;
+                const acceptBtn = document.getElementById('download-term-accept');
+                if (acceptBtn) { acceptBtn.disabled = true; acceptBtn.textContent = 'Processando...'; }
+                try {
+                    const r = await fetch('/api/member_api?action=register_download_term_acceptance', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(pendingDownload),
+                        credentials: 'same-origin'
+                    });
+                    const data = await r.json();
+                    document.getElementById('download-term-modal')?.classList.add('hidden');
+                    pendingDownload = null;
+                    if (data.success && data.download_url) {
+                        window.open(data.download_url, '_blank');
+                    } else {
+                        alert(data.error || 'Erro ao registrar aceite.');
+                    }
+                } catch (err) {
+                    alert('Erro de conexão. Tente novamente.');
+                } finally {
+                    if (acceptBtn) { acceptBtn.disabled = false; acceptBtn.textContent = 'Aceitar e baixar'; }
+                }
+            });
 
             /** Retorna a próxima aula desbloqueada após a aula atual (no mesmo módulo ou no próximo). */
             function getNextLesson() {
@@ -1740,6 +1828,25 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
             </div>
         </div>
     </div>
+    <!-- Modal: Termo de aceite antes do download -->
+    <div id="download-term-modal" class="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full border border-gray-600 overflow-hidden">
+            <div class="p-6">
+                <h3 class="text-xl font-bold text-white mb-4">Termos de Uso do Material</h3>
+                <div id="download-term-text" class="text-gray-300 text-sm whitespace-pre-wrap mb-4 max-h-48 overflow-y-auto" style="-webkit-overflow-scrolling:touch"></div>
+                <label class="flex items-start gap-2 mb-4 cursor-pointer">
+                    <input type="checkbox" id="download-term-checkbox" class="mt-1 h-4 w-4 text-green-600 rounded focus:ring-green-500">
+                    <span class="text-sm text-gray-300">Li e concordo com os termos de uso do material</span>
+                </label>
+                <p class="text-xs text-gray-500 mb-4">Se preferir, você pode entrar em contato com o produtor para esclarecer qualquer dúvida antes de acessar o material.</p>
+            </div>
+            <div class="px-6 py-4 bg-gray-700 flex justify-end gap-3">
+                <button type="button" id="download-term-cancel" class="px-4 py-2 text-gray-300 hover:text-white font-medium">Cancelar</button>
+                <button type="button" id="download-term-accept" disabled class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600">Aceitar e baixar</button>
+            </div>
+        </div>
+    </div>
+
     <?php 
     $mp_path = __DIR__ . '/../includes/member_protection.php';
     if (file_exists($mp_path)) require_once $mp_path; 

@@ -555,10 +555,10 @@ if (!isset($feed_items_biblioteca)) {
                                     <?php
                                     $image_path = null;
                                     $placeholder_url = 'https://placehold.co/600x400/1f2937/9ca3af?text=Curso+Sem+Imagem';
-                                    if (!empty($curso['produto_foto'])) {
-                                        $image_path = resolve_product_image_url_protected($curso['produto_foto'], $upload_dir, $curso['produto_id'] ?? 0);
-                                    } elseif (!empty($curso['curso_imagem_url'])) {
-                                        $image_path = resolve_product_image_url_protected($curso['curso_imagem_url'], $upload_dir, $curso['produto_id'] ?? 0);
+                                    $banner_raw = $curso['curso_banner_url'] ?? $curso['produto_foto'] ?? $curso['curso_imagem_url'] ?? '';
+                                    if (!empty($banner_raw)) {
+                                        // Biblioteca: usuário já validado na query (aluno_email). Usa caminho direto como Ofertas Exclusivas (evita 403 em /media para novos clientes).
+                                        $image_path = resolve_product_image_url($banner_raw, $upload_dir);
                                     }
                                     if (empty($image_path)) {
                                         $image_path = $placeholder_url;
@@ -1100,7 +1100,7 @@ if (!isset($feed_items_biblioteca)) {
                     console.log('Falha no registro do ServiceWorker:', err);
                 });
             });
-        }
+        }a
     </script>
     <script src="/pwa/pwa_push_register.js"></script>
     <script>
