@@ -55,11 +55,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_ofertas'])) {
         if (isset($_POST['active_offers']) && is_array($_POST['active_offers'])) {
             $stmt_insert = $pdo->prepare("INSERT INTO product_exclusive_offers (source_product_id, offer_product_id, is_active, custom_link, custom_button_text) VALUES (?, ?, 1, ?, ?)");
             foreach ($_POST['active_offers'] as $offer_product_id) {
-                // Ensure the offer_product_id is numeric, belongs to the infoproducer,
-                // is of type 'area_membros', AND is not the source_product_id itself.
+                // Aceita qualquer tipo: link, pdf, area_membros
                 $stmt_check_offer_product = $pdo->prepare("
                     SELECT id FROM produtos
-                    WHERE id = ? AND usuario_id = ? AND tipo_entrega = 'area_membros' AND id != ?
+                    WHERE id = ? AND usuario_id = ? AND id != ?
                 ");
                 $stmt_check_offer_product->execute([$offer_product_id, $usuario_id_logado, $source_product_id]);
                 if ($stmt_check_offer_product->rowCount() > 0) {
@@ -92,12 +91,12 @@ if (isset($_SESSION['flash_message'])) {
     unset($_SESSION['flash_message']);
 }
 
-// 3. Buscar todos os *outros* produtos do infoprodutor que são do tipo 'Área de Membros'
-// Estes são os produtos que podem ser ofertados.
+// 3. Buscar todos os *outros* produtos do infoprodutor (link, pdf, area_membros)
+// Todos podem ser ofertados como upsell.
 $stmt_other_member_products = $pdo->prepare("
-    SELECT id, nome, foto
+    SELECT id, nome, foto, tipo_entrega
     FROM produtos
-    WHERE usuario_id = ? AND tipo_entrega = 'area_membros' AND id != ?
+    WHERE usuario_id = ? AND id != ?
     ORDER BY nome ASC
 ");
 $stmt_other_member_products->execute([$usuario_id_logado, $source_product_id]);
@@ -136,7 +135,7 @@ unset($product); // Libera a referência do último elemento
         <h1 class="text-3xl font-bold text-white">Gerenciar Ofertas para "<span class="text-[#32e768]"><?php echo $source_product_name; ?></span>"</h1>
         <a href="/index?pagina=area_membros" class="bg-dark-elevated text-gray-300 font-bold py-2 px-4 rounded-lg hover:bg-dark-card transition duration-300 flex items-center space-x-2 border border-dark-border">
             <i data-lucide="arrow-left" class="w-5 h-5"></i>
-            <span>Voltar para Cursos</span>
+            <span>Voltar para Produtos</span>
         </a>
     </div>
 
@@ -144,16 +143,16 @@ unset($product); // Libera a referência do último elemento
 
     <div class="bg-dark-card p-8 rounded-lg shadow-md border border-[#32e768]">
         <p class="text-gray-400 mb-6">
-            Selecione quais dos seus outros produtos da Área de Membros você deseja oferecer como "Ofertas Exclusivas"
-            para clientes que JÁ POSSUEM o curso "<span class="font-semibold text-white"><?php echo $source_product_name; ?></span>".
-            Essas ofertas aparecerão no carrossel de ofertas da Área de Membros deles.
+            Selecione quais dos seus outros produtos você deseja oferecer como "Ofertas Exclusivas"
+            para clientes que JÁ POSSUEM "<span class="font-semibold text-white"><?php echo $source_product_name; ?></span>".
+            Aceita produtos Link, PDF ou Área de Membros.
         </p>
 
         <?php if (empty($potential_offer_products)): ?>
             <div class="text-center py-12 text-gray-400">
                 <i data-lucide="package-x" class="mx-auto w-16 h-16 text-gray-500"></i>
-                <p class="mt-4">Você não tem outros produtos do tipo "Área de Membros" para ofertar.</p>
-                <p>Crie mais produtos ou edite-os para que sejam entregues via Área de Membros.</p>
+                <p class="mt-4">Você não tem outros produtos para ofertar.</p>
+                <p>Crie mais produtos em <a href="/index?pagina=produtos" class="text-[#32e768] hover:underline">Meus Produtos</a>.</p>
             </div>
         <?php else: ?>
             <form action="/index?pagina=infoprodutor_member_offers&source_product_id=<?php echo $source_product_id; ?>" method="post">
@@ -172,7 +171,11 @@ unset($product); // Libera a referência do último elemento
                                     <h3 class="font-bold text-lg text-white mb-2 truncate" title="<?php echo htmlspecialchars($product['nome']); ?>">
                                         <?php echo htmlspecialchars($product['nome']); ?>
                                     </h3>
-                                    <p class="text-sm text-gray-400">Produto de Área de Membros</p>
+                                    <?php
+                                    $tipo_labels = ['link' => 'Link Externo', 'email_pdf' => 'PDF por E-mail', 'area_membros' => 'Área de Membros'];
+                                    $tipo = $product['tipo_entrega'] ?? 'link';
+                                    ?>
+                                    <p class="text-sm text-gray-400"><?php echo htmlspecialchars($tipo_labels[$tipo] ?? $tipo); ?></p>
                                 </div>
                                 <div class="mt-4 space-y-3">
                                     <!-- Toggle para habilitar oferta -->

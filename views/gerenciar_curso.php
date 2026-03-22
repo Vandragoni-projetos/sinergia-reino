@@ -46,6 +46,9 @@ $allowed_file_extensions = [
     'csv', 'sql', 'json', 'yaml', 'yml'
 ];
 
+// Texto padrão do termo de uso para download (configurável pelo infoprodutor ao criar/editar aula)
+$termo_download_padrao = "Uso do Material\n\nEste material é disponibilizado exclusivamente para uso pessoal e individual do aluno.\n\nNão é permitido compartilhar, redistribuir ou utilizar este conteúdo para fins comerciais sem autorização.\n\nAo prosseguir com o download, você declara estar ciente e de acordo com estas condições.";
+
 // Extensões perigosas que NUNCA devem ser permitidas
 $dangerous_extensions = [
     'php', 'php3', 'php4', 'php5', 'php7', 'phtml', 'phar',
@@ -507,12 +510,27 @@ try {
                         }
                     }
                     if ($video_validation_error === null) {
+                    $req_termo = (($tipo_conteudo === 'files' || $tipo_conteudo === 'mixed') && !empty($_POST['require_download_terms'])) ? 1 : 0;
+                    $termo_text = $req_termo ? trim($_POST['download_terms_text'] ?? '') : null;
+                    if (empty($termo_text) && $req_termo) $termo_text = $termo_download_padrao ?? '';
                     try {
-                        $stmt = $pdo->prepare("INSERT INTO aulas (modulo_id, titulo, url_video, origem_video, descricao, release_days, tipo_conteudo) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$modulo_id, $titulo_aula, $url_video, $origem_video, $descricao_aula, $release_days_aula, $tipo_conteudo]);
+                        $chk_termo_col = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'require_download_terms'");
+                        if ($chk_termo_col && $chk_termo_col->rowCount() > 0) {
+                            $stmt = $pdo->prepare("INSERT INTO aulas (modulo_id, titulo, url_video, origem_video, descricao, release_days, tipo_conteudo, require_download_terms, download_terms_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                            $stmt->execute([$modulo_id, $titulo_aula, $url_video, $origem_video, $descricao_aula, $release_days_aula, $tipo_conteudo, $req_termo, $termo_text]);
+                        } else {
+                            $stmt = $pdo->prepare("INSERT INTO aulas (modulo_id, titulo, url_video, origem_video, descricao, release_days, tipo_conteudo) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                            $stmt->execute([$modulo_id, $titulo_aula, $url_video, $origem_video, $descricao_aula, $release_days_aula, $tipo_conteudo]);
+                        }
                     } catch (PDOException $e) {
-                        $stmt = $pdo->prepare("INSERT INTO aulas (modulo_id, titulo, url_video, descricao, release_days, tipo_conteudo) VALUES (?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$modulo_id, $titulo_aula, $url_video, $descricao_aula, $release_days_aula, $tipo_conteudo]);
+                        $chk_termo_col = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'require_download_terms'");
+                        if ($chk_termo_col && $chk_termo_col->rowCount() > 0) {
+                            $stmt = $pdo->prepare("INSERT INTO aulas (modulo_id, titulo, url_video, descricao, release_days, tipo_conteudo, require_download_terms, download_terms_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                            $stmt->execute([$modulo_id, $titulo_aula, $url_video, $descricao_aula, $release_days_aula, $tipo_conteudo, $req_termo, $termo_text]);
+                        } else {
+                            $stmt = $pdo->prepare("INSERT INTO aulas (modulo_id, titulo, url_video, descricao, release_days, tipo_conteudo) VALUES (?, ?, ?, ?, ?, ?)");
+                            $stmt->execute([$modulo_id, $titulo_aula, $url_video, $descricao_aula, $release_days_aula, $tipo_conteudo]);
+                        }
                     }
                     $nova_aula_id = $pdo->lastInsertId();
 
@@ -635,12 +653,27 @@ try {
                         }
                     }
                     if ($video_validation_error_edit === null) {
+                    $req_termo_edit = (($tipo_conteudo === 'files' || $tipo_conteudo === 'mixed') && !empty($_POST['require_download_terms'])) ? 1 : 0;
+                    $termo_text_edit = $req_termo_edit ? trim($_POST['download_terms_text'] ?? '') : null;
+                    if (empty($termo_text_edit) && $req_termo_edit) $termo_text_edit = $termo_download_padrao ?? '';
                     try {
-                        $stmt = $pdo->prepare("UPDATE aulas SET titulo = ?, url_video = ?, origem_video = ?, descricao = ?, release_days = ?, tipo_conteudo = ? WHERE id = ?");
-                        $stmt->execute([$titulo_aula, $url_video, $origem_video_edit, $descricao_aula, $release_days_aula, $tipo_conteudo, $aula_id_edit]);
+                        $chk_termo_col = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'require_download_terms'");
+                        if ($chk_termo_col && $chk_termo_col->rowCount() > 0) {
+                            $stmt = $pdo->prepare("UPDATE aulas SET titulo = ?, url_video = ?, origem_video = ?, descricao = ?, release_days = ?, tipo_conteudo = ?, require_download_terms = ?, download_terms_text = ? WHERE id = ?");
+                            $stmt->execute([$titulo_aula, $url_video, $origem_video_edit, $descricao_aula, $release_days_aula, $tipo_conteudo, $req_termo_edit, $termo_text_edit, $aula_id_edit]);
+                        } else {
+                            $stmt = $pdo->prepare("UPDATE aulas SET titulo = ?, url_video = ?, origem_video = ?, descricao = ?, release_days = ?, tipo_conteudo = ? WHERE id = ?");
+                            $stmt->execute([$titulo_aula, $url_video, $origem_video_edit, $descricao_aula, $release_days_aula, $tipo_conteudo, $aula_id_edit]);
+                        }
                     } catch (PDOException $e) {
-                        $stmt = $pdo->prepare("UPDATE aulas SET titulo = ?, url_video = ?, descricao = ?, release_days = ?, tipo_conteudo = ? WHERE id = ?");
-                        $stmt->execute([$titulo_aula, $url_video, $descricao_aula, $release_days_aula, $tipo_conteudo, $aula_id_edit]);
+                        $chk_termo_col = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'require_download_terms'");
+                        if ($chk_termo_col && $chk_termo_col->rowCount() > 0) {
+                            $stmt = $pdo->prepare("UPDATE aulas SET titulo = ?, url_video = ?, descricao = ?, release_days = ?, tipo_conteudo = ?, require_download_terms = ?, download_terms_text = ? WHERE id = ?");
+                            $stmt->execute([$titulo_aula, $url_video, $descricao_aula, $release_days_aula, $tipo_conteudo, $req_termo_edit, $termo_text_edit, $aula_id_edit]);
+                        } else {
+                            $stmt = $pdo->prepare("UPDATE aulas SET titulo = ?, url_video = ?, descricao = ?, release_days = ?, tipo_conteudo = ? WHERE id = ?");
+                            $stmt->execute([$titulo_aula, $url_video, $descricao_aula, $release_days_aula, $tipo_conteudo, $aula_id_edit]);
+                        }
                     }
 
                     // Gerenciar arquivos existentes (deletar)
@@ -846,6 +879,10 @@ try {
         $chk_cover = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'lesson_cover_type'");
         if ($chk_cover && $chk_cover->rowCount() > 0) {
             $aulas_cols .= ', lesson_cover_type, lesson_cover_url, lesson_cover_path';
+        }
+        $chk_termo = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'require_download_terms'");
+        if ($chk_termo && $chk_termo->rowCount() > 0) {
+            $aulas_cols .= ', require_download_terms, download_terms_text';
         }
         $stmt_aulas = $pdo->prepare("SELECT $aulas_cols FROM aulas WHERE modulo_id = ? ORDER BY ordem ASC, id ASC");
         $stmt_aulas->execute([$modulo['id']]);
@@ -1395,6 +1432,8 @@ try {
                                                 data-lesson-cover-type="<?php echo htmlspecialchars($aula['lesson_cover_type'] ?? ''); ?>"
                                                 data-lesson-cover-url="<?php echo htmlspecialchars($aula['lesson_cover_url'] ?? ''); ?>"
                                                 data-lesson-cover-path="<?php echo htmlspecialchars($aula['lesson_cover_path'] ?? ''); ?>"
+                                                data-require-download-terms="<?php echo (int)($aula['require_download_terms'] ?? 0); ?>"
+                                                data-download-terms-text="<?php echo htmlspecialchars($aula['download_terms_text'] ?? ''); ?>"
                                                 data-files='<?php echo json_encode($aula['files']); ?>'>
                                                 <i data-lucide="edit" class="w-5 h-5"></i>
                                             </button>
@@ -1470,6 +1509,22 @@ try {
                                 <label class="block text-gray-300 text-xs font-semibold mb-1">ou URL externa</label>
                                 <input type="url" id="add_lesson_cover_url" name="lesson_cover_url" class="form-input-style w-full px-3 py-2 text-sm bg-dark-card border border-dark-border rounded-lg text-white" placeholder="https://...">
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Termo de aceite antes do download (Somente Arquivos ou Vídeo e Arquivos) - Add -->
+                <div id="add-termo-download-container" class="hidden">
+                    <div class="bg-dark-elevated p-4 rounded-lg border border-dark-border">
+                        <h4 class="text-sm font-semibold text-white mb-3">Termo de uso para download</h4>
+                        <p class="text-xs text-gray-400 mb-3">Se ativado, o aluno precisará aceitar um termo antes de baixar os arquivos desta aula.</p>
+                        <label class="flex items-center gap-2 mb-3 cursor-pointer">
+                            <input type="checkbox" name="require_download_terms" id="add_require_download_terms" value="1" class="h-4 w-4 text-[#32e768] focus:ring-[#32e768] rounded bg-dark-elevated border-dark-border">
+                            <span class="text-gray-300 text-sm font-medium">Exigir aceite de termo antes do download</span>
+                        </label>
+                        <div id="add-termo-text-wrapper" class="hidden">
+                            <label for="add_download_terms_text" class="block text-gray-300 text-xs font-semibold mb-1">Texto do termo (personalizável)</label>
+                            <textarea id="add_download_terms_text" name="download_terms_text" rows="5" class="form-input-style w-full px-3 py-2 text-sm bg-dark-card border border-dark-border rounded-lg text-white" placeholder="<?php echo htmlspecialchars($termo_download_padrao); ?>"><?php echo htmlspecialchars($termo_download_padrao); ?></textarea>
                         </div>
                     </div>
                 </div>
@@ -1558,6 +1613,22 @@ try {
                         </div>
                         <input type="hidden" name="remove_lesson_cover" id="edit_remove_lesson_cover" value="0">
                         <label class="flex items-center text-xs text-gray-400 mt-2"><input type="checkbox" id="edit_remove_lesson_cover_cb" class="mr-1"> Remover banner atual</label>
+                    </div>
+                </div>
+
+                <!-- Termo de aceite antes do download (Somente Arquivos ou Vídeo e Arquivos) - Edit -->
+                <div id="edit-termo-download-container" class="hidden">
+                    <div class="bg-dark-elevated p-4 rounded-lg border border-dark-border">
+                        <h4 class="text-sm font-semibold text-white mb-3">Termo de uso para download</h4>
+                        <p class="text-xs text-gray-400 mb-3">Se ativado, o aluno precisará aceitar um termo antes de baixar os arquivos desta aula.</p>
+                        <label class="flex items-center gap-2 mb-3 cursor-pointer">
+                            <input type="checkbox" name="require_download_terms" id="edit_require_download_terms" value="1" class="h-4 w-4 text-[#32e768] focus:ring-[#32e768] rounded bg-dark-elevated border-dark-border">
+                            <span class="text-gray-300 text-sm font-medium">Exigir aceite de termo antes do download</span>
+                        </label>
+                        <div id="edit-termo-text-wrapper" class="hidden">
+                            <label for="edit_download_terms_text" class="block text-gray-300 text-xs font-semibold mb-1">Texto do termo (personalizável)</label>
+                            <textarea id="edit_download_terms_text" name="download_terms_text" rows="5" class="form-input-style w-full px-3 py-2 text-sm bg-dark-card border border-dark-border rounded-lg text-white" placeholder="<?php echo htmlspecialchars($termo_download_padrao); ?>"></textarea>
+                        </div>
                     </div>
                 </div>
 
@@ -1824,6 +1895,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const addAulaFilesInput = document.getElementById('add_aula_files');
 
     const addLessonCoverContainer = document.getElementById('add-lesson-cover-container');
+    const addTermoDownloadContainer = document.getElementById('add-termo-download-container');
+    const addRequireTermoCb = document.getElementById('add_require_download_terms');
+    const addTermoTextWrapper = document.getElementById('add-termo-text-wrapper');
+    const addDownloadTermsText = document.getElementById('add_download_terms_text');
+    const termoPadraoAdd = <?php echo json_encode($termo_download_padrao); ?>;
     function toggleAddLessonFields() {
         const selectedType = addTipoConteudoSelect.value;
         addUrlVideoInput.required = false;
@@ -1831,6 +1907,7 @@ document.addEventListener('DOMContentLoaded', function() {
         addVideoUrlContainer.style.display = 'none';
         addAulaFilesContainer.style.display = 'none';
         if (addLessonCoverContainer) addLessonCoverContainer.classList.add('hidden');
+        if (addTermoDownloadContainer) addTermoDownloadContainer.classList.add('hidden');
         if (selectedType === 'video' || selectedType === 'mixed') {
             addVideoUrlContainer.style.display = 'block';
             addUrlVideoInput.required = true;
@@ -1838,12 +1915,17 @@ document.addEventListener('DOMContentLoaded', function() {
         if (selectedType === 'files' || selectedType === 'mixed') {
             addAulaFilesContainer.style.display = 'block';
             addAulaFilesInput.required = true;
+            if (addTermoDownloadContainer) addTermoDownloadContainer.classList.remove('hidden');
         }
         // Banner/Thumbnail: somente para "Somente Arquivos" (não para Vídeo e Arquivos)
         if (selectedType === 'files' && addLessonCoverContainer) {
             addLessonCoverContainer.classList.remove('hidden');
         }
+        if (addRequireTermoCb && addTermoTextWrapper) {
+            addTermoTextWrapper.classList.toggle('hidden', !addRequireTermoCb.checked);
+        }
     }
+    if (addRequireTermoCb) addRequireTermoCb.addEventListener('change', () => { addTermoTextWrapper.classList.toggle('hidden', !addRequireTermoCb.checked); });
 
     addTipoConteudoSelect.addEventListener('change', toggleAddLessonFields);
 
@@ -1862,6 +1944,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const acu2 = document.getElementById('add_lesson_cover_url');
             if (acu) acu.value = '';
             if (acu2) acu2.value = '';
+            if (addRequireTermoCb) addRequireTermoCb.checked = false;
+            if (addDownloadTermsText) addDownloadTermsText.value = termoPadraoAdd || '';
+            if (addTermoTextWrapper) addTermoTextWrapper.classList.add('hidden');
             toggleAddLessonFields();
             openModal(addLessonModal);
         });
@@ -1878,6 +1963,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const editAulaFilesInput = document.getElementById('edit_aula_files');
 
     const editLessonCoverContainer = document.getElementById('edit-lesson-cover-container');
+    const editTermoDownloadContainer = document.getElementById('edit-termo-download-container');
+    const editRequireTermoCb = document.getElementById('edit_require_download_terms');
+    const editTermoTextWrapper = document.getElementById('edit-termo-text-wrapper');
+    const editDownloadTermsText = document.getElementById('edit_download_terms_text');
+    const termoPadraoEdit = <?php echo json_encode($termo_download_padrao); ?>;
     function toggleEditLessonFields() {
         const selectedType = editTipoConteudoSelect.value;
         editUrlVideoInput.required = false;
@@ -1886,6 +1976,7 @@ document.addEventListener('DOMContentLoaded', function() {
         editExistingFilesContainer.style.display = 'none';
         editNewFilesUploadContainer.style.display = 'none';
         if (editLessonCoverContainer) editLessonCoverContainer.classList.add('hidden');
+        if (editTermoDownloadContainer) editTermoDownloadContainer.classList.add('hidden');
         if (selectedType === 'video' || selectedType === 'mixed') {
             editVideoUrlContainer.style.display = 'block';
             editUrlVideoInput.required = true;
@@ -1893,6 +1984,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (selectedType === 'files' || selectedType === 'mixed') {
             editExistingFilesContainer.style.display = 'block';
             editNewFilesUploadContainer.style.display = 'block';
+            if (editTermoDownloadContainer) editTermoDownloadContainer.classList.remove('hidden');
             const anyExistingFileSelectedToKeep = existingFilesList.querySelectorAll('input[name="existing_files[]"]:checked').length > 0;
             if (!anyExistingFileSelectedToKeep) editAulaFilesInput.required = true;
         }
@@ -1900,7 +1992,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (selectedType === 'files' && editLessonCoverContainer) {
             editLessonCoverContainer.classList.remove('hidden');
         }
+        if (editRequireTermoCb && editTermoTextWrapper) {
+            editTermoTextWrapper.classList.toggle('hidden', !editRequireTermoCb.checked);
+        }
     }
+    if (editRequireTermoCb) editRequireTermoCb.addEventListener('change', () => { editTermoTextWrapper.classList.toggle('hidden', !editRequireTermoCb.checked); });
 
     editTipoConteudoSelect.addEventListener('change', toggleEditLessonFields);
     existingFilesList.addEventListener('change', (e) => {
@@ -1927,6 +2023,11 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('edit_descricao_aula').value = descricao || '';
             document.getElementById('edit_release_days_aula').value = releaseDays;
             document.getElementById('edit_tipo_conteudo').value = tipoConteudo;
+            const requireTerms = parseInt(this.dataset.requireDownloadTerms || '0', 10);
+            const termsText = this.dataset.downloadTermsText || termoPadraoEdit || '';
+            if (editRequireTermoCb) editRequireTermoCb.checked = !!requireTerms;
+            if (editDownloadTermsText) editDownloadTermsText.value = termsText;
+            if (editTermoTextWrapper) editTermoTextWrapper.classList.toggle('hidden', !requireTerms);
             const coverType = this.dataset.lessonCoverType || '';
             const coverUrl = this.dataset.lessonCoverUrl || '';
             const coverPath = this.dataset.lessonCoverPath || '';
