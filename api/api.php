@@ -1520,7 +1520,6 @@ try {
                         WHERE
                             peo.is_active = 1
                             AND peo.source_product_id IN ({$owned_product_ids_placeholder})
-                            AND p_offer.tipo_entrega = 'area_membros'
                             AND p_offer.id NOT IN ({$owned_product_ids_placeholder})
                         GROUP BY p_offer.id, p_offer.nome, p_offer.descricao, p_offer.foto, p_offer.preco, p_offer.preco_anterior, p_offer.product_type, p_offer.product_tagline, p_offer.checkout_hash, p_offer.sales_page_url, u.nome
                         LIMIT 50

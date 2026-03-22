@@ -197,6 +197,52 @@ switch ($action) {
         }
         break;
 
+    case 'register_download_term_acceptance':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            sendJsonResponse(false, ['error' => 'Método não permitido. Use POST.'], 405);
+        }
+        $file_id = (int)($input['file_id'] ?? 0);
+        $aula_id = (int)($input['aula_id'] ?? 0);
+        $produto_id = (int)($input['produto_id'] ?? 0);
+        if ($file_id <= 0 || $aula_id <= 0 || $produto_id <= 0) {
+            sendJsonResponse(false, ['error' => 'Parâmetros inválidos (file_id, aula_id, produto_id).'], 400);
+        }
+        try {
+            $stmt_ac = $pdo->prepare("SELECT 1 FROM alunos_acessos aa JOIN produtos p ON aa.produto_id = p.id WHERE LOWER(TRIM(aa.aluno_email)) = LOWER(TRIM(?)) AND aa.produto_id = ? AND p.tipo_entrega = 'area_membros' AND (aa.data_expiracao IS NULL OR aa.data_expiracao > NOW())");
+            $stmt_ac->execute([$aluno_email_logado, $produto_id]);
+            if (!$stmt_ac->fetch()) {
+                sendJsonResponse(false, ['error' => 'Sem acesso a este produto.'], 403);
+            }
+            $stmt_val = $pdo->prepare("
+                SELECT af.id, af.aula_id, a.download_terms_text
+                FROM aula_arquivos af
+                JOIN aulas a ON af.aula_id = a.id
+                JOIN modulos m ON a.modulo_id = m.id
+                JOIN cursos c ON m.curso_id = c.id
+                WHERE af.id = ? AND af.aula_id = ? AND c.produto_id = ?
+            ");
+            $stmt_val->execute([$file_id, $aula_id, $produto_id]);
+            $val = $stmt_val->fetch(PDO::FETCH_ASSOC);
+            if (!$val) {
+                sendJsonResponse(false, ['error' => 'Arquivo ou aula não encontrados.'], 404);
+            }
+            $chk_tbl = @$pdo->query("SHOW TABLES LIKE 'aula_download_term_acceptances'");
+            if (!$chk_tbl || $chk_tbl->rowCount() === 0) {
+                sendJsonResponse(false, ['error' => 'Funcionalidade temporariamente indisponível.'], 503);
+            }
+            $term_snapshot = $val['download_terms_text'] ?? ''; // Snapshot do texto aceito
+            $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+            $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 512);
+            $stmt_ins = $pdo->prepare("INSERT INTO aula_download_term_acceptances (aluno_email, aula_id, file_id, term_text_snapshot, ip_address, user_agent) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt_ins->execute([$aluno_email_logado, $aula_id, $file_id, $term_snapshot, $ip, $ua]);
+            $download_url = '/media?file_id=' . $file_id . '&produto_id=' . $produto_id;
+            sendJsonResponse(true, ['download_url' => $download_url]);
+        } catch (PDOException $e) {
+            error_log("Erro register_download_term_acceptance: " . $e->getMessage());
+            sendJsonResponse(false, ['error' => 'Erro ao registrar aceite.'], 500);
+        }
+        break;
+
     // [NOVO CASE] Atualizar perfil do membro
     case 'update_member_profile':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
