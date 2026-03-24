@@ -58,7 +58,7 @@ if ($file_id > 0 && $produto_id > 0) {
             JOIN modulos m ON a.modulo_id = m.id
             JOIN cursos c ON m.curso_id = c.id
             WHERE af.id = ? AND c.produto_id = ?
-        ");ac
+        ");
         $stmt->execute([$file_id, $produto_id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$row) {
