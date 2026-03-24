@@ -340,7 +340,7 @@ $inactive_class = 'sidebar-item sidebar-item-inactive';
 
     <!-- Floating Live Notification (Mantido para o admin ver, se quiser, mas não ligado ao sininho) -->
     <div id="live-notification-container" class="live-notification-container">
-        <img id="live-notification-product-image" src="<?php echo htmlspecialchars($logo_url); ?>" alt="Produto" class="live-notification-product-image">
+        <img id="live-notification-product-image" src="<?php echo htmlspecialchars($notification_image_url); ?>" alt="Produto" class="live-notification-product-image">
         <div>
             <p class="text-sm font-semibold text-gray-900" id="live-notification-message"></p>
             <p class="text-xs text-gray-500 mt-1" id="live-notification-details"></p>
@@ -528,6 +528,17 @@ $inactive_class = 'sidebar-item sidebar-item-inactive';
         const liveNotificationMessage = document.getElementById('live-notification-message');
         const liveNotificationDetails = document.getElementById('live-notification-details');
         const liveNotificationProductImage = document.getElementById('live-notification-product-image');
+        const liveNotificationImageFallback = <?php echo json_encode($notification_image_url, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+
+        function resolveLiveNotificationProductImageSrc(produtoFoto, fallbackUrl) {
+            if (!produtoFoto) return fallbackUrl;
+            const s = String(produtoFoto).trim();
+            if (s.startsWith('http://') || s.startsWith('https://')) return s;
+            const clean = s.replace(/^\/+/, '');
+            if (clean.startsWith('uploads/')) return '/' + clean;
+            return '/uploads/' + clean;
+        }
+
         const cashRegisterSound = document.getElementById('cash-register-sound');
 
         let audioContextResumed = false;
@@ -633,8 +644,7 @@ $inactive_class = 'sidebar-item sidebar-item-inactive';
 
             liveNotificationMessage.textContent = messageText;
             liveNotificationDetails.textContent = detailsText;
-            // Modificação: Usa a foto do produto se disponível, caso contrário, usa a imagem padrão
-            liveNotificationProductImage.src = (notification.produto_foto && (notification.produto_foto.startsWith('http://') || notification.produto_foto.startsWith('https://'))) ? notification.produto_foto : (notification.produto_foto ? 'uploads/' + notification.produto_foto : '<?php echo htmlspecialchars($logo_url); ?>');
+            liveNotificationProductImage.src = resolveLiveNotificationProductImageSrc(notification.produto_foto, liveNotificationImageFallback);
             
             if (cashRegisterSound && audioContextResumed) {
                 cashRegisterSound.load();
