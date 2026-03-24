@@ -12,7 +12,7 @@ error_reporting(E_ALL);
 ini_set('log_errors', 1);
 
 require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../config/csrf_helper.php';
+require_once __DIR__ . '/../helpers/security_helper.php';
 
 // Incluir PHPMailer
 use PHPMailer\PHPMailer\PHPMailer;
@@ -30,7 +30,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $input = json_decode(file_get_contents('php://input'), true);
-validate_csrf_request($input);
+if (!is_array($input)) {
+    echo json_encode(['success' => false, 'error' => 'Requisição inválida.']);
+    exit;
+}
+$csrf = $input['csrf_token'] ?? '';
+if (!verify_csrf_token($csrf)) {
+    http_response_code(403);
+    header('Content-Type: application/json; charset=UTF-8');
+    echo json_encode(['success' => false, 'error' => 'Sessão expirada ou token inválido. Atualize a página e tente novamente.']);
+    exit;
+}
 $email = trim($input['email'] ?? '');
 $user_type = $input['user_type'] ?? 'usuario'; // 'usuario' para membros, 'all' para qualquer tipo
 
