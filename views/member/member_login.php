@@ -138,6 +138,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
     }
 }
+$fp_script_dir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/'));
+$forgot_password_api_url = (in_array($fp_script_dir, ['/', '.', ''], true) ? '' : rtrim($fp_script_dir, '/')) . '/api/forgot_password.php';
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -632,13 +634,22 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             
             try {
                 const csrfToken = document.getElementById('forgot-csrf').value;
-                const response = await fetch('/api/forgot_password.php', {
+                const response = await fetch(<?php echo json_encode($forgot_password_api_url, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    credentials: 'same-origin',
                     body: JSON.stringify({ email: email, user_type: 'usuario', csrf_token: csrfToken })
                 });
                 
-                const result = await response.json();
+                const raw = await response.text();
+                let result;
+                try {
+                    result = raw ? JSON.parse(raw) : {};
+                } catch (parseErr) {
+                    errorDiv.classList.remove('hidden');
+                    errorMsg.textContent = 'Resposta inválida do servidor. Atualize a página ou tente mais tarde.';
+                    return;
+                }
                 
                 if (result.success) {
                     document.getElementById('forgot-password-form-container').classList.add('hidden');
@@ -650,7 +661,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 }
             } catch (e) {
                 errorDiv.classList.remove('hidden');
-                errorMsg.textContent = 'Erro de conexão. Tente novamente.';
+                errorMsg.textContent = 'Erro de conexão. Verifique sua internet, atualize a página e tente novamente.';
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i data-lucide="send" class="w-5 h-5"></i><span>Enviar Nova Senha</span>';
