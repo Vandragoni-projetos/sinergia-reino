@@ -67,23 +67,35 @@ try {
         exit;
     }
     
-    // Gera nova senha
+    // Gera nova senha — só grava no banco após o e-mail ser enviado (evita bloquear o usuário se o SMTP falhar)
     $new_password = bin2hex(random_bytes(6)); // 12 caracteres
     $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
-    
-    // Atualiza a senha no banco
-    $stmt_update = $pdo->prepare("UPDATE usuarios SET senha = ? WHERE id = ?");
-    $stmt_update->execute([$hashed_password, $user['id']]);
-    
-    // Busca configurações SMTP
-    $smtp_config = [];
-    $stmt_smtp = $pdo->query("SELECT chave, valor FROM configuracoes WHERE chave LIKE 'smtp_%'");
-    while ($row = $stmt_smtp->fetch(PDO::FETCH_ASSOC)) {
-        $smtp_config[$row['chave']] = $row['valor'];
-    }
-    
-    // Busca configurações do sistema (nome da plataforma)
+
     $nome_plataforma = getSystemSetting('nome_plataforma', 'GatewayPro');
+
+    // Mesmas chaves e padrões que api.php / notifications_api (TLS + 587 por padrão)
+    $stmt_smtp = $pdo->prepare("SELECT chave, valor FROM configuracoes WHERE chave IN ('smtp_host', 'smtp_port', 'smtp_username', 'smtp_password', 'smtp_encryption', 'smtp_from_email', 'smtp_from_name')");
+    $stmt_smtp->execute();
+    $smtp_raw = $stmt_smtp->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    $encRaw = strtolower(trim((string)($smtp_raw['smtp_encryption'] ?? '')));
+    if ($encRaw === '') {
+        $encRaw = 'tls';
+    }
+    $port = (int)($smtp_raw['smtp_port'] ?? 587);
+    if ($port <= 0) {
+        $port = 587;
+    }
+
+    $smtp_config = [
+        'host' => trim((string)($smtp_raw['smtp_host'] ?? '')),
+        'port' => $port,
+        'username' => trim((string)($smtp_raw['smtp_username'] ?? '')),
+        'password' => (string)($smtp_raw['smtp_password'] ?? ''),
+        'encryption' => $encRaw,
+        'from_email' => trim((string)($smtp_raw['smtp_from_email'] ?? '')),
+        'from_name' => trim((string)($smtp_raw['smtp_from_name'] ?? '')) ?: $nome_plataforma,
+    ];
     
     // Monta URL base
     $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
@@ -101,20 +113,50 @@ try {
         $login_url = $base_url . '/' . ltrim($login_url, '/');
     }
     
-    // Envia e-mail com a nova senha
     $mail = new PHPMailer(true);
-    
+
     try {
+        if (empty($smtp_config['host']) || empty($smtp_config['username']) || empty($smtp_config['password'])) {
+            error_log('forgot_password: SMTP incompleto (host/username/password). Hostinger e similares exigem SMTP configurado em Integrações / configuracoes.');
+            echo json_encode([
+                'success' => false,
+                'error' => 'Envio de e-mail não está configurado no sistema. Entre em contato com o suporte.',
+            ]);
+            exit;
+        }
+
         $mail->isSMTP();
-        $mail->Host = $smtp_config['smtp_host'] ?? 'smtp.gmail.com';
+        $mail->Host = $smtp_config['host'];
+        $mail->Port = $smtp_config['port'];
         $mail->SMTPAuth = true;
-        $mail->Username = $smtp_config['smtp_username'] ?? '';
-        $mail->Password = $smtp_config['smtp_password'] ?? '';
-        $mail->SMTPSecure = $smtp_config['smtp_encryption'] ?? 'ssl';
-        $mail->Port = intval($smtp_config['smtp_port'] ?? 465);
+        $mail->Username = $smtp_config['username'];
+        $mail->Password = $smtp_config['password'];
         $mail->CharSet = 'UTF-8';
-        
-        $mail->setFrom($smtp_config['smtp_from_email'] ?? $smtp_config['smtp_username'], $smtp_config['smtp_from_name'] ?? $nome_plataforma);
+
+        $mail->SMTPOptions = [
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'allow_self_signed' => true,
+            ],
+        ];
+
+        if ($smtp_config['encryption'] === 'ssl') {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        } elseif ($smtp_config['encryption'] === 'tls') {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        } else {
+            $mail->SMTPSecure = false;
+            $mail->SMTPAutoTLS = false;
+        }
+
+        // Evita "Sender address rejected": remetente alinhado ao login SMTP (igual api.php)
+        $fromAddr = $smtp_config['from_email'];
+        if ($fromAddr === '' || !filter_var($fromAddr, FILTER_VALIDATE_EMAIL)) {
+            $fromAddr = $smtp_config['username'];
+        }
+        $mail->setFrom($fromAddr, $smtp_config['from_name']);
+
         $mail->addAddress($email, $user['nome']);
         
         $mail->isHTML(true);
@@ -198,12 +240,17 @@ try {
         $mail->AltBody = "Olá, {$user['nome']}!\n\nSua nova senha de acesso é: {$new_password}\n\nAcesse: {$login_url}\n\nSe você não solicitou esta alteração, ignore este e-mail.";
         
         $mail->send();
-        
+
+        $stmt_update = $pdo->prepare('UPDATE usuarios SET senha = ? WHERE id = ?');
+        $stmt_update->execute([$hashed_password, $user['id']]);
+
         echo json_encode(['success' => true, 'message' => 'Uma nova senha foi enviada para o seu e-mail.']);
-        
     } catch (Exception $e) {
-        error_log("Erro ao enviar e-mail de recuperação: " . $mail->ErrorInfo);
-        echo json_encode(['success' => false, 'error' => 'Erro ao enviar e-mail. Tente novamente mais tarde.']);
+        error_log('forgot_password PHPMailer: ' . $mail->ErrorInfo . ' | ' . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'error' => 'Não foi possível enviar o e-mail. Verifique SMTP (host, porta, TLS/SSL e senha de app) nas configurações do painel ou tente mais tarde.',
+        ]);
     }
     
 } catch (PDOException $e) {
