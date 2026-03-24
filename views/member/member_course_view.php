@@ -1310,7 +1310,14 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                 const acceptBtn = document.getElementById('download-term-accept');
                 const checkbox = document.getElementById('download-term-checkbox');
                 if (!acceptBtn || !checkbox) return;
-                acceptBtn.disabled = !(checkbox.checked && isTermScrolledToBottom());
+                const ready = checkbox.checked && isTermScrolledToBottom();
+                acceptBtn.disabled = !ready;
+                // Oculta o botão até o usuário marcar "Li e concordo"
+                if (ready) {
+                    acceptBtn.classList.remove('hidden');
+                } else {
+                    acceptBtn.classList.add('hidden');
+                }
             }
             document.addEventListener('click', function(e) {
                 const btn = e.target.closest('.download-term-btn');
@@ -1328,7 +1335,7 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                     textEl.innerHTML = safeHtml || 'Este material é disponibilizado exclusivamente para uso pessoal e individual.';
                     checkbox.checked = false;
                     const acceptBtn = document.getElementById('download-term-accept');
-                    if (acceptBtn) { acceptBtn.disabled = true; acceptBtn.textContent = 'Aceitar e baixar'; }
+                    if (acceptBtn) { acceptBtn.disabled = true; acceptBtn.textContent = 'Aceitar e baixar'; acceptBtn.classList.add('hidden'); }
                     modal.classList.remove('hidden');
                     textEl.scrollTop = 0;
                     // Mobile: layout pode demorar mais; touchend para recalc após scroll touch
