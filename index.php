@@ -149,7 +149,7 @@ $page_content = ob_get_clean();
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Plataforma">
-    <link rel="apple-touch-icon" href="https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png">
+    <link rel="apple-touch-icon" href="<?php echo htmlspecialchars($logo_url, ENT_QUOTES, 'UTF-8'); ?>">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -649,7 +649,7 @@ $page_content = ob_get_clean();
     <!-- Floating Live Notification -->
     <div id="live-notification-container" class="live-notification-container">
         <!-- Substituído o ícone padrão pela URL fornecida -->
-        <img id="live-notification-product-image" src="https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png" alt="Notificação" class="live-notification-product-image">
+        <img id="live-notification-product-image" src="<?php echo htmlspecialchars($notification_image_url, ENT_QUOTES, 'UTF-8'); ?>" alt="Notificação" class="live-notification-product-image">
         <div>
             <p class="text-sm font-semibold text-white" id="live-notification-message"></p>
             <p class="text-xs text-gray-400 mt-1" id="live-notification-details"></p>
@@ -780,6 +780,16 @@ $page_content = ob_get_clean();
         const liveNotificationMessage = document.getElementById('live-notification-message');
         const liveNotificationDetails = document.getElementById('live-notification-details');
         const liveNotificationProductImage = document.getElementById('live-notification-product-image');
+        const liveNotificationImageFallback = <?php echo json_encode($notification_image_url, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+
+        function resolveLiveNotificationProductImageSrc(produtoFoto, fallbackUrl) {
+            if (!produtoFoto) return fallbackUrl;
+            const s = String(produtoFoto).trim();
+            if (s.startsWith('http://') || s.startsWith('https://')) return s;
+            const clean = s.replace(/^\/+/, '');
+            if (clean.startsWith('uploads/')) return '/' + clean;
+            return '/uploads/' + clean;
+        }
         const cashRegisterSound = document.getElementById('cash-register-sound');
 
         // Flag to prevent repeated attempts to resume audio context
@@ -1028,10 +1038,9 @@ $page_content = ob_get_clean();
 
             liveNotificationMessage.textContent = messageText;
             liveNotificationDetails.textContent = detailsText;
-            
-            // Set product image - NOW USING A STATIC ICON
-            liveNotificationProductImage.src = 'https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png'; // Static icon URL
-            
+
+            liveNotificationProductImage.src = resolveLiveNotificationProductImageSrc(notification.produto_foto, liveNotificationImageFallback);
+
             // Play sound
             if (cashRegisterSound && audioContextResumed) { // Only play if context is resumed
                 cashRegisterSound.load(); // Ensure the audio is ready to play
