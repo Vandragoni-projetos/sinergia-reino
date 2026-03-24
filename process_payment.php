@@ -682,6 +682,16 @@ try {
         $response_data = ['status' => $status, 'payment_id' => $payment_id];
         if ($status === 'approved') {
             $response_data['redirect_url'] = $redirect_url_computed($payment_id);
+        } elseif ($status === 'rejected') {
+            $refuseMsg = trim((string)($payment_result['message'] ?? ''));
+            $refuseReason = trim((string)($payment_result['reason'] ?? ''));
+            $detail = $refuseMsg;
+            if ($refuseReason !== '' && stripos($refuseMsg, $refuseReason) === false) {
+                $detail = trim($refuseMsg . ($refuseMsg !== '' ? ' — ' : '') . $refuseReason);
+            }
+            if ($detail !== '') {
+                $response_data['message'] = $detail;
+            }
         }
         returnJsonSuccess($response_data);
 
