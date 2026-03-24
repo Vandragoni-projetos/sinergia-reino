@@ -1038,10 +1038,10 @@ function render_sales_notification($config, $produto_nome_fallback) {
                             <div><label for="email" class="block text-sm font-medium text-gray-700"><?php echo htmlspecialchars(checkout_t('label_email')); ?></label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="mail" class="w-5 h-5 text-gray-400"></i></div><input type="email" id="email" name="email" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="<?php echo htmlspecialchars(checkout_t('placeholder_email')); ?>" value="<?php echo htmlspecialchars($prefill_email); ?>"></div></div>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <?php if (($customer_fields_config['enable_phone'] ?? true)): ?>
-                                <div><label for="phone" class="block text-sm font-medium text-gray-700"><?php echo htmlspecialchars(checkout_t('label_phone')); ?></label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="smartphone" class="w-5 h-5 text-gray-400"></i></div><input type="tel" id="phone" name="phone" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="<?php echo htmlspecialchars(checkout_t('placeholder_phone')); ?>" value="<?php echo htmlspecialchars($prefill_phone); ?>"></div></div>
+                                <div><label for="phone" class="block text-sm font-medium text-gray-700"><?php echo htmlspecialchars(checkout_t('label_phone')); ?></label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="smartphone" class="w-5 h-5 text-gray-400"></i></div><input type="tel" id="phone" name="phone" required maxlength="15" inputmode="numeric" autocomplete="tel-national" class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="<?php echo htmlspecialchars(checkout_t('placeholder_phone')); ?>" value="<?php echo htmlspecialchars($prefill_phone); ?>"></div></div>
                                 <?php else: ?><input type="hidden" id="phone" name="phone" value="<?php echo htmlspecialchars($prefill_phone !== '' ? $prefill_phone : '(00) 00000-0000'); ?>"><?php endif; ?>
                                 <?php if (($customer_fields_config['enable_cpf'] ?? true)): ?>
-                                <div><label for="cpf" class="block text-sm font-medium text-gray-700"><?php echo htmlspecialchars(checkout_t('label_cpf')); ?></label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="file-text" class="w-5 h-5 text-gray-400"></i></div><input type="text" id="cpf" name="cpf" required class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="<?php echo htmlspecialchars(checkout_t('placeholder_cpf')); ?>" value="<?php echo htmlspecialchars($prefill_cpf); ?>"></div></div>
+                                <div><label for="cpf" class="block text-sm font-medium text-gray-700"><?php echo htmlspecialchars(checkout_t('label_cpf')); ?></label><div class="relative mt-1 rounded-lg shadow-sm"><div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i data-lucide="file-text" class="w-5 h-5 text-gray-400"></i></div><input type="text" id="cpf" name="cpf" required maxlength="18" inputmode="numeric" autocomplete="off" class="checkout-input mt-1 block w-full pl-10 pr-4 py-3 bg-white border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 text-base" placeholder="<?php echo htmlspecialchars(checkout_t('placeholder_cpf')); ?>" value="<?php echo htmlspecialchars($prefill_cpf); ?>"></div></div>
                                 <?php else: ?><input type="hidden" id="cpf" name="cpf" value="000.000.000-00"><?php endif; ?>
                             </div>
                             <div class="text-left">
@@ -1693,6 +1693,56 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 return utmParams;
             }
             const utmParameters = getUrlUtmParameters();
+
+            function checkoutDigitsOnly(s) {
+                return String(s || '').replace(/\D/g, '');
+            }
+
+            /** Máscara (00) 0000-0000 ou (00) 00000-0000 — compatível com validação Efí (DDD + 8 ou 9 dígitos). */
+            function applyBrazilPhoneMask(input) {
+                if (!input || input.type === 'hidden') return;
+                const format = () => {
+                    let d = checkoutDigitsOnly(input.value);
+                    if (d.length > 11) d = d.slice(0, 11);
+                    if (d.length === 0) { input.value = ''; return; }
+                    if (d.length <= 2) input.value = '(' + d;
+                    else if (d.length <= 6) input.value = '(' + d.slice(0, 2) + ') ' + d.slice(2);
+                    else if (d.length <= 10) input.value = '(' + d.slice(0, 2) + ') ' + d.slice(2, 6) + '-' + d.slice(6);
+                    else input.value = '(' + d.slice(0, 2) + ') ' + d.slice(2, 7) + '-' + d.slice(7, 11);
+                };
+                input.addEventListener('input', format);
+                input.addEventListener('blur', format);
+                if (input.value) format();
+            }
+
+            /** CPF 000.000.000-00 ou CNPJ 00.000.000/0000-00 conforme quantidade de dígitos. */
+            function applyCpfCnpjMask(input) {
+                if (!input || input.type === 'hidden') return;
+                const format = () => {
+                    let d = checkoutDigitsOnly(input.value);
+                    if (d.length > 14) d = d.slice(0, 14);
+                    if (d.length <= 11) {
+                        let out = d.slice(0, 3);
+                        if (d.length > 3) out += '.' + d.slice(3, 6);
+                        if (d.length > 6) out += '.' + d.slice(6, 9);
+                        if (d.length > 9) out += '-' + d.slice(9, 11);
+                        input.value = out;
+                    } else {
+                        let out = d.slice(0, 2);
+                        if (d.length > 2) out += '.' + d.slice(2, 5);
+                        if (d.length > 5) out += '.' + d.slice(5, 8);
+                        if (d.length > 8) out += '/' + d.slice(8, 12);
+                        if (d.length > 12) out += '-' + d.slice(12, 14);
+                        input.value = out;
+                    }
+                };
+                input.addEventListener('input', format);
+                input.addEventListener('blur', format);
+                if (input.value) format();
+            }
+
+            applyBrazilPhoneMask(document.getElementById('phone'));
+            applyCpfCnpjMask(document.getElementById('cpf'));
             
             // Função para calcular desconto Pix
             function calculatePixDiscount(amount) {
@@ -1936,7 +1986,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 if (!payerData.name || !payerData.email) { showAlert((window.checkoutLabels || {}).alert_fill_name_email || 'Por favor, preencha o nome e o e-mail.'); return null; }
                 
                 // Validação condicional baseada no estado VISUAL do campo
-                if (isPhoneActive && !payerData.phone) { showAlert((window.checkoutLabels || {}).alert_fill_phone || 'Por favor, preencha o telefone.'); return null; }
+                if (isPhoneActive && checkoutDigitsOnly(payerData.phone).length < 10) { showAlert((window.checkoutLabels || {}).alert_fill_phone || 'Por favor, preencha o telefone com DDD e número (10 ou 11 dígitos).'); return null; }
                 if (isCpfActive && !payerData.cpf) { showAlert((window.checkoutLabels || {}).alert_fill_cpf || 'Por favor, preencha o CPF/CNPJ.'); return null; }
                 
                 // Recuperação de carrinho: registra lead (fire-and-forget)
@@ -2488,25 +2538,24 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     
                     if (efiCardNumberInput) {
                         efiCardNumberInput.addEventListener('input', function(e) {
-                            let value = e.target.value.replace(/\s/g, '').replace(/\D/g, '');
-                            value = value.replace(/(\d{4})/g, '$1 ').trim();
-                            e.target.value = value;
+                            let d = e.target.value.replace(/\D/g, '').slice(0, 16);
+                            const parts = [];
+                            for (let i = 0; i < d.length; i += 4) parts.push(d.slice(i, i + 4));
+                            e.target.value = parts.join(' ');
                         });
                     }
                     
                     if (efiCardExpiryInput) {
                         efiCardExpiryInput.addEventListener('input', function(e) {
-                            let value = e.target.value.replace(/\D/g, '');
-                            if (value.length >= 2) {
-                                value = value.substring(0, 2) + '/' + value.substring(2, 4);
-                            }
+                            let value = e.target.value.replace(/\D/g, '').slice(0, 4);
+                            if (value.length >= 2) value = value.slice(0, 2) + '/' + value.slice(2);
                             e.target.value = value;
                         });
                     }
                     
                     if (efiCardCvvInput) {
                         efiCardCvvInput.addEventListener('input', function(e) {
-                            e.target.value = e.target.value.replace(/\D/g, '');
+                            e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
                         });
                     }
                     
@@ -2528,7 +2577,10 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         if (!month || !year || month.length !== 2 || year.length !== 2) { showAlert('Por favor, informe a validade no formato MM/AA.'); return; }
                         
                         const cpfClean = payerData.cpf ? payerData.cpf.replace(/\D/g, '') : '';
-                        if (!cpfClean || (cpfClean.length !== 11 && cpfClean.length !== 14)) { showAlert('Por favor, informe um CPF ou CNPJ válido.'); return; }
+                        if (cpfClean.length !== 11) {
+                            showAlert('Pagamento com cartão Efí exige CPF do titular (11 dígitos), sem CNPJ.');
+                            return;
+                        }
                         
                         // Identificar bandeira
                         let brand = 'visa';
@@ -2588,8 +2640,10 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                     startPaymentCheck(result.payment_id, infoprodutorId, 'efi_card');
                                 }
                                 showPendingModal();
+                            } else if (response.ok && result.status === 'rejected') {
+                                showRejectedModal(result.message || result.error || 'Pagamento recusado. Verifique os dados do cartão, o limite ou tente outro cartão.');
                             } else {
-                                showRejectedModal(result.error || 'Erro ao processar pagamento.');
+                                showRejectedModal(result.message || result.error || 'Erro ao processar pagamento.');
                             }
                         } catch (e) {
                             console.error('Efí Card Error:', e);
