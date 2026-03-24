@@ -804,6 +804,32 @@ function efi_register_webhook($access_token, $pix_key, $webhook_url) {
 }
 
 /**
+ * Normaliza telefone brasileiro para o formato exigido pela API Efí em cobrança de cartão:
+ * ^[1-9]{2}9?[0-9]{8}$ (DDD + opcional 9 + 8 dígitos, 10 ou 11 caracteres, só números).
+ * Aceita entrada com +55, espaços, máscaras e zero de longa distância (0XX).
+ *
+ * @param string|null $raw Telefone como digitado no checkout
+ * @return string|null Digits-only válidos para a API ou null
+ */
+function efi_normalize_phone_for_card_charge($raw) {
+    $digits = preg_replace('/[^0-9]/', '', (string)$raw);
+    if ($digits === '') {
+        return null;
+    }
+    while (strlen($digits) > 11 && substr($digits, 0, 2) === '55') {
+        $digits = substr($digits, 2);
+    }
+    $digits = ltrim($digits, '0');
+    if (strlen($digits) > 11) {
+        $digits = substr($digits, -11);
+    }
+    if (preg_match('/^[1-9]{2}9?[0-9]{8}$/', $digits)) {
+        return $digits;
+    }
+    return null;
+}
+
+/**
  * Cria uma cobrança de cartão de crédito via One Step
  * 
  * @param string $access_token Token de acesso OAuth2
@@ -886,10 +912,13 @@ function efi_create_card_charge($access_token, $amount, $payment_token, $custome
     // Formatar valor (Efí espera valor em centavos)
     $amount_cents = (int)round((float)$amount * 100);
     
-    // Formatar telefone (remover caracteres não numéricos)
-    $phone = preg_replace('/[^0-9]/', '', $customer_data['phone'] ?? '');
-    if (strlen($phone) < 10) {
-        $phone = '00000000000'; // Telefone padrão se inválido
+    $phone = efi_normalize_phone_for_card_charge($customer_data['phone'] ?? '');
+    if ($phone === null) {
+        error_log('Efí Cartão: Telefone em formato não aceito pela API (esperado: DDD + número, 10 ou 11 dígitos). Recebido: ' . ($customer_data['phone'] ?? ''));
+        return [
+            'error' => true,
+            'message' => 'Telefone inválido para pagamento com cartão. Informe DDD e número com 9 no celular (apenas números). Ex.: 11988887777.',
+        ];
     }
     
     // Preparar payload conforme documentação Efí
