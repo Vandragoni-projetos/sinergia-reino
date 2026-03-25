@@ -269,6 +269,18 @@ if ($main_price_usd !== null && $preco_base > 0 && $main_price != $preco_base) {
 }
 $main_name = !empty($checkout_config['summary']['product_name']) ? $checkout_config['summary']['product_name'] : $produto['nome'];
 $main_image = resolve_product_image_url($produto['foto'] ?? '', 'uploads/') ?: '/uploads/placeholder.png';
+$checkout_gallery_images = [];
+foreach (['foto', 'foto_2', 'foto_3'] as $_gk) {
+    $_gv = $produto[$_gk] ?? '';
+    if ($_gv === '' || $_gv === null) {
+        continue;
+    }
+    $_gu = resolve_product_image_url($_gv, 'uploads/');
+    if ($_gu !== '') {
+        $checkout_gallery_images[] = $_gu;
+    }
+}
+unset($_gk, $_gu);
 $formattedMainPrice = $is_free_product ? 'Grátis' : 'R$ ' . number_format($main_price, 2, ',', '.');
 $formattedMainPriceUsd = ($main_price_usd !== null && !$is_free_product) ? 'US$ ' . number_format($main_price_usd, 2, ',', '.') : null;
 $preco_anterior_raw = !empty($produto['preco_anterior']) ? floatval($produto['preco_anterior']) : null;
@@ -1006,8 +1018,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
             <!-- Coluna Principal -->
             <div class="w-full lg:w-2/3">
                 <div class="bg-white rounded-lg shadow-lg p-6 md:p-8 space-y-6">
-                    <section data-id="summary" class="flex flex-row items-start gap-4">
-                        <img src="<?php echo htmlspecialchars($main_image); ?>" alt="Imagem de <?php echo htmlspecialchars($main_name); ?>" class="w-24 h-24 object-cover rounded-lg shadow-md border border-gray-200 flex-shrink-0" onerror="this.src='https://placehold.co/96x96/e2e8f0/334155?text=Produto'">
+                    <section data-id="summary" class="flex flex-col gap-3">
+                        <div class="flex flex-row items-start gap-4">
+                        <img id="checkout-product-main-img" src="<?php echo htmlspecialchars($main_image); ?>" alt="Imagem de <?php echo htmlspecialchars($main_name); ?>" class="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-lg shadow-md border border-gray-200 flex-shrink-0" onerror="this.src='https://placehold.co/96x96/e2e8f0/334155?text=Produto'">
                         <div class="flex-1">
                             <h1 class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($main_name); ?></h1>
                             <div class="flex items-baseline flex-wrap gap-x-3 gap-y-1 mt-2">
@@ -1029,6 +1042,37 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                 <?php if (!empty($discount_text)): ?><span class="bg-red-100 text-red-700 text-xs font-bold uppercase px-3 py-1 rounded-full inline-block"><?php echo htmlspecialchars($discount_text); ?></span><?php endif; ?>
                             </div>
                         </div>
+                        </div>
+                        <?php if (count($checkout_gallery_images) > 1): ?>
+                        <div class="flex flex-wrap gap-2 pt-1" id="checkout-product-gallery" role="tablist" aria-label="Galeria do produto">
+                            <?php foreach ($checkout_gallery_images as $gi => $gurl): ?>
+                            <button type="button" class="checkout-gallery-thumb rounded-lg border-2 overflow-hidden focus:outline-none focus:ring-2 focus:ring-offset-1 <?php echo $gi === 0 ? 'border-green-500 ring-1 ring-green-500/30' : 'border-gray-200 opacity-80 hover:opacity-100'; ?>"
+                                    data-src="<?php echo htmlspecialchars($gurl, ENT_QUOTES, 'UTF-8'); ?>"
+                                    aria-label="Ver imagem <?php echo (int)($gi + 1); ?>">
+                                <img src="<?php echo htmlspecialchars($gurl); ?>" alt="" class="w-14 h-14 object-cover" loading="lazy">
+                            </button>
+                            <?php endforeach; ?>
+                        </div>
+                        <script>
+                        (function() {
+                            var main = document.getElementById('checkout-product-main-img');
+                            var wrap = document.getElementById('checkout-product-gallery');
+                            if (!main || !wrap) return;
+                            wrap.querySelectorAll('.checkout-gallery-thumb').forEach(function(btn) {
+                                btn.addEventListener('click', function() {
+                                    var src = btn.getAttribute('data-src');
+                                    if (src) main.src = src;
+                                    wrap.querySelectorAll('.checkout-gallery-thumb').forEach(function(b) {
+                                        b.classList.remove('border-green-500', 'ring-1', 'ring-green-500/30');
+                                        b.classList.add('border-gray-200', 'opacity-80');
+                                    });
+                                    btn.classList.add('border-green-500', 'ring-1', 'ring-green-500/30');
+                                    btn.classList.remove('border-gray-200', 'opacity-80');
+                                });
+                            });
+                        })();
+                        </script>
+                        <?php endif; ?>
                     </section>
                     <hr class="border-gray-200">
                     <section data-id="customer_info">
