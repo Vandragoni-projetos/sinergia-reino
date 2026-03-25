@@ -127,3 +127,29 @@ if (!function_exists('getProductTypeIcons')) {
         ];
     }
 }
+
+if (!function_exists('db_table_has_column')) {
+    /**
+     * Verifica se a coluna existe (information_schema; fallback SHOW COLUMNS + fetch — rowCount() em SELECT no MySQL é pouco confiável).
+     */
+    function db_table_has_column(PDO $pdo, string $table, string $column): bool {
+        try {
+            $st = $pdo->prepare(
+                'SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1'
+            );
+            $st->execute([$table, $column]);
+            if ($st->fetchColumn()) {
+                return true;
+            }
+        } catch (Throwable $e) {
+            // information_schema pode estar restrito em alguns hostings
+        }
+        try {
+            $tbl = str_replace('`', '``', $table);
+            $q = $pdo->query('SHOW COLUMNS FROM `' . $tbl . '` LIKE ' . $pdo->quote($column));
+            return $q && $q->fetch(PDO::FETCH_NUM) !== false;
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+}
