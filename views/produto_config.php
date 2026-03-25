@@ -81,6 +81,55 @@ function handle_multiple_uploads($file_key, $prefix, $product_id) {
     return $uploaded_paths;
 }
 
+/**
+ * Processa imagem opcional (foto_2 / foto_3): remover, upload, URL externa ou mantém atual.
+ *
+ * @param string $fieldName 'foto_2' ou 'foto_3'
+ * @return string|null Valor a gravar no banco
+ */
+function process_produto_optional_foto_field($fieldName, $upload_dir, $produto_row) {
+    $atual = $_POST[$fieldName . '_atual'] ?? ($produto_row[$fieldName] ?? null);
+    if ($atual === '') {
+        $atual = null;
+    }
+
+    $del_local = function ($stored) use ($upload_dir) {
+        if (!$stored || filter_var($stored, FILTER_VALIDATE_URL)) {
+            return;
+        }
+        $p = $upload_dir . $stored;
+        if (is_file($p)) {
+            @unlink($p);
+        }
+    };
+
+    if (!empty($_POST['remover_' . $fieldName])) {
+        $del_local($atual);
+        return null;
+    }
+
+    if (isset($_FILES[$fieldName]) && $_FILES[$fieldName]['error'] === UPLOAD_ERR_OK) {
+        $ext = strtolower(pathinfo($_FILES[$fieldName]['name'], PATHINFO_EXTENSION));
+        $allowed = ['jpg', 'jpeg', 'png', 'webp'];
+        if (in_array($ext, $allowed, true)) {
+            $newName = $fieldName . '_' . uniqid() . '.' . $ext;
+            if (move_uploaded_file($_FILES[$fieldName]['tmp_name'], $upload_dir . $newName)) {
+                $del_local($atual);
+                return $newName;
+            }
+        }
+        return $atual;
+    }
+
+    $url = trim($_POST[$fieldName . '_url_externa'] ?? '');
+    if ($url !== '' && filter_var($url, FILTER_VALIDATE_URL)) {
+        $del_local($atual);
+        return $url;
+    }
+
+    return $atual;
+}
+
 // Upload único para imagens do funil (banner/capa); retorna caminho ou null
 function save_funnel_single_upload($file_key) {
     global $upload_dir;
@@ -134,6 +183,9 @@ if (isset($_POST['salvar_produto_config'])) {
                     }
                 }
             }
+
+            $nome_foto2 = process_produto_optional_foto_field('foto_2', $upload_dir, $produto);
+            $nome_foto3 = process_produto_optional_foto_field('foto_3', $upload_dir, $produto);
 
             // Lógica de entrega
             $conteudo_entrega_atual = $_POST['conteudo_entrega_atual'] ?? $produto['conteudo_entrega'];
@@ -192,8 +244,15 @@ if (isset($_POST['salvar_produto_config'])) {
             }
             
             if ($sales_page_url_valid) {
-                $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, price_usd = ?, foto = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ?, product_type = ?, product_tagline = ?, sales_page_url = ? WHERE id = ? AND usuario_id = ?");
-                $result = $stmt_update->execute([$nome, $descricao, $preco, $price_usd, $nome_foto, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $product_type, $product_tagline, $sales_page_url, $id_produto, $usuario_id]);
+                $has_cols_foto_extra = function_exists('db_table_has_column') && db_table_has_column($pdo, 'produtos', 'foto_2');
+
+                if ($has_cols_foto_extra) {
+                    $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, price_usd = ?, foto = ?, foto_2 = ?, foto_3 = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ?, product_type = ?, product_tagline = ?, sales_page_url = ? WHERE id = ? AND usuario_id = ?");
+                    $result = $stmt_update->execute([$nome, $descricao, $preco, $price_usd, $nome_foto, $nome_foto2, $nome_foto3, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $product_type, $product_tagline, $sales_page_url, $id_produto, $usuario_id]);
+                } else {
+                    $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, price_usd = ?, foto = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ?, product_type = ?, product_tagline = ?, sales_page_url = ? WHERE id = ? AND usuario_id = ?");
+                    $result = $stmt_update->execute([$nome, $descricao, $preco, $price_usd, $nome_foto, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $product_type, $product_tagline, $sales_page_url, $id_produto, $usuario_id]);
+                }
                 if (!$result) {
                     throw new Exception("Erro ao atualizar produto: " . implode(", ", $stmt_update->errorInfo()));
                 }
@@ -800,18 +859,20 @@ if (!in_array($aba_ativa, $abas_permitidas)) {
         <form action="/index?pagina=produto_config&id=<?php echo $id_produto; ?>&aba=<?php echo $aba_ativa; ?>" method="post" enctype="multipart/form-data" class="p-8 bg-dark-card">
             <input type="hidden" name="id_produto" value="<?php echo $id_produto; ?>">
             <input type="hidden" name="foto_atual" value="<?php echo htmlspecialchars($produto['foto'] ?? ''); ?>">
+            <input type="hidden" name="foto_2_atual" value="<?php echo htmlspecialchars($produto['foto_2'] ?? ''); ?>">
+            <input type="hidden" name="foto_3_atual" value="<?php echo htmlspecialchars($produto['foto_3'] ?? ''); ?>">
             <input type="hidden" name="conteudo_entrega_atual" value="<?php echo htmlspecialchars($produto['conteudo_entrega'] ?? ''); ?>">
             <input type="hidden" name="elementOrder" value="<?php echo htmlspecialchars(json_encode($element_order)); ?>">
 
             <?php
-            // Incluir componente da aba ativa
-            $aba_file = __DIR__ . '/produto_config/aba_' . $aba_ativa . '.php';
-            if (file_exists($aba_file)) {
-                include $aba_file;
-            } else {
-                // Fallback para aba geral
-                include __DIR__ . '/produto_config/aba_geral.php';
+            // Incluir componente da aba ativa (require: include falho deixava o formulário vazio sem erro claro)
+            $aba_dir = __DIR__ . '/produto_config';
+            $aba_safe = preg_match('/^[a-z0-9_]+$/', (string) $aba_ativa) ? $aba_ativa : 'geral';
+            $aba_file = $aba_dir . '/aba_' . $aba_safe . '.php';
+            if (!is_readable($aba_file)) {
+                $aba_file = $aba_dir . '/aba_geral.php';
             }
+            require $aba_file;
             ?>
 
             <!-- Botão Salvar -->
