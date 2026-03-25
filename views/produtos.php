@@ -21,15 +21,25 @@ if ($usuario_id === 0) {
 if (isset($_POST['deletar_produto'])) {
     try {
         list($cf_where, $cf_param) = function_exists('getCommunityFilter') ? getCommunityFilter('produtos') : ['', null];
-        $stmt_find = $pdo->prepare("SELECT foto, tipo_entrega, conteudo_entrega FROM produtos WHERE id = ? AND usuario_id = ?" . $cf_where);
+        $del_img_cols = 'foto';
+        if (function_exists('db_table_has_column') && db_table_has_column($pdo, 'produtos', 'foto_2')) {
+            $del_img_cols = 'foto, foto_2, foto_3';
+        }
+        $stmt_find = $pdo->prepare("SELECT {$del_img_cols}, tipo_entrega, conteudo_entrega FROM produtos WHERE id = ? AND usuario_id = ?" . $cf_where);
         $params = [$_POST['id_produto'], $usuario_id];
         if ($cf_param !== null) $params[] = $cf_param;
         $stmt_find->execute($params);
         $produto_files = $stmt_find->fetch(PDO::FETCH_ASSOC);
 
         if ($produto_files) {
-            if ($produto_files['foto'] && file_exists($upload_dir . $produto_files['foto'])) {
-                unlink($upload_dir . $produto_files['foto']);
+            foreach (['foto', 'foto_2', 'foto_3'] as $_del_img) {
+                if (!array_key_exists($_del_img, $produto_files)) {
+                    continue;
+                }
+                $fn = $produto_files[$_del_img] ?? '';
+                if ($fn && !filter_var($fn, FILTER_VALIDATE_URL) && file_exists($upload_dir . $fn)) {
+                    @unlink($upload_dir . $fn);
+                }
             }
             if ($produto_files['tipo_entrega'] === 'email_pdf' && $produto_files['conteudo_entrega'] && file_exists($upload_dir . $produto_files['conteudo_entrega'])) {
                 unlink($upload_dir . $produto_files['conteudo_entrega']);
