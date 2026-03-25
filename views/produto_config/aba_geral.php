@@ -11,7 +11,7 @@
         <div class="bg-dark-elevated p-6 rounded-lg border border-dark-border space-y-4">
             <div>
                 <label for="nome" class="block text-gray-300 text-sm font-semibold mb-2">Nome do Produto</label>
-                <input type="text" id="nome" name="nome" class="form-input" value="<?php echo htmlspecialchars($produto['nome']); ?>" required>
+                <input type="text" id="nome" name="nome" class="form-input" value="<?php echo htmlspecialchars((string)($produto['nome'] ?? '')); ?>" required>
             </div>
             <div>
                 <label for="descricao" class="block text-gray-300 text-sm font-semibold mb-2">Descrição</label>
@@ -51,12 +51,16 @@
                         <div class="w-11 h-6 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
                     </label>
                 </div>
-                <?php 
-                // Verifica se já existe outro produto vitrine
-                $stmt_showcase = $pdo->prepare("SELECT id, nome FROM produtos WHERE is_showcase = 1 AND id != ? LIMIT 1");
-                $stmt_showcase->execute([$produto['id']]);
-                $outro_vitrine = $stmt_showcase->fetch(PDO::FETCH_ASSOC);
-                if ($outro_vitrine): 
+                <?php
+                $outro_vitrine = null;
+                try {
+                    $stmt_showcase = $pdo->prepare("SELECT id, nome FROM produtos WHERE is_showcase = 1 AND id != ? LIMIT 1");
+                    $stmt_showcase->execute([$produto['id']]);
+                    $outro_vitrine = $stmt_showcase->fetch(PDO::FETCH_ASSOC);
+                } catch (PDOException $e) {
+                    $outro_vitrine = null;
+                }
+                if ($outro_vitrine):
                 ?>
                 <div class="mt-3 p-3 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
                     <p class="text-xs text-yellow-300 flex items-center gap-2">
@@ -77,7 +81,10 @@
                 </div>
                 <div>
                     <label for="preco_anterior" class="block text-gray-300 text-sm font-semibold mb-2">Preço Anterior (De)</label>
-                    <input type="text" id="preco_anterior" name="preco_anterior" class="form-input" placeholder="Ex: 99,90" value="<?php echo !empty($produto['preco_anterior']) ? htmlspecialchars(number_format($produto['preco_anterior'], 2, ',', '.')) : ''; ?>">
+                    <input type="text" id="preco_anterior" name="preco_anterior" class="form-input" placeholder="Ex: 99,90" value="<?php
+                        $pa_raw = $produto['preco_anterior'] ?? null;
+                        echo ($pa_raw !== null && $pa_raw !== '' && is_numeric($pa_raw)) ? htmlspecialchars(number_format((float) $pa_raw, 2, ',', '.')) : '';
+                    ?>">
                     <p class="text-xs text-gray-400 mt-1">Deixe em branco para não exibir o preço cortado.</p>
                 </div>
                 <div class="md:col-span-2">
@@ -139,6 +146,56 @@
             <p class="text-xs text-gray-400 text-center">Recomendado: 800x800px (JPG/PNG/WebP). Upload ou URL externa.</p>
         </div>
     </div>
+
+    <?php
+    $has_foto_extra_cols = false;
+    try {
+        $chk_f2 = $pdo->query("SHOW COLUMNS FROM produtos LIKE 'foto_2'");
+        $has_foto_extra_cols = $chk_f2 && $chk_f2->rowCount() > 0;
+    } catch (PDOException $e) { /* ignora */ }
+    ?>
+    <?php if ($has_foto_extra_cols): ?>
+    <div>
+        <h2 class="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+            <i data-lucide="images" class="w-5 h-5 text-[#32e768]"></i>
+            Imagens extras no checkout <span class="text-sm font-normal text-gray-400">(opcional)</span>
+        </h2>
+        <p class="text-sm text-gray-400 mb-4">Até duas imagens adicionais na página de checkout, além da capa. Se ficarem vazias, nada muda para o cliente.</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <?php foreach ([2 => 'Segunda imagem', 3 => 'Terceira imagem'] as $n => $label):
+                $fk = 'foto_' . $n;
+                $src = !empty($produto[$fk]) ? resolve_product_image_url($produto[$fk], $upload_dir ?? 'uploads/') : '';
+                $is_url = !empty($produto[$fk]) && filter_var($produto[$fk], FILTER_VALIDATE_URL);
+            ?>
+            <div class="bg-dark-elevated p-5 rounded-lg border border-dark-border space-y-3">
+                <p class="text-gray-300 text-sm font-semibold"><?php echo htmlspecialchars($label); ?></p>
+                <div class="relative group h-40 bg-dark-card rounded-lg overflow-hidden border border-dashed border-dark-border flex items-center justify-center">
+                    <?php if ($src): ?>
+                        <img src="<?php echo htmlspecialchars($src); ?>" alt="" id="preview-img-<?php echo $n; ?>" class="absolute inset-0 w-full h-full object-cover">
+                    <?php else: ?>
+                        <img id="preview-img-<?php echo $n; ?>" class="absolute inset-0 w-full h-full object-cover hidden" alt="">
+                        <span class="text-xs text-gray-500 px-2 text-center">Nenhuma imagem</span>
+                    <?php endif; ?>
+                    <label for="<?php echo $fk; ?>" class="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center cursor-pointer">
+                        <span class="text-white text-xs font-medium opacity-0 group-hover:opacity-100 bg-dark-card/90 px-3 py-1 rounded-full">Enviar arquivo</span>
+                    </label>
+                </div>
+                <input type="file" id="<?php echo $fk; ?>" name="<?php echo $fk; ?>" class="hidden" accept="image/png,image/jpeg,image/webp" onchange="previewOptionalProductImage(this, <?php echo (int)$n; ?>)">
+                <input type="url" name="<?php echo $fk; ?>_url_externa" class="form-input text-sm" placeholder="https://… (URL externa opcional)"
+                       value="<?php echo $is_url ? htmlspecialchars($produto[$fk]) : ''; ?>"
+                       oninput="previewOptionalProductImageFromUrl(this.value, <?php echo (int)$n; ?>)">
+                <?php if (!empty($produto[$fk])): ?>
+                <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+                    <input type="checkbox" name="remover_<?php echo $fk; ?>" value="1" class="rounded border-dark-border">
+                    Remover esta imagem
+                </label>
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <p class="text-xs text-gray-500 mt-3">Mesmos formatos da capa (JPG, PNG, WEBP).</p>
+    </div>
+    <?php endif; ?>
 
     <!-- TAG/Categoria do Produto -->
     <div>
@@ -252,11 +309,12 @@
         </div>
     </div>
 
-    <?php 
-    // Inclui helper do master
-    require_once __DIR__ . '/../../helpers/master_helper.php';
-    
-    if (isMasterPanel()): ?>
+    <?php
+    if (!function_exists('isMasterPanel')) {
+        require_once __DIR__ . '/../../helpers/master_helper.php';
+    }
+
+    if (function_exists('isMasterPanel') && isMasterPanel()): ?>
     <div>
         <h2 class="text-xl font-semibold mb-4 text-white flex items-center gap-2">
             <i data-lucide="key" class="w-5 h-5 text-[#32e768]"></i>
@@ -291,6 +349,29 @@ function previewImage(input) {
             if (placeholder) placeholder.classList.add('hidden');
         }
         reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function previewOptionalProductImage(input, n) {
+    if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var preview = document.getElementById('preview-img-' + n);
+            if (!preview) return;
+            preview.src = e.target.result;
+            preview.classList.remove('hidden');
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function previewOptionalProductImageFromUrl(url, n) {
+    var preview = document.getElementById('preview-img-' + n);
+    if (!preview) return;
+    var trimmed = (url || '').trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        preview.src = trimmed;
+        preview.classList.remove('hidden');
     }
 }
 
