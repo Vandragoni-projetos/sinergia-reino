@@ -1,6 +1,6 @@
 {
-  "name": "GatewayPro",
-  "short_name": "GatewayPro",
+  "name": "Hub SinergIA",
+  "short_name": "Hub SinergIA",
   "start_url": "/index.php",
   "display": "standalone",
   "background_color": "#fff7ed",
@@ -8,13 +8,13 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png",
+      "src": "https://midias.vitrineacademy.com.br/wp-content/uploads/2026/03/Logomarca-Hub-Sinergia-1000x412-1.png",
       "type": "image/jpeg",
       "sizes": "192x192",
       "purpose": "any maskable"
     },
     {
-      "src": "https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png",
+      "src": "https://midias.vitrineacademy.com.br/wp-content/uploads/2026/03/Logomarca-Hub-Sinergia-1000x412-1.png",
       "type": "image/jpeg",
       "sizes": "512x512",
       "purpose": "any maskable"
