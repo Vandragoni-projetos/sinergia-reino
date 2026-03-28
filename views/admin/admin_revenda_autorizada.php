@@ -201,7 +201,7 @@
             Junte-se ao programa de Revenda Autorizada e transforme sua paixão em um negócio digital lucrativo. 
             Acesso imediato ao código fonte completo da plataforma e suporte completo para você começar a revender e faturar hoje mesmo.
         </p>
-        <a href="http://gatewaypro.com.br/" target="_blank" rel="noopener noreferrer" 
+        <a href="https://sinergia.club/" target="_blank" rel="noopener noreferrer" 
            class="inline-flex items-center justify-center gap-3 bg-[#32e768] hover:bg-[#28d15e] text-white font-bold py-4 px-8 rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 text-lg transform hover:scale-105">
             <i data-lucide="arrow-right" class="w-6 h-6"></i>
             <span>Quero Ser Revendedor Autorizado</span>
