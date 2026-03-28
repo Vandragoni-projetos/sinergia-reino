@@ -66,10 +66,10 @@ $cor_primaria_hover = $theme_data ? ($theme_data['primaryHover'] ?? (function_ex
 if ($theme_data && !empty($theme_data['logo_url'])) {
     $logo_url_raw = $theme_data['logo_url'];
 } else {
-    $logo_url_raw = getSystemSetting('logo_url', 'https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png');
+    $logo_url_raw = getSystemSetting('logo_url', 'https://midias.vitrineacademy.com.br/wp-content/uploads/2026/03/Logomarca-Hub-Sinergia-1000x412-1.png');
 }
 $login_image_url_raw = ($theme_data && !empty($theme_data['login_banner_url'])) ? $theme_data['login_banner_url'] : getSystemSetting('login_image_url', '');
-$nome_plataforma = getSystemSetting('nome_plataforma', 'GatewayPro');
+$nome_plataforma = getSystemSetting('nome_plataforma', 'Hub SinergIA');
 $logo_checkout_url_raw = getSystemSetting('logo_checkout_url', '');
 $favicon_url_raw = getSystemSetting('favicon_url', '');
 $notification_image_url_raw = getSystemSetting('notification_image_url', '');
@@ -78,7 +78,7 @@ $notification_image_url_raw = getSystemSetting('notification_image_url', '');
 // Remove barra inicial se houver (valores antigos podem ter)
 $logo_url = ltrim($logo_url_raw, '/');
 if (empty($logo_url)) {
-    $logo_url = 'https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png';
+    $logo_url = 'https://midias.vitrineacademy.com.br/wp-content/uploads/2026/03/Logomarca-Hub-Sinergia-1000x412-1.png';
 } elseif (strpos($logo_url, 'http') === 0) {
     // URL completa, mantém como está
 } elseif (strpos($logo_url, 'uploads/') === 0) {
