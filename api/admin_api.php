@@ -86,7 +86,7 @@ try {
             'username' => $input_data['smtp_username'] ?? '',
             'encryption' => $input_data['smtp_encryption'] ?? 'tls',
             'from_email' => $input_data['smtp_from_email'] ?? '',
-            'from_name' => $input_data['smtp_from_name'] ?? 'GatewayPro',
+            'from_name' => $input_data['smtp_from_name'] ?? 'Hub SinergIA',
         ];
 
         if ($adminApiDebug) {
@@ -540,7 +540,7 @@ try {
         }
 
         // Definir valores padrão para o template e o assunto, se não existirem no DB
-        $nome_plataforma_default = getSystemSetting('nome_plataforma', 'GatewayPro');
+        $nome_plataforma_default = getSystemSetting('nome_plataforma', 'Hub SinergIA');
         $default_subject = "Acesso ao seu Produto " . $nome_plataforma_default . "!";
         
         // Obtém a URL da logo do checkout (ou logo padrão se não houver)
@@ -620,7 +620,7 @@ try {
                     </div>
                     <div class="footer">
                         <p>Este é um e-mail automático, por favor, não responda.</p>
-                        <p>&copy; ' . date("Y") . ' ' . getSystemSetting('nome_plataforma', 'GatewayPro') . '. Todos os direitos reservados.</p>
+                        <p>&copy; ' . date("Y") . ' ' . getSystemSetting('nome_plataforma', 'Hub SinergIA') . '. Todos os direitos reservados.</p>
                     </div>
                 </div>
             </body>
@@ -635,7 +635,7 @@ try {
 
         // Substitui "GatewayPro" pelo nome dinâmico da plataforma no template HTML (se existir)
         $email_template_html = $configs['email_template_delivery_html'] ?? $default_html_template;
-        $nome_plataforma_atual = getSystemSetting('nome_plataforma', 'GatewayPro');
+        $nome_plataforma_atual = getSystemSetting('nome_plataforma', 'Hub SinergIA');
         
         // Obtém a URL da logo do checkout para substituir imagens quebradas
         $logo_checkout_url_raw_db = getSystemSetting('logo_checkout_url', '');
@@ -895,10 +895,10 @@ try {
             // CORREÇÃO: Usar o username como 'From' address para evitar "Sender address rejected"
             $mail->setFrom($smtp_config['username'], $smtp_config['from_name']);
             $mail->addAddress($test_email);
-            $mail->Subject = 'Email de Teste GatewayPro SMTP';
+            $mail->Subject = 'Email de Teste Hub SinergIA SMTP';
             $mail->isHTML(true);
-            $mail->Body = 'Olá! Este é um e-mail de teste enviado da sua configuração SMTP na plataforma GatewayPro. Se você recebeu esta mensagem, suas configurações estão funcionando corretamente.';
-            $mail->AltBody = 'Olá! Este é um e-mail de teste enviado da sua configuração SMTP na plataforma GatewayPro. Se você recebeu esta mensagem, suas configurações estão funcionando corretamente.';
+            $mail->Body = 'Olá! Este é um e-mail de teste enviado da sua configuração SMTP na plataforma Hub SinergIA. Se você recebeu esta mensagem, suas configurações estão funcionando corretamente.';
+            $mail->AltBody = 'Olá! Este é um e-mail de teste enviado da sua configuração SMTP na plataforma Hub SinergIA. Se você recebeu esta mensagem, suas configurações estão funcionando corretamente.';
 
             error_log("ADMIN_API: Tentando enviar e-mail de teste para " . $test_email . " usando SMTP: Host=" . $mail->Host . ", Port=" . $mail->Port);
             $mail->send();
@@ -1001,7 +1001,7 @@ try {
             'cor_primaria' => getSystemSetting('cor_primaria', '#32e768'),
             'logo_url' => $logo_url_normalized,
             'login_image_url' => $login_image_url_normalized,
-            'nome_plataforma' => getSystemSetting('nome_plataforma', 'GatewayPro'),
+            'nome_plataforma' => getSystemSetting('nome_plataforma', 'Hub SinergIA'),
             'logo_checkout_url' => $logo_checkout_url_normalized,
             'favicon_url' => $favicon_url_normalized,
             'notification_image_url' => $notification_image_url_normalized,
