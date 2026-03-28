@@ -71,7 +71,7 @@ try {
     $new_password = bin2hex(random_bytes(6)); // 12 caracteres
     $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
 
-    $nome_plataforma = getSystemSetting('nome_plataforma', 'GatewayPro');
+    $nome_plataforma = getSystemSetting('nome_plataforma', 'Hub SinergAI');
 
     // Mesmas chaves e padrões que api.php / notifications_api (TLS + 587 por padrão)
     $stmt_smtp = $pdo->prepare("SELECT chave, valor FROM configuracoes WHERE chave IN ('smtp_host', 'smtp_port', 'smtp_username', 'smtp_password', 'smtp_encryption', 'smtp_from_email', 'smtp_from_name')");
