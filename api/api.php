@@ -170,7 +170,7 @@ function send_delivery_email_consolidated($to_email, $customer_name, $processed_
             'password' => $smtp_configs_raw['smtp_password'] ?? '',
             'encryption' => $smtp_configs_raw['smtp_encryption'] ?? 'tls',
             'from_email' => $smtp_configs_raw['smtp_from_email'] ?? '',
-            'from_name' => $smtp_configs_raw['smtp_from_name'] ?? 'GatewayPro'
+            'from_name' => $smtp_configs_raw['smtp_from_name'] ?? 'Hub SinergIA'
         ];
 
         // Adiciona logging das configurações SMTP
