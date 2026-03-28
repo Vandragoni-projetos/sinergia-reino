@@ -72,6 +72,23 @@ if (!function_exists('validarCupom')) {
 
             if ($total_produtos > 0 && !$tem_restricao) {
                 $result['mensagem'] = 'Este cupom não é válido para este produto.';
+                try {
+                    $sn = $pdo->prepare('
+                        SELECT p.nome FROM cupom_produtos cp
+                        INNER JOIN produtos p ON p.id = cp.produto_id AND p.usuario_id = ?
+                        WHERE cp.cupom_id = ?
+                        ORDER BY p.nome ASC
+                    ');
+                    $sn->execute([(int) $usuario_id, $cupom['id']]);
+                    $nomes = $sn->fetchAll(PDO::FETCH_COLUMN);
+                    if (!empty($nomes)) {
+                        $result['mensagem'] .= ' Válido somente para: ' . implode(', ', array_map(function ($n) {
+                            return '"' . $n . '"';
+                        }, $nomes)) . '.';
+                    }
+                } catch (PDOException $e) {
+                    /* mantém mensagem curta */
+                }
                 return $result;
             }
 
