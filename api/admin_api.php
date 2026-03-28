@@ -545,7 +545,7 @@ try {
         
         // Obtém a URL da logo do checkout (ou logo padrão se não houver)
         $logo_checkout_url_raw = getSystemSetting('logo_checkout_url', '');
-        $logo_url_raw = getSystemSetting('logo_url', 'https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png');
+        $logo_url_raw = getSystemSetting('logo_url', 'https://midias.vitrineacademy.com.br/wp-content/uploads/2026/03/Logomarca-Hub-Sinergia-1000x412-1.png');
         
         // Normaliza a URL da logo do checkout
         $logo_checkout_final = '';
@@ -639,7 +639,7 @@ try {
         
         // Obtém a URL da logo do checkout para substituir imagens quebradas
         $logo_checkout_url_raw_db = getSystemSetting('logo_checkout_url', '');
-        $logo_url_raw_db = getSystemSetting('logo_url', 'https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png');
+        $logo_url_raw_db = getSystemSetting('logo_url', 'https://midias.vitrineacademy.com.br/wp-content/uploads/2026/03/Logomarca-Hub-Sinergia-1000x412-1.png');
         $logo_checkout_final_db = empty($logo_checkout_url_raw_db) ? $logo_url_raw_db : $logo_checkout_url_raw_db;
         $logo_checkout_final_db = ltrim($logo_checkout_final_db, '/');
         if (!empty($logo_checkout_final_db) && strpos($logo_checkout_final_db, 'http') !== 0) {
@@ -927,7 +927,7 @@ try {
         }
         
         // Busca valores brutos do banco
-        $logo_url_raw = getSystemSetting('logo_url', 'https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png');
+        $logo_url_raw = getSystemSetting('logo_url', 'https://midias.vitrineacademy.com.br/wp-content/uploads/2026/03/Logomarca-Hub-Sinergia-1000x412-1.png');
         $login_image_url_raw = getSystemSetting('login_image_url', '');
         $logo_checkout_url_raw = getSystemSetting('logo_checkout_url', '');
         $favicon_url_raw = getSystemSetting('favicon_url', '');
@@ -936,7 +936,7 @@ try {
         // Remove barra inicial se houver
         $logo_url_normalized = ltrim($logo_url_raw, '/');
         if (empty($logo_url_normalized)) {
-            $logo_url_normalized = 'https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png';
+            $logo_url_normalized = 'https://midias.vitrineacademy.com.br/wp-content/uploads/2026/03/Logomarca-Hub-Sinergia-1000x412-1.png';
         } elseif (strpos($logo_url_normalized, 'http') === 0) {
             // URL completa, mantém como está
         } elseif (strpos($logo_url_normalized, 'uploads/') === 0) {
