@@ -32,7 +32,7 @@ try {
 } catch (PDOException $e) {}
 
 // Busca a logo do sistema
-$logo_url = 'https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png';
+$logo_url = 'https://midias.vitrineacademy.com.br/wp-content/uploads/2026/03/Logomarca-Hub-Sinergia-1000x412-1.png';
 try {
     $stmt_logo = $pdo->prepare("SELECT valor FROM configuracoes_sistema WHERE chave = 'logo_url'");
     $stmt_logo->execute();
