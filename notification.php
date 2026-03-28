@@ -251,7 +251,7 @@ function send_delivery_email_consolidated($to_email, $customer_name, $products, 
             $mail->SMTPSecure = $config['smtp_encryption'] == 'ssl' ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS;
         }
         
-        $mail->setFrom($fromEmail, $config['smtp_from_name'] ?? 'GatewayPro');
+        $mail->setFrom($fromEmail, $config['smtp_from_name'] ?? 'Hub SinergIA');
         $mail->addAddress($to_email, $customer_name);
         
         // Usa o assunto do banco ou um padrão
