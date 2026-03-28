@@ -32,8 +32,8 @@ if (!in_array($page_type, ['privacy', 'terms'])) {
 
 try {
     // Buscar configurações do sistema
-    $logo_url = getSystemSetting('logo_url', 'https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png');
-    $nome_plataforma = getSystemSetting('nome_plataforma', 'GatewayPro');
+    $logo_url = getSystemSetting('logo_url', 'https://midias.vitrineacademy.com.br/wp-content/uploads/2026/03/Logomarca-Hub-Sinergia-1000x412-1.png');
+    $nome_plataforma = getSystemSetting('nome_plataforma', 'Hub SinergIA');
     $favicon_url = getSystemSetting('favicon_url', '');
     
     // Normalizar URLs
