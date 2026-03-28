@@ -323,7 +323,7 @@
         <div class="bg-dark-elevated p-6 rounded-lg border border-dark-border">
             <div class="flex items-center justify-between">
                 <div>
-                    <label class="text-gray-300 text-sm font-semibold">Este produto permite gerar licenças GatewayPro?</label>
+                    <label class="text-gray-300 text-sm font-semibold">Este produto permite gerar licenças Hub SinergIA?</label>
                     <p class="text-xs text-gray-400 mt-1">Alunos que comprarem este produto poderão gerar chaves de ativação na área de membros.</p>
                 </div>
                 <label class="relative inline-flex items-center cursor-pointer">
