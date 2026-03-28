@@ -50,7 +50,7 @@ include __DIR__ . '/config/load_settings.php';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ativação do Sistema - GatewayPro</title>
+    <title>Ativação do Sistema - Hub SinergIA</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -129,7 +129,7 @@ include __DIR__ . '/config/load_settings.php';
                 <i data-lucide="key" class="w-16 h-16" style="color: var(--accent-primary, #32e768);"></i>
             </div>
             <h1 class="text-3xl font-bold text-white mb-2">Ativação do Sistema</h1>
-            <p class="text-gray-400">Insira sua chave de ativação para começar a usar o GatewayPro.</p>
+            <p class="text-gray-400">Insira sua chave de ativação para começar a usar o Hub SinergIA.</p>
             <?php endif; ?>
         </div>
 
@@ -192,7 +192,7 @@ include __DIR__ . '/config/load_settings.php';
         <div class="mt-8 text-center">
             <p class="text-gray-500 text-sm">
                 Não tem uma chave? 
-                <a href="https://gatewaypro.com.br" target="_blank" class="hover:underline" style="color: var(--accent-primary, #32e768);">
+                <a href="https://sinergia.club" target="_blank" class="hover:underline" style="color: var(--accent-primary, #32e768);">
                     Adquira sua licença
                 </a>
             </p>
