@@ -132,7 +132,7 @@ $produtos = $stmt_prod->fetchAll(PDO::FETCH_ASSOC);
                     <option value="<?php echo (int)$p['id']; ?>"><?php echo htmlspecialchars($p['nome']); ?></option>
                     <?php endforeach; ?>
                 </select>
-                <p class="text-xs text-gray-500 mt-1">Nenhum selecionado = cupom vale para todos os produtos</p>
+                <p class="text-xs text-gray-500 mt-1">Nenhum selecionado = cupom vale para todos os produtos. Se marcar um ou mais, o checkout só aceita no <strong class="text-gray-400">produto exato</strong> daquele link (ID no banco). O título no checkout pode estar personalizado — confira pelo nome em Meus Produtos.</p>
             </div>
             <div class="flex items-center gap-3">
                 <label class="relative inline-flex items-center cursor-pointer">
