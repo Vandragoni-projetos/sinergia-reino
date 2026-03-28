@@ -100,7 +100,7 @@ if (!empty($logo_url) && strpos($logo_url, 'http') !== 0) {
     $logo_url = '/' . ltrim($logo_url, '/');
 }
 if (empty($logo_url)) {
-    $logo_url = 'https://cdn.jsdelivr.net/gh/mathuzabr/img-packtypebot/logo-gatewaypro.png';
+    $logo_url = 'https://midias.vitrineacademy.com.br/wp-content/uploads/2026/03/Logomarca-Hub-Sinergia-1000x412-1.png';
 }
 
 $imagem_fundo = $curso['certificado_imagem_fundo'] ?? '';
