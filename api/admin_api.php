@@ -679,19 +679,19 @@ try {
         // Procura por padrões como "© YYYY GatewayPro" ou "GatewayPro. Todos os direitos"
         // Formato 1: &copy; YYYY GatewayPro. Todos os direitos reservados.
         $email_template_html = preg_replace(
-            '/(&copy;|©)\s*(\d{4})\s+GatewayPro\s*\.\s*Todos os direitos reservados\./i',
+            '/(&copy;|©)\s*(\d{4})\s+Hub SinergIA\s*\.\s*Todos os direitos reservados\./i',
             '$1 $2 ' . htmlspecialchars($nome_plataforma_atual) . '. Todos os direitos reservados.',
             $email_template_html
         );
         // Formato 2: &copy; YYYY GatewayPro.
         $email_template_html = preg_replace(
-            '/(&copy;|©)\s*(\d{4})\s+GatewayPro\s*\./i',
+            '/(&copy;|©)\s*(\d{4})\s+Hub SinergIA\s*\./i',
             '$1 $2 ' . htmlspecialchars($nome_plataforma_atual) . '.',
             $email_template_html
         );
         // Formato 3: GatewayPro © YYYY
         $email_template_html = preg_replace(
-            '/GatewayPro\s*(&copy;|©)\s*(\d{4})/i',
+            '/Hub SinergIA\s*(&copy;|©)\s*(\d{4})/i',
             htmlspecialchars($nome_plataforma_atual) . ' $1 $2',
             $email_template_html
         );
