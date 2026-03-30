@@ -56,12 +56,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         } elseif ($senha !== $confirmar_senha) {
             $erro = "As senhas não coincidem.";
         } else {
-            // Verifica se e-mail já existe
-            $stmt = $pdo->prepare("SELECT id FROM usuarios WHERE usuario = ?");
+            // e-mail na coluna usuario é UNIQUE (qualquer tipo)
+            $stmt = $pdo->prepare("SELECT id, tipo FROM usuarios WHERE usuario = ? LIMIT 1");
             $stmt->execute([$email]);
-            
-            if ($stmt->rowCount() > 0) {
-                $erro = "Este e-mail já está cadastrado. Faça login ou use outro e-mail.";
+            $existente = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($existente) {
+                $erro = (($existente['tipo'] ?? '') === 'usuario')
+                    ? "Este e-mail já está cadastrado. Faça login ou use outro e-mail."
+                    : "Este e-mail já está em uso por outro tipo de conta na plataforma. Use outro e-mail para a área de membros.";
             } else {
                 // Cria o usuário
                 $senha_hash = password_hash($senha, PASSWORD_DEFAULT);
@@ -72,10 +75,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $stmt->execute([$email, $nome, $senha_hash]);
                 $novo_usuario_id = $pdo->lastInsertId();
                 
-                // Se existe produto vitrine, libera acesso
+                // Se existe produto vitrine, libera acesso (idempotente: já pode existir linha de compra/liberação prévia)
                 if ($produto_vitrine) {
-                    $stmt = $pdo->prepare("INSERT INTO alunos_acessos (aluno_email, produto_id, criado_manualmente) VALUES (?, ?, 1)");
+                    $stmt = $pdo->prepare("SELECT id FROM alunos_acessos WHERE aluno_email = ? AND produto_id = ? LIMIT 1");
                     $stmt->execute([$email, $produto_vitrine['id']]);
+                    if (!$stmt->fetch()) {
+                        $stmt = $pdo->prepare("INSERT INTO alunos_acessos (aluno_email, produto_id, criado_manualmente) VALUES (?, ?, 1)");
+                        $stmt->execute([$email, $produto_vitrine['id']]);
+                    }
                     
                     // Cria uma "venda" gratuita para registro (community_id para multi-tenant)
                     $transaction_id = 'FREE_REG_' . uniqid() . '_' . bin2hex(random_bytes(4));
@@ -101,8 +108,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        error_log("Erro no registro: " . $e->getMessage());
-        $erro = "Erro ao criar conta. Tente novamente.";
+        error_log("Erro no registro (member_register): " . $e->getMessage());
+        $sqlState = $e->errorInfo[0] ?? '';
+        $mysqlErr = isset($e->errorInfo[1]) ? (int) $e->errorInfo[1] : 0;
+        if ($sqlState === '23000' || $mysqlErr === 1062) {
+            $erro = "Não foi possível concluir: este e-mail ou acesso já está registrado. Tente fazer login ou use outro e-mail.";
+        } else {
+            $erro = "Erro ao criar conta. Tente novamente.";
+        }
     }
 }
 ?>
@@ -276,7 +289,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     </div>
                 <?php endif; ?>
 
-                <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" class="space-y-5">
+                <form id="member-register-form" action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" class="space-y-5">
                     
                     <div class="modern-input-group">
                         <label for="nome" class="block text-gray-300 text-sm font-bold mb-2 ml-1">Nome Completo</label>
@@ -383,6 +396,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         const emailError = document.getElementById('email-error');
         const emailFeedback = document.getElementById('email-feedback');
         const submitBtn = document.querySelector('button[type="submit"]');
+        const memberRegisterForm = document.getElementById('member-register-form');
+        if (memberRegisterForm) {
+            memberRegisterForm.addEventListener('submit', function(e) {
+                if (emailExists) {
+                    e.preventDefault();
+                }
+            });
+        }
 
         function showEmailStatus(type) {
             emailStatus.classList.remove('hidden');
@@ -422,7 +443,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 const response = await fetch('/api/check_email.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: email })
+                    body: JSON.stringify({ email: email, for_member_register: true })
                 });
 
                 const result = await response.json();
@@ -431,7 +452,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     if (result.exists) {
                         emailExists = true;
                         showEmailStatus('error');
-                        showEmailFeedback('<i data-lucide="alert-circle" class="w-4 h-4 inline mr-1"></i> Este e-mail já está cadastrado. <a href="/member_login" class="underline font-semibold" style="color: var(--accent-primary);">Fazer login</a>', 'error');
+                        const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        const txt = result.message ? esc(result.message) : 'Este e-mail já está em uso.';
+                        showEmailFeedback('<i data-lucide="alert-circle" class="w-4 h-4 inline mr-1"></i> ' + txt + ' <a href="/member_login" class="underline font-semibold" style="color: var(--accent-primary);">Fazer login</a>', 'error');
                         emailInput.classList.add('border-red-500');
                         emailInput.classList.remove('border-green-500');
                         submitBtn.disabled = true;
