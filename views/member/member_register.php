@@ -93,12 +93,20 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 
                 $pdo->commit();
                 
-                // Faz login automático
+                // Faz login automático (mesmo padrão que login.php: token único evita enforce_single_session derrubar na 1ª página)
+                if (session_status() === PHP_SESSION_ACTIVE) {
+                    session_regenerate_id(true);
+                }
                 $_SESSION["loggedin"] = true;
                 $_SESSION["id"] = $novo_usuario_id;
                 $_SESSION["usuario"] = $email;
                 $_SESSION["nome"] = $nome;
                 $_SESSION["tipo"] = 'usuario';
+                $_SESSION['is_infoprodutor'] = false;
+                $st = set_user_session_token((int) $novo_usuario_id);
+                if ($st !== '') {
+                    $_SESSION['session_token'] = $st;
+                }
                 
                 header("location: /member_area_dashboard");
                 exit();
