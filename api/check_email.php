@@ -31,22 +31,39 @@ if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
 }
 
 try {
-    // Verifica se o e-mail já existe na tabela de usuários (clientes)
-    $stmt = $pdo->prepare("SELECT id, nome FROM usuarios WHERE usuario = ? AND tipo = 'usuario'");
-    $stmt->execute([$email]);
-    $user = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($user) {
-        echo json_encode([
-            'success' => true,
-            'exists' => true,
-            'message' => 'E-mail já cadastrado. Sua senha de acesso será a mesma utilizada anteriormente.'
-        ]);
+    // member_register: coluna usuario é UNIQUE para qualquer tipo — bloquear se já existir infoprodutor/admin também.
+    // checkout (padrão): só clientes (tipo usuario) para mensagem de “mesma senha”.
+    $for_member_register = !empty($input['for_member_register']) || (($input['scope'] ?? '') === 'member_register');
+
+    if ($for_member_register) {
+        $stmt = $pdo->prepare("SELECT id, tipo FROM usuarios WHERE usuario = ? LIMIT 1");
+        $stmt->execute([$email]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($user) {
+            $msg = ($user['tipo'] ?? '') === 'usuario'
+                ? 'E-mail já cadastrado na área de membros.'
+                : 'Este e-mail já está em uso por uma conta de infoprodutor ou administrador. Use outro e-mail para criar conta de aluno.';
+            echo json_encode(['success' => true, 'exists' => true, 'message' => $msg]);
+        } else {
+            echo json_encode(['success' => true, 'exists' => false]);
+        }
     } else {
-        echo json_encode([
-            'success' => true,
-            'exists' => false
-        ]);
+        $stmt = $pdo->prepare("SELECT id, nome FROM usuarios WHERE usuario = ? AND tipo = 'usuario'");
+        $stmt->execute([$email]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($user) {
+            echo json_encode([
+                'success' => true,
+                'exists' => true,
+                'message' => 'E-mail já cadastrado. Sua senha de acesso será a mesma utilizada anteriormente.'
+            ]);
+        } else {
+            echo json_encode([
+                'success' => true,
+                'exists' => false
+            ]);
+        }
     }
 } catch (PDOException $e) {
     error_log("check_email.php Error: " . $e->getMessage());
