@@ -292,4 +292,3 @@ $lista_produtos_funnel = $stmt_all_products->fetchAll(PDO::FETCH_ASSOC);
     syncColorPair('funnel_theme_page_bg_swatch', 'funnel_theme_page_bg');
 })();
 </script>
-
