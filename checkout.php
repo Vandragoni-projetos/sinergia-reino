@@ -295,6 +295,16 @@ if ($preco_anterior_raw && !$is_free_product && $main_price_usd !== null && $mai
 }
 $discount_text = $checkout_config['summary']['discount_text'] ?? '';
 
+// Badges de benefício no resumo (desktop + mobile via JS)
+ob_start();
+if ($is_free_product) {
+    echo '<span class="summary-benefit-badge bg-green-100 text-green-700 text-xs font-bold uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1"><i data-lucide="gift" class="w-3 h-3"></i>' . htmlspecialchars(checkout_t('free_product')) . '</span>';
+} else {
+    echo '<span class="summary-benefit-badge ' . htmlspecialchars($tipo_acesso_info['color']) . ' text-xs font-bold uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1"><i data-lucide="' . htmlspecialchars($tipo_acesso === 'vitalicio' ? 'infinity' : 'calendar') . '" class="w-3 h-3"></i>' . htmlspecialchars($tipo_acesso_info['label']) . '</span>';
+}
+echo '<span class="summary-benefit-badge bg-emerald-50 text-emerald-800 text-xs font-bold uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1 border border-emerald-200/70"><i data-lucide="zap" class="w-3 h-3"></i>' . htmlspecialchars(checkout_t('summary_badge_immediate')) . '</span>';
+$summary_benefit_badges_html = ob_get_clean();
+
 // Desconto Pix
 $pix_discount_config = $payment_methods_config['pix_discount'] ?? ['enabled' => false, 'type' => 'percentage', 'value' => 0];
 $pix_discount_enabled = $pix_discount_config['enabled'] ?? false;
@@ -967,6 +977,43 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 -webkit-line-clamp: 2;
             }
         }
+        .product-summary-title {
+            font-size: 14px;
+            font-weight: 500;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            line-height: 1.35;
+            margin: 0;
+            color: #111827;
+        }
+        .product-summary-subline {
+            font-size: 12px;
+            color: #6b7280;
+            line-height: 1.35;
+            margin: 0;
+            display: -webkit-box;
+            -webkit-line-clamp: 1;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .summary-price-old {
+            font-size: 0.75rem;
+            color: #9ca3af;
+            font-weight: 500;
+        }
+        .summary-price-final {
+            font-size: 1.125rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+        }
+        .product-summary-total-row span:first-child {
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: #111827;
+            letter-spacing: -0.02em;
+        }
         .payment-method-card { transition: all 0.3s ease-in-out; }
         .payment-method-card:hover { transform: translateY(-2px); }
         
@@ -1150,28 +1197,25 @@ function render_sales_notification($config, $produto_nome_fallback) {
             <aside class="w-full lg:w-1/3 hidden lg:block">
                 <div class="sticky top-6 space-y-6">
                     <div class="bg-white rounded-lg shadow-lg p-6 space-y-4" data-id="final_summary">
-                        <h2 class="text-xl font-semibold text-gray-800"><?php echo htmlspecialchars(checkout_t('summary_title')); ?></h2>
-                        <div class="space-y-2">
-                            <div class="flex justify-between text-gray-700">
-                                <span><?php echo htmlspecialchars($main_name); ?></span>
-                                <div class="flex items-baseline gap-2">
-                                    <?php if ($formattedPrecoAnterior): ?><span id="summary-preco-anterior" class="text-sm text-gray-400 line-through" data-price-brl="<?php echo htmlspecialchars($formattedPrecoAnterior); ?>" data-price-usd="<?php echo $formattedPrecoAnteriorUsd ? htmlspecialchars($formattedPrecoAnteriorUsd) : ''; ?>"><?php echo $formattedPrecoAnteriorUsd ?: $formattedPrecoAnterior; ?></span><?php endif; ?>
-                                    <span id="summary-main-price" class="font-medium" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span>
+                        <h2 class="text-lg sm:text-xl font-bold text-gray-900 tracking-tight"><?php echo htmlspecialchars(checkout_t('summary_title')); ?></h2>
+                        <div class="product-summary-main-row flex gap-3 items-start border-b border-gray-100 pb-3">
+                            <div class="min-w-0 flex-1 space-y-1">
+                                <p class="product-summary-title"><?php echo htmlspecialchars($main_name); ?></p>
+                                <?php if ($checkout_description_html !== ''): ?>
+                                <p class="product-summary-subline"><?php echo htmlspecialchars($checkout_description_html, ENT_QUOTES, 'UTF-8'); ?></p>
+                                <?php endif; ?>
+                                <div class="flex flex-wrap gap-2 pt-1">
+                                    <?php echo $summary_benefit_badges_html; ?>
                                 </div>
                             </div>
-                            <div class="flex justify-start">
-                                <?php if ($is_free_product): ?>
-                                <span class="bg-green-100 text-green-700 text-xs font-bold uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                                    <i data-lucide="gift" class="w-3 h-3"></i>
-                                    <?php echo htmlspecialchars(checkout_t('free_product')); ?>
-                                </span>
-                                <?php else: ?>
-                                <span class="<?php echo $tipo_acesso_info['color']; ?> text-xs font-bold uppercase px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                                    <i data-lucide="<?php echo $tipo_acesso === 'vitalicio' ? 'infinity' : 'calendar'; ?>" class="w-3 h-3"></i>
-                                    <?php echo $tipo_acesso_info['label']; ?>
-                                </span>
-                                <?php endif; ?>
+                            <div class="product-summary-prices flex-shrink-0 text-right pl-2">
+                                <div class="flex flex-col items-end gap-0.5">
+                                    <?php if ($formattedPrecoAnterior): ?><span id="summary-preco-anterior" class="summary-price-old line-through" data-price-brl="<?php echo htmlspecialchars($formattedPrecoAnterior); ?>" data-price-usd="<?php echo $formattedPrecoAnteriorUsd ? htmlspecialchars($formattedPrecoAnteriorUsd) : ''; ?>"><?php echo $formattedPrecoAnteriorUsd ?: $formattedPrecoAnterior; ?></span><?php endif; ?>
+                                    <span id="summary-main-price" class="summary-price-final" style="color: <?php echo htmlspecialchars($accentColor); ?>;" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span>
+                                </div>
                             </div>
+                        </div>
+                        <div class="space-y-2">
                             <?php foreach ($order_bumps as $bump) {
                                 $ob_id = intval($bump['ob_id']); $ob_name = htmlspecialchars($bump['ob_nome']); $ob_price = floatval($bump['ob_preco']);
                                 $ob_usd = ($main_price_usd !== null && $main_price > 0) ? $ob_price * $main_price_usd / $main_price : null;
@@ -1187,17 +1231,17 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         </div>
                         <?php endif; ?>
                         <?php if ($pix_discount_enabled && $pix_discount_value > 0 && !$is_free_product): ?>
-                        <div id="pix-discount-row" class="flex justify-between items-center" style="display: none;">
-                            <span class="bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
-                                <i data-lucide="percent" class="w-3 h-3"></i>
-                                <?php echo htmlspecialchars(checkout_t('discount_pix')); ?>
+                        <div id="pix-discount-row" class="pix-discount-summary-row flex justify-between items-center gap-3 py-2.5 px-3 rounded-lg bg-emerald-50/90 border border-emerald-100" style="display: none;">
+                            <span class="text-sm font-semibold text-emerald-900 flex items-center gap-1.5 min-w-0">
+                                <span class="flex-shrink-0" aria-hidden="true">💰</span>
+                                <span><?php echo htmlspecialchars(checkout_t('pix_discount_applied')); ?></span>
                             </span>
-                            <span class="pix-discount-value font-medium text-green-600">- R$ 0,00</span>
+                            <span class="pix-discount-value font-bold text-emerald-700 whitespace-nowrap">- R$ 0,00</span>
                         </div>
                         <?php endif; ?>
                         <hr class="border-gray-200">
-                        <div class="flex justify-between items-center"><span class="text-lg font-bold text-gray-800"><?php echo htmlspecialchars(checkout_t('total_pay')); ?></span><span id="final-total-price" class="text-2xl font-bold text-[#348535]" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span></div>
-                        <div class="text-center text-gray-500 text-sm mt-4"><i data-lucide="lock" class="w-4 h-4 inline-block -mt-1"></i> <?php echo htmlspecialchars(checkout_t('secure_purchase')); ?></div>
+                        <div class="product-summary-total-row flex justify-between items-end gap-3 pt-1"><span><?php echo htmlspecialchars(checkout_t('total_today')); ?></span><span id="final-total-price" class="text-2xl font-extrabold tracking-tight" style="color: <?php echo htmlspecialchars($accentColor); ?>;" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span></div>
+                        <div class="text-center text-gray-500 text-sm mt-4"><?php echo htmlspecialchars(checkout_t('secure_purchase')); ?></div>
                     </div>
                     <?php if (!empty($sideBanners)): ?>
                     <div class="space-y-4"><?php foreach ($sideBanners as $side_banner_url): ?><img src="<?php echo htmlspecialchars($side_banner_url); ?>" alt="Banner Lateral" class="w-full h-auto object-cover rounded-lg shadow-md"><?php endforeach; ?></div>
@@ -1216,16 +1260,16 @@ function render_sales_notification($config, $produto_nome_fallback) {
             <span id="coupon-discount-value-mobile" class="font-medium text-amber-600 text-sm">- R$ 0,00</span>
         </div>
         <?php if ($pix_discount_enabled && $pix_discount_value > 0): ?>
-        <div id="pix-discount-row-mobile" class="flex justify-between items-center mb-2" style="display: none;">
-            <span class="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
-                <i data-lucide="percent" class="w-3 h-3"></i>
-                <?php echo htmlspecialchars(checkout_t('discount_pix')); ?>
+        <div id="pix-discount-row-mobile" class="pix-discount-summary-row flex justify-between items-center gap-2 mb-2 py-2 px-2.5 rounded-lg bg-emerald-50/90 border border-emerald-100" style="display: none;">
+            <span class="text-xs sm:text-sm font-semibold text-emerald-900 flex items-center gap-1 min-w-0">
+                <span class="flex-shrink-0" aria-hidden="true">💰</span>
+                <span><?php echo htmlspecialchars(checkout_t('pix_discount_applied')); ?></span>
             </span>
-            <span class="pix-discount-value font-medium text-green-600 text-sm">- R$ 0,00</span>
+            <span class="pix-discount-value font-bold text-emerald-700 text-sm whitespace-nowrap">- R$ 0,00</span>
         </div>
         <?php endif; ?>
-        <div class="flex justify-between items-center mb-3 pt-2 border-t"><span class="text-lg font-bold text-gray-800"><?php echo htmlspecialchars(checkout_t('total_pay')); ?></span><span id="final-total-price-mobile" class="text-2xl font-bold text-[#348535]" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span></div>
-        <p class="text-center text-xs text-gray-500 flex items-center justify-center space-x-1"><i data-lucide="lock" class="w-3 h-3"></i><span><?php echo htmlspecialchars(checkout_t('footer_secure')); ?> <?php echo strtoupper(htmlspecialchars($nome_plataforma)); ?></span></p>
+        <div class="product-summary-total-row flex justify-between items-end gap-2 mb-2 pt-2 border-t"><span class="text-base font-extrabold text-gray-900"><?php echo htmlspecialchars(checkout_t('total_today')); ?></span><span id="final-total-price-mobile" class="text-2xl font-extrabold tracking-tight" style="color: <?php echo htmlspecialchars($accentColor); ?>;" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span></div>
+        <p class="text-center text-[11px] sm:text-xs text-gray-500 leading-snug px-1"><span class="block"><?php echo htmlspecialchars(checkout_t('secure_purchase')); ?></span><span class="block opacity-80 mt-0.5"><?php echo htmlspecialchars(checkout_t('footer_secure')); ?> <?php echo strtoupper(htmlspecialchars($nome_plataforma)); ?></span></p>
     </footer>
     <div id="mobile-footer-spacer" class="lg:hidden" style="height: 128px;"></div>
 
@@ -1574,6 +1618,10 @@ function render_sales_notification($config, $produto_nome_fallback) {
             const checkoutHash = '<?php echo htmlspecialchars($checkout_hash ?? '', ENT_QUOTES, 'UTF-8'); ?>';
             const infoprodutorId = <?php echo (int)$infoprodutor_id; ?>;
             const mainProductId = <?php echo (int)$produto['id']; ?>;
+            const summaryMainName = <?php echo json_encode($main_name, JSON_UNESCAPED_UNICODE); ?>;
+            const summarySublineRaw = <?php echo $checkout_description_html !== '' ? json_encode($checkout_description_html, JSON_UNESCAPED_UNICODE) : 'null'; ?>;
+            const summaryBadgesHtml = <?php echo json_encode($summary_benefit_badges_html, JSON_UNESCAPED_UNICODE); ?>;
+            const summaryAccentColor = <?php echo json_encode($accentColor, JSON_UNESCAPED_UNICODE); ?>;
             const ofertaId = <?php echo isset($produto['oferta_id']) ? (int)$produto['oferta_id'] : 'null'; ?>;
             const funnelMainPaymentId = <?php echo $funnel_main_payment_id ? json_encode($funnel_main_payment_id) : 'null'; ?>;
             const funnelStepParam = <?php echo $funnel_step_param ? json_encode($funnel_step_param) : 'null'; ?>;
@@ -1851,10 +1899,46 @@ function render_sales_notification($config, $produto_nome_fallback) {
                     mobileSummaryItemsContainer.innerHTML = '';
                     const mainPriceDisplay = shouldDisplayUsd() && mainProductPriceUsd ? `US$ ${mainProductPriceUsd.toFixed(2).replace('.', ',')}` : `R$ ${mainProductPrice.toFixed(2).replace('.', ',')}`;
                     const mainPrecoAnteriorDisplay = (mainPrecoAnteriorBrl || mainPrecoAnteriorUsd) ? (shouldDisplayUsd() && mainPrecoAnteriorUsd ? mainPrecoAnteriorUsd : mainPrecoAnteriorBrl) : null;
-                    const mainItemEl = document.createElement('div');
-                    mainItemEl.className = 'flex justify-between';
-                    mainItemEl.innerHTML = `<span><?php echo htmlspecialchars(addslashes($main_name)); ?></span><div class="flex items-baseline gap-2">${mainPrecoAnteriorDisplay ? `<span class="text-sm text-gray-400 line-through">${mainPrecoAnteriorDisplay}</span>` : ''}<span class="font-medium">${mainPriceDisplay}</span></div>`;
-                    mobileSummaryItemsContainer.appendChild(mainItemEl);
+                    const root = document.createElement('div');
+                    root.className = 'product-summary-mobile-root';
+                    const row = document.createElement('div');
+                    row.className = 'flex gap-3 items-start';
+                    const left = document.createElement('div');
+                    left.className = 'min-w-0 flex-1 space-y-1';
+                    const titleP = document.createElement('p');
+                    titleP.className = 'product-summary-title';
+                    titleP.textContent = summaryMainName;
+                    left.appendChild(titleP);
+                    if (summarySublineRaw) {
+                        const subP = document.createElement('p');
+                        subP.className = 'product-summary-subline';
+                        subP.textContent = summarySublineRaw;
+                        left.appendChild(subP);
+                    }
+                    const badgeWrap = document.createElement('div');
+                    badgeWrap.className = 'flex flex-wrap gap-1.5 pt-0.5';
+                    badgeWrap.innerHTML = summaryBadgesHtml;
+                    left.appendChild(badgeWrap);
+                    const right = document.createElement('div');
+                    right.className = 'product-summary-prices flex-shrink-0 text-right pl-2';
+                    const priceCol = document.createElement('div');
+                    priceCol.className = 'flex flex-col items-end gap-0.5';
+                    if (mainPrecoAnteriorDisplay) {
+                        const prev = document.createElement('span');
+                        prev.className = 'summary-price-old line-through';
+                        prev.textContent = mainPrecoAnteriorDisplay;
+                        priceCol.appendChild(prev);
+                    }
+                    const cur = document.createElement('span');
+                    cur.className = 'summary-price-final text-base';
+                    cur.style.color = summaryAccentColor || '';
+                    cur.textContent = mainPriceDisplay;
+                    priceCol.appendChild(cur);
+                    right.appendChild(priceCol);
+                    row.appendChild(left);
+                    row.appendChild(right);
+                    root.appendChild(row);
+                    mobileSummaryItemsContainer.appendChild(root);
                 }
                 orderbumpCheckboxes.forEach(checkbox => {
                     const productId = parseInt(checkbox.dataset.productId);
@@ -1940,6 +2024,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 currentAmount = displayAmount;
                 
                 updateMobileLayout();
+                if (typeof lucide !== 'undefined') {
+                    lucide.createIcons();
+                }
             };
             
             // Cupom: aplicar
