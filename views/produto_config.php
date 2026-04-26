@@ -245,10 +245,22 @@ if (isset($_POST['salvar_produto_config'])) {
             
             if ($sales_page_url_valid) {
                 $has_cols_foto_extra = function_exists('db_table_has_column') && db_table_has_column($pdo, 'produtos', 'foto_2');
+                $has_checkout_description_col = function_exists('db_table_has_column') && db_table_has_column($pdo, 'produtos', 'checkout_description');
+                $checkout_description_val = null;
+                if ($has_checkout_description_col) {
+                    $raw_cd = isset($_POST['checkout_description']) ? trim((string) $_POST['checkout_description']) : '';
+                    $checkout_description_val = ($raw_cd === '') ? null : mb_substr($raw_cd, 0, 65535);
+                }
 
-                if ($has_cols_foto_extra) {
+                if ($has_cols_foto_extra && $has_checkout_description_col) {
+                    $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, price_usd = ?, foto = ?, foto_2 = ?, foto_3 = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ?, product_type = ?, product_tagline = ?, sales_page_url = ?, checkout_description = ? WHERE id = ? AND usuario_id = ?");
+                    $result = $stmt_update->execute([$nome, $descricao, $preco, $price_usd, $nome_foto, $nome_foto2, $nome_foto3, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $product_type, $product_tagline, $sales_page_url, $checkout_description_val, $id_produto, $usuario_id]);
+                } elseif ($has_cols_foto_extra) {
                     $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, price_usd = ?, foto = ?, foto_2 = ?, foto_3 = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ?, product_type = ?, product_tagline = ?, sales_page_url = ? WHERE id = ? AND usuario_id = ?");
                     $result = $stmt_update->execute([$nome, $descricao, $preco, $price_usd, $nome_foto, $nome_foto2, $nome_foto3, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $product_type, $product_tagline, $sales_page_url, $id_produto, $usuario_id]);
+                } elseif ($has_checkout_description_col) {
+                    $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, price_usd = ?, foto = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ?, product_type = ?, product_tagline = ?, sales_page_url = ?, checkout_description = ? WHERE id = ? AND usuario_id = ?");
+                    $result = $stmt_update->execute([$nome, $descricao, $preco, $price_usd, $nome_foto, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $product_type, $product_tagline, $sales_page_url, $checkout_description_val, $id_produto, $usuario_id]);
                 } else {
                     $stmt_update = $pdo->prepare("UPDATE produtos SET nome = ?, descricao = ?, preco = ?, price_usd = ?, foto = ?, tipo_entrega = ?, conteudo_entrega = ?, gateway = ?, preco_anterior = ?, gera_licenca = ?, is_free = ?, is_showcase = ?, product_type = ?, product_tagline = ?, sales_page_url = ? WHERE id = ? AND usuario_id = ?");
                     $result = $stmt_update->execute([$nome, $descricao, $preco, $price_usd, $nome_foto, $tipo_entrega, $conteudo_entrega, $gateway, $preco_anterior, $gera_licenca, $is_free, $is_showcase, $product_type, $product_tagline, $sales_page_url, $id_produto, $usuario_id]);
