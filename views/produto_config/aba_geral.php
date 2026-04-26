@@ -197,6 +197,19 @@
     </div>
     <?php endif; ?>
 
+    <div>
+        <h2 class="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+            <i data-lucide="message-square-text" class="w-5 h-5 text-[#32e768]"></i>
+            Texto no checkout
+            <span class="text-sm font-normal text-gray-400">(opcional)</span>
+        </h2>
+        <div class="bg-dark-elevated p-6 rounded-lg border border-dark-border space-y-2">
+            <label for="checkout_description" class="block text-gray-300 text-sm font-semibold">Descrição específica para o checkout</label>
+            <textarea id="checkout_description" name="checkout_description" rows="3" class="form-input" placeholder="Ex: 50 páginas bíblicas para colorir, imprimir e ensinar a Palavra de Deus de forma divertida."><?php echo htmlspecialchars((string)($produto['checkout_description'] ?? '')); ?></textarea>
+            <p class="text-xs text-gray-400">Texto curto exibido abaixo do nome do produto no checkout. Use para destacar o principal benefício da oferta. Campo opcional.</p>
+        </div>
+    </div>
+
     <!-- TAG/Categoria do Produto -->
     <div>
         <h2 class="text-xl font-semibold mb-4 text-white flex items-center gap-2">
