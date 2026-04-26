@@ -649,6 +649,7 @@ CREATE TABLE IF NOT EXISTS `produtos` (
   `product_type` varchar(40) DEFAULT NULL COMMENT 'Categorias: PLR, QUIZ, ADS, E_BOOKS, IMAGENS, etc.',
   `product_tagline` varchar(40) DEFAULT NULL COMMENT 'Ex: Conteúdo para revenda, Quiz interativo',
   `sales_page_url` varchar(512) DEFAULT NULL COMMENT 'URL da página de vendas (se preenchida, botão vira Saiba Mais)',
+  `checkout_description` text DEFAULT NULL COMMENT 'Copy curta opcional só no checkout (abaixo do nome)',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
