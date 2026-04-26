@@ -633,6 +633,8 @@ CREATE TABLE IF NOT EXISTS `produtos` (
   `is_free` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Se o produto é gratuito (1=grátis, 0=pago)',
   `is_showcase` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Se o produto é vitrine para registro gratuito (1=vitrine, 0=normal)',
   `foto` varchar(255) DEFAULT NULL,
+  `foto_2` varchar(255) DEFAULT NULL COMMENT 'Imagem extra checkout (opcional)',
+  `foto_3` varchar(255) DEFAULT NULL COMMENT 'Imagem extra checkout (opcional)',
   `checkout_hash` varchar(255) NOT NULL,
   `checkout_config` text DEFAULT NULL,
   `usuario_id` int(11) NOT NULL,
