@@ -269,7 +269,7 @@ if (!isset($feed_items_biblioteca)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale-1.0">
-    <title>Meus Cursos - Área de Membros Hub SinergIA</title>
+    <title>Meus Cursos - Área de Membros Prime SinergIA</title>
     <?php
     // PWA: manifest e meta para instalação como app
     $pwa_activated = false;
@@ -339,7 +339,7 @@ if (!isset($feed_items_biblioteca)) {
             <div class="flex justify-between items-center h-20">
                 <div class="flex items-center space-x-4">
                     <a href="/member_area_dashboard">
-                        <img src="<?php echo htmlspecialchars($logo_url); ?>" alt="Hub SinergIA Logo" class="h-10">
+                        <img src="<?php echo htmlspecialchars($logo_url); ?>" alt="Prime SinergIA Logo" class="h-10">
                     </a>
                     <div class="relative flex items-center gap-2">
                         <span class="text-sm text-gray-400 hidden sm:inline">Categoria</span>
