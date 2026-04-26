@@ -268,6 +268,8 @@ if ($main_price_usd !== null && $preco_base > 0 && $main_price != $preco_base) {
     $main_price_usd = $main_price_usd * ($main_price / $preco_base); // Escala para oferta
 }
 $main_name = !empty($checkout_config['summary']['product_name']) ? $checkout_config['summary']['product_name'] : $produto['nome'];
+$checkout_description_raw = $produto['checkout_description'] ?? '';
+$checkout_description_html = (is_string($checkout_description_raw) && trim($checkout_description_raw) !== '') ? trim($checkout_description_raw) : '';
 $main_image = resolve_product_image_url($produto['foto'] ?? '', 'uploads/') ?: '/uploads/placeholder.png';
 $checkout_gallery_images = [];
 foreach (['foto', 'foto_2', 'foto_3'] as $_gk) {
@@ -948,6 +950,23 @@ function render_sales_notification($config, $produto_nome_fallback) {
         #sales-notification.hide { visibility: hidden; transform: translateY(100%); opacity: 0; }
         .checkout-input { transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out; }
         .checkout-input:focus { border-color: <?php echo htmlspecialchars($accentColor); ?>; box-shadow: 0 0 0 2px <?php echo htmlspecialchars($accentColor); ?>40; outline: none; }
+        .product-checkout-description {
+            font-size: 14px;
+            color: #6b7280;
+            margin-top: 6px;
+            margin-bottom: 0;
+            line-height: 1.4;
+            max-width: 100%;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        @media (max-width: 1023px) {
+            .product-checkout-description {
+                -webkit-line-clamp: 2;
+            }
+        }
         .payment-method-card { transition: all 0.3s ease-in-out; }
         .payment-method-card:hover { transform: translateY(-2px); }
         
@@ -1023,6 +1042,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         <img id="checkout-product-main-img" src="<?php echo htmlspecialchars($main_image); ?>" alt="Imagem de <?php echo htmlspecialchars($main_name); ?>" class="w-24 h-24 sm:w-28 sm:h-28 object-cover rounded-lg shadow-md border border-gray-200 flex-shrink-0" onerror="this.src='https://placehold.co/96x96/e2e8f0/334155?text=Produto'">
                         <div class="flex-1">
                             <h1 class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($main_name); ?></h1>
+                            <?php if ($checkout_description_html !== ''): ?>
+                            <p class="product-checkout-description"><?php echo nl2br(htmlspecialchars($checkout_description_html, ENT_QUOTES, 'UTF-8')); ?></p>
+                            <?php endif; ?>
                             <div class="flex items-baseline flex-wrap gap-x-3 gap-y-1 mt-2">
                                 <span id="hero-main-price" class="text-2xl font-bold" style="color: <?php echo htmlspecialchars($accentColor); ?>;" data-price-brl="<?php echo htmlspecialchars($formattedMainPrice); ?>" data-price-usd="<?php echo $formattedMainPriceUsd ? htmlspecialchars($formattedMainPriceUsd) : ''; ?>"><?php echo $formattedMainPriceUsd ?: $formattedMainPrice; ?></span>
                                 <?php if ($formattedPrecoAnterior): ?><span id="hero-preco-anterior" class="text-lg text-gray-400 line-through" data-price-brl="<?php echo htmlspecialchars($formattedPrecoAnterior); ?>" data-price-usd="<?php echo $formattedPrecoAnteriorUsd ? htmlspecialchars($formattedPrecoAnteriorUsd) : ''; ?>"><?php echo $formattedPrecoAnteriorUsd ?: $formattedPrecoAnterior; ?></span><?php endif; ?>
