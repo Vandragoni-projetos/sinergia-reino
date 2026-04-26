@@ -760,4 +760,3 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePaymentMethods();
 });
 </script>
-
