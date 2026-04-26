@@ -701,4 +701,3 @@ $customer_fields_config = $checkout_config['customer_fields'] ?? ['enable_cpf' =
     </script>
 </body>
 </html>
-
