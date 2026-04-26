@@ -1409,4 +1409,3 @@ document.addEventListener('DOMContentLoaded', function() {
     loadLicenseInfo();
 });
 </script>
-
