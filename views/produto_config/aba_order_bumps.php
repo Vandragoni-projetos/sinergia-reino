@@ -157,4 +157,3 @@ document.addEventListener('DOMContentLoaded', () => {
 <style>
 .sortable-ghost { opacity: 0.4; background: rgba(50, 231, 104, 0.2); }
 </style>
-
