@@ -861,7 +861,10 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                 } else if (hasVideo) {
                     wrap.innerHTML = '<div class="w-full h-full flex items-center justify-center text-gray-500"><p>Vídeo indisponível.</p></div>';
                 } else {
-                    wrap.innerHTML = '<div class="w-full h-full flex flex-col items-center justify-center text-gray-500"><i data-lucide="video-off" class="w-16 h-16 text-gray-600 mb-4"></i><p class="text-lg font-semibold">Esta aula não contém vídeo.</p><p class="text-sm">Verifique os materiais de apoio abaixo.</p></div>';
+                    const isTextOnly = lessonData.tipo_conteudo === 'text';
+                    wrap.innerHTML = isTextOnly
+                        ? '<div class="w-full h-full flex flex-col items-center justify-center text-gray-400"><i data-lucide="align-left" class="w-16 h-16 text-gray-600 mb-4"></i><p class="text-lg font-semibold">Conteúdo em texto</p><p class="text-sm">Leia o material na descrição abaixo.</p></div>'
+                        : '<div class="w-full h-full flex flex-col items-center justify-center text-gray-500"><i data-lucide="video-off" class="w-16 h-16 text-gray-600 mb-4"></i><p class="text-lg font-semibold">Esta aula não contém vídeo.</p><p class="text-sm">Verifique os materiais de apoio abaixo.</p></div>';
                 }
                 playerHost.appendChild(wrap);
                 lucide.createIcons();
@@ -970,18 +973,20 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                     } else {
                         lessonButton.className = 'lesson-item w-full text-left flex items-center space-x-3 p-3 rounded-lg text-gray-300 hover:bg-gray-700 transition';
                         
-                        // NEW: Determine icons based on content type
                         let videoIcon = '';
                         let fileIcon = '';
 
+                        if (aula.tipo_conteudo === 'text') {
+                            iconHtml = `<i data-lucide="align-left" class="w-5 h-5 text-gray-500 flex-shrink-0"></i>`;
+                        } else {
                         if (aula.tipo_conteudo === 'video' || aula.tipo_conteudo === 'mixed') {
                             videoIcon = `<i data-lucide="play-circle" class="w-5 h-5 text-gray-500 flex-shrink-0"></i>`;
                         }
                         if (aula.tipo_conteudo === 'files' || aula.tipo_conteudo === 'mixed') {
                             fileIcon = `<i data-lucide="file-text" class="w-5 h-5 text-gray-500 flex-shrink-0"></i>`;
                         }
-                        // Combine them, possibly with a small space
                         iconHtml = videoIcon + (videoIcon && fileIcon ? '<span class="w-1"></span>' : '') + fileIcon;
+                        }
 
 
                         if (!firstAvailableLesson) { // Keep track of the first unlocked lesson
