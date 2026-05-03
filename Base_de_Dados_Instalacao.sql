@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS `aulas` (
   `descricao` longtext DEFAULT NULL,
   `ordem` int(11) NOT NULL DEFAULT 0,
   `release_days` int(11) NOT NULL DEFAULT 0 COMMENT 'Número de dias após a compra para a aula ser liberada',
-  `tipo_conteudo` enum('video','files','mixed') NOT NULL DEFAULT 'video' COMMENT 'Tipo de conteúdo da aula: video, files ou mixed',
+  `tipo_conteudo` enum('video','files','mixed','text') NOT NULL DEFAULT 'video' COMMENT 'Tipo de conteúdo: video, files, mixed ou text',
   `lesson_cover_type` enum('upload','url') DEFAULT NULL COMMENT 'upload ou url',
   `lesson_cover_url` varchar(512) DEFAULT NULL COMMENT 'URL externa da imagem',
   `lesson_cover_path` varchar(512) DEFAULT NULL COMMENT 'Caminho relativo do upload',
