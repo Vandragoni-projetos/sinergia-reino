@@ -166,6 +166,45 @@ function validate_video_by_origin($origem, $url_video) {
     return ['valid' => false, 'error' => 'Origem de vídeo não suportada.'];
 }
 
+/**
+ * Normaliza tipo_conteudo da aula (POST).
+ */
+function normalize_aula_tipo_conteudo($raw) {
+    $t = is_string($raw) ? $raw : 'video';
+    return in_array($t, ['video', 'files', 'mixed', 'text'], true) ? $t : 'video';
+}
+
+/**
+ * Remove todos os anexos de uma aula (disco + DB). Usado ao salvar como "somente texto".
+ */
+function aula_delete_all_attachments(PDO $pdo, int $aula_id) {
+    $stmt = $pdo->prepare("SELECT id, caminho_arquivo FROM aula_arquivos WHERE aula_id = ?");
+    $stmt->execute([$aula_id]);
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if (!empty($row['caminho_arquivo']) && is_file($row['caminho_arquivo'])) {
+            @unlink($row['caminho_arquivo']);
+        }
+        $pdo->prepare("DELETE FROM aula_arquivos WHERE id = ?")->execute([(int)$row['id']]);
+    }
+}
+
+/**
+ * Limpa banner/capa da aula (disco + colunas).
+ */
+function aula_clear_lesson_cover(PDO $pdo, int $aula_id) {
+    $chk = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'lesson_cover_type'");
+    if (!$chk || $chk->rowCount() === 0) {
+        return;
+    }
+    $stmt = $pdo->prepare("SELECT lesson_cover_path FROM aulas WHERE id = ?");
+    $stmt->execute([$aula_id]);
+    $old = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!empty($old['lesson_cover_path']) && is_file($old['lesson_cover_path'])) {
+        @unlink($old['lesson_cover_path']);
+    }
+    $pdo->prepare("UPDATE aulas SET lesson_cover_type = NULL, lesson_cover_url = NULL, lesson_cover_path = NULL WHERE id = ?")->execute([$aula_id]);
+}
+
 
 // 1. Validar e buscar o produto_id
 if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
@@ -478,7 +517,10 @@ try {
                 $descricao_aula = sanitize_lesson_html($descricao_aula);
             }
             $release_days_aula = (int)($_POST['release_days_aula'] ?? 0);
-            $tipo_conteudo = $_POST['tipo_conteudo'] ?? 'video';
+            $tipo_conteudo = normalize_aula_tipo_conteudo($_POST['tipo_conteudo'] ?? 'video');
+            if ($tipo_conteudo === 'text') {
+                $url_video = '';
+            }
 
             // Verifica se o módulo realmente pertence a este curso
             $stmt_check_modulo = $pdo->prepare("SELECT id FROM modulos WHERE id = ? AND curso_id = ?");
@@ -510,6 +552,9 @@ try {
                         }
                     }
                     if ($video_validation_error === null) {
+                    if ($tipo_conteudo === 'text') {
+                        $has_new_files = false;
+                    }
                     $req_termo = (($tipo_conteudo === 'files' || $tipo_conteudo === 'mixed') && !empty($_POST['require_download_terms'])) ? 1 : 0;
                     $termo_text = $req_termo ? trim($_POST['download_terms_text'] ?? '') : null;
                     if (empty($termo_text) && $req_termo) $termo_text = $termo_download_padrao ?? '';
@@ -618,7 +663,10 @@ try {
                 $descricao_aula = sanitize_lesson_html($descricao_aula);
             }
             $release_days_aula = (int)($_POST['release_days_aula'] ?? 0);
-            $tipo_conteudo = $_POST['tipo_conteudo'] ?? 'video';
+            $tipo_conteudo = normalize_aula_tipo_conteudo($_POST['tipo_conteudo'] ?? 'video');
+            if ($tipo_conteudo === 'text') {
+                $url_video = '';
+            }
 
             // Valida se a aula pertence a um módulo deste curso
             $stmt_check_aula = $pdo->prepare("SELECT a.id FROM aulas a JOIN modulos m ON a.modulo_id = m.id WHERE a.id = ? AND m.curso_id = ?");
@@ -653,6 +701,9 @@ try {
                         }
                     }
                     if ($video_validation_error_edit === null) {
+                    if ($tipo_conteudo === 'text') {
+                        $has_new_files = false;
+                    }
                     $req_termo_edit = (($tipo_conteudo === 'files' || $tipo_conteudo === 'mixed') && !empty($_POST['require_download_terms'])) ? 1 : 0;
                     $termo_text_edit = $req_termo_edit ? trim($_POST['download_terms_text'] ?? '') : null;
                     if (empty($termo_text_edit) && $req_termo_edit) $termo_text_edit = $termo_download_padrao ?? '';
@@ -732,6 +783,10 @@ try {
                         $mensagem = "<div class='bg-yellow-900/20 border border-yellow-500 text-yellow-300 px-4 py-3 rounded' role='alert'>Aula atualizada, mas alguns arquivos foram rejeitados:<br>" . implode('<br>', $upload_errors) . "</div>";
                     } else {
                         $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Aula atualizada!</div>";
+                    }
+                    if ($tipo_conteudo === 'text') {
+                        aula_delete_all_attachments($pdo, (int)$aula_id_edit);
+                        aula_clear_lesson_cover($pdo, (int)$aula_id_edit);
                     }
                     // Banner/cover: somente para "Somente Arquivos" (Edição)
                     $chk_cover_col = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'lesson_cover_type'");
@@ -1407,6 +1462,9 @@ try {
                                     <li class="flex justify-between items-center p-3 bg-dark-elevated rounded-md border border-dark-border hover:bg-dark-card aula-item" data-aula-id="<?php echo $aula['id']; ?>">
                                         <div class="flex items-center space-x-3 cursor-grab">
                                             <i data-lucide="grip-vertical" class="w-5 h-5 text-gray-500 flex-shrink-0"></i>
+                                            <?php if ($aula['tipo_conteudo'] === 'text'): ?>
+                                                <i data-lucide="align-left" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
+                                            <?php endif; ?>
                                             <?php if ($aula['tipo_conteudo'] === 'video' || $aula['tipo_conteudo'] === 'mixed'): ?>
                                                 <i data-lucide="play-circle" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
                                             <?php endif; ?>
@@ -1471,6 +1529,7 @@ try {
                         <option value="video">Somente Vídeo</option>
                         <option value="files">Somente Arquivos</option>
                         <option value="mixed">Vídeo e Arquivos</option>
+                        <option value="text">Somente texto (conteúdo na descrição)</option>
                     </select>
                 </div>
 
@@ -1561,6 +1620,7 @@ try {
                         <option value="video">Somente Vídeo</option>
                         <option value="files">Somente Arquivos</option>
                         <option value="mixed">Vídeo e Arquivos</option>
+                        <option value="text">Somente texto (conteúdo na descrição)</option>
                     </select>
                 </div>
 
@@ -1908,6 +1968,9 @@ document.addEventListener('DOMContentLoaded', function() {
         addAulaFilesContainer.style.display = 'none';
         if (addLessonCoverContainer) addLessonCoverContainer.classList.add('hidden');
         if (addTermoDownloadContainer) addTermoDownloadContainer.classList.add('hidden');
+        if (selectedType === 'text') {
+            addUrlVideoInput.value = '';
+        }
         if (selectedType === 'video' || selectedType === 'mixed') {
             addVideoUrlContainer.style.display = 'block';
             addUrlVideoInput.required = true;
@@ -1977,6 +2040,11 @@ document.addEventListener('DOMContentLoaded', function() {
         editNewFilesUploadContainer.style.display = 'none';
         if (editLessonCoverContainer) editLessonCoverContainer.classList.add('hidden');
         if (editTermoDownloadContainer) editTermoDownloadContainer.classList.add('hidden');
+        if (selectedType === 'text') {
+            editUrlVideoInput.value = '';
+            const sub = document.getElementById('edit_url_video_submit');
+            if (sub) sub.value = '';
+        }
         if (selectedType === 'video' || selectedType === 'mixed') {
             editVideoUrlContainer.style.display = 'block';
             editUrlVideoInput.required = true;
