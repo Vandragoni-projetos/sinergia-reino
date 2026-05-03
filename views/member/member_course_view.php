@@ -1194,7 +1194,14 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                         lucide.createIcons();
                     }
                 } else {
-                    const placeholderHtml = `<div class="w-full aspect-video bg-black flex flex-col items-center justify-center text-gray-500 rounded-xl">
+                    const isTextOnly = lesson.tipo_conteudo === 'text';
+                    const placeholderHtml = isTextOnly
+                        ? `<div class="w-full aspect-video bg-black flex flex-col items-center justify-center text-gray-400 rounded-xl">
+                        <i data-lucide="align-left" class="w-16 h-16 text-gray-600 mb-4"></i>
+                        <p class="text-lg font-semibold">Conteúdo em texto</p>
+                        <p class="text-sm">Leia o material na descrição abaixo.</p>
+                    </div>`
+                        : `<div class="w-full aspect-video bg-black flex flex-col items-center justify-center text-gray-500 rounded-xl">
                         <i data-lucide="video-off" class="w-16 h-16 text-gray-600 mb-4"></i>
                         <p class="text-lg font-semibold">Esta aula não contém vídeo.</p>
                         <p class="text-sm">Verifique os materiais de apoio abaixo.</p>
@@ -1502,15 +1509,19 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                         // Determine icon(s) based on content type
                         let videoIcon = '';
                         let fileIcon = '';
+                        const doneCls = aula.concluida ? 'text-green-500' : 'text-gray-500';
 
+                        if (aula.tipo_conteudo === 'text') {
+                            iconHtml = `<i data-lucide="align-left" class="w-5 h-5 flex-shrink-0 ${doneCls}"></i>`;
+                        } else {
                         if (aula.tipo_conteudo === 'video' || aula.tipo_conteudo === 'mixed') {
-                            videoIcon = `<i data-lucide="play-circle" class="w-5 h-5 flex-shrink-0 ${aula.concluida ? 'text-green-500' : 'text-gray-500'}"></i>`;
+                            videoIcon = `<i data-lucide="play-circle" class="w-5 h-5 flex-shrink-0 ${doneCls}"></i>`;
                         }
                         if (aula.tipo_conteudo === 'files' || aula.tipo_conteudo === 'mixed') {
-                            fileIcon = `<i data-lucide="file-text" class="w-5 h-5 flex-shrink-0 ${aula.concluida ? 'text-green-500' : 'text-gray-500'}"></i>`;
+                            fileIcon = `<i data-lucide="file-text" class="w-5 h-5 flex-shrink-0 ${doneCls}"></i>`;
                         }
-                        // Combine them, possibly with a small space
                         iconHtml = videoIcon + (videoIcon && fileIcon ? '<span class="w-1"></span>' : '') + fileIcon;
+                        }
 
 
                         if (aula.concluida) {
