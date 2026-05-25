@@ -551,11 +551,13 @@ if (!isset($feed_items_biblioteca)) {
                             <a href="<?php echo htmlspecialchars($href); ?>"
                                class="group bg-gray-800 rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] border border-gray-700/50 flex flex-col biblioteca-course-card"
                                data-product-type="<?php echo htmlspecialchars($curso['produto_type'] ?? ''); ?>">
-                                <div class="relative aspect-video overflow-hidden">
+                                <div class="relative aspect-square overflow-hidden bg-gray-900">
                                     <?php
                                     $image_path = null;
-                                    $placeholder_url = 'https://placehold.co/600x400/1f2937/9ca3af?text=Curso+Sem+Imagem';
-                                    $banner_raw = $curso['curso_banner_url'] ?? $curso['produto_foto'] ?? $curso['curso_imagem_url'] ?? '';
+                                    $placeholder_url = 'https://placehold.co/1080x1080/1f2937/9ca3af?text=Curso+Sem+Imagem';
+                                    // Prioriza produto_foto (1080x1080 - thumbnail quadrado) em vez de curso_banner_url (1920x400 - hero widescreen),
+                                    // pois o card do dashboard usa aspect-square (1:1) e o banner widescreen seria cortado nas laterais.
+                                    $banner_raw = $curso['produto_foto'] ?? $curso['curso_banner_url'] ?? $curso['curso_imagem_url'] ?? '';
                                     if (!empty($banner_raw)) {
                                         // Biblioteca: usuário já validado na query (aluno_email). Usa caminho direto como Ofertas Exclusivas (evita 403 em /media para novos clientes).
                                         $image_path = resolve_product_image_url($banner_raw, $upload_dir);
@@ -997,7 +999,7 @@ if (!isset($feed_items_biblioteca)) {
                             const lockedImgCls = useGrayscale ? ' grayscale brightness-75 contrast-125' : '';
                             const overlayHtml = useGrayscale ? '<div class="absolute inset-0 bg-black/35 pointer-events-none" aria-hidden="true"></div>' : '';
                             const lockedBadgeHtml = isLocked ? '<span class="absolute top-2 right-2 bg-gray-900/90 text-gray-300 text-xs font-semibold px-2 py-1 rounded flex items-center gap-1.5 pointer-events-none"><i data-lucide="lock" class="w-3.5 h-3.5 flex-shrink-0"></i> Bloqueado</span>' : '';
-                            const productPhoto = (offer.product_photo && (offer.product_photo.startsWith('http://') || offer.product_photo.startsWith('https://'))) ? offer.product_photo : (offer.product_photo ? uploadDir + offer.product_photo : 'https://placehold.co/280x160/1f2937/d1d5db?text=Produto');
+                            const productPhoto = (offer.product_photo && (offer.product_photo.startsWith('http://') || offer.product_photo.startsWith('https://'))) ? offer.product_photo : (offer.product_photo ? uploadDir + offer.product_photo : 'https://placehold.co/1080x1080/1f2937/d1d5db?text=Produto');
                             const productPrice = formatCurrency(offer.product_price);
                             const hasSalesPageUrl = offer.sales_page_url && String(offer.sales_page_url).trim().length > 0;
                             const checkoutLink = hasSalesPageUrl ? String(offer.sales_page_url).trim() : (offer.custom_link ? offer.custom_link : `/checkout?p=${offer.checkout_hash}`);
@@ -1028,8 +1030,8 @@ if (!isset($feed_items_biblioteca)) {
                                 priceHtml = `<div class="mb-2 text-lg font-semibold text-green-400">${productPrice}</div>`;
                             }
                             return `<a href="${checkoutLink}" ${linkTarget} class="group bg-gray-800 rounded-xl overflow-hidden border border-gray-700 hover:border-green-500 hover:-translate-y-1 hover:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.5),0_0_16px_rgba(74,222,128,0.12)] transition-all duration-[0.22s] ease-out flex flex-col h-full" data-product-type="${escapeHtml(productType)}">
-                                <div class="relative overflow-hidden">
-                                    <img src="${productPhoto}" alt="${escapeHtml(offer.product_name)}" class="w-full h-40 object-cover transition-transform duration-[0.22s] ease-out group-hover:scale-[1.035]${lockedImgCls}" onerror="this.onerror=null;this.src='https://placehold.co/280x160/1f2937/d1d5db?text=Produto';">
+                                <div class="relative aspect-square overflow-hidden bg-gray-900">
+                                    <img src="${productPhoto}" alt="${escapeHtml(offer.product_name)}" class="w-full h-full object-cover transition-transform duration-[0.22s] ease-out group-hover:scale-[1.035]${lockedImgCls}" onerror="this.onerror=null;this.src='https://placehold.co/1080x1080/1f2937/d1d5db?text=Produto';">
                                     ${overlayHtml}
                                     ${lockedBadgeHtml}
                                     <span class="absolute top-2 left-2 bg-green-600 text-white text-xs font-bold px-2 py-1 rounded-full uppercase">Exclusivo</span>
