@@ -614,8 +614,8 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                                     data-module-index="<?php echo $index; ?>"
                                     <?php echo $is_module_locked ? 'disabled' : ''; ?>
                                     >
-                                <!-- IMAGEM (banner do módulo) -->
-                                <div class="relative aspect-[712/1080] bg-gray-700 overflow-hidden">
+                                <!-- IMAGEM (banner do módulo - vertical 2:3, ex: 1080x1620) -->
+                                <div class="relative aspect-[2/3] bg-gray-700 overflow-hidden">
                                     <?php 
                                     // Acesso já validado em verificar_acesso_aluno. Usa caminho direto para evitar 403 em /media.
                                     $module_img_url = !empty($module['imagem_capa_url'])
