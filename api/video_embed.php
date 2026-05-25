@@ -373,7 +373,7 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                                     data-module-index="<?php echo $index; ?>"
                                     <?php echo $is_module_locked ? 'disabled' : ''; ?>
                                     >
-                                <div class="relative aspect-[712/1080] bg-gray-700 overflow-hidden">
+                                <div class="relative aspect-[2/3] bg-gray-700 overflow-hidden">
                                     <?php 
                                     $imagem_capa = '';
                                     if (!empty($module['imagem_capa_url'])) {
