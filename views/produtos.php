@@ -582,7 +582,7 @@ $produtos = array_filter(array_map(function($item) {
                             </div>
                             <input type="file" id="foto" name="foto" class="hidden" accept="image/png, image/jpeg, image/webp" onchange="previewImage(this)">
                         </div>
-                        <p class="text-xs text-gray-400 mt-2 text-center">Recomendado: 800x800px (JPG/PNG)</p>
+                        <p class="text-xs text-gray-400 mt-2 text-center">Recomendado: 1080x1080px (JPG/PNG)</p>
                     </div>
                 </div>
             </div>
