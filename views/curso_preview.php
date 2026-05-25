@@ -376,7 +376,7 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                                     data-module-index="<?php echo $index; ?>"
                                     <?php echo $is_module_locked ? 'disabled' : ''; ?>
                                     >
-                                <div class="relative aspect-[712/1080] bg-gray-700 overflow-hidden">
+                                <div class="relative aspect-[2/3] bg-gray-700 overflow-hidden">
                                     <?php 
                                     $imagem_capa = !empty($module['imagem_capa_url'])
                                         ? resolve_product_image_url_protected($module['imagem_capa_url'], $upload_dir ?? 'uploads/', $produto_id)
