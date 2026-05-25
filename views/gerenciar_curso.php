@@ -1389,7 +1389,7 @@ try {
             <div>
                 <label for="imagem_capa_modulo_url_add" class="block text-gray-300 text-sm font-semibold mb-2">Imagem de Capa do Módulo (URL)</label>
                 <input type="url" id="imagem_capa_modulo_url_add" name="imagem_capa_modulo_url" placeholder="https://seusite.com/imagem.jpg" class="form-input-style w-full px-4 py-3 bg-dark-elevated border border-dark-border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#32e768] text-white">
-                <p class="mt-1 text-xs text-gray-400">Use uma URL externa para evitar upload.</p>
+                <p class="mt-1 text-xs text-gray-400">Use uma URL externa para evitar upload. Orientação <strong>vertical 2:3</strong> — recomendado: <strong>1080x1620</strong> (ou 720x1080).</p>
             </div>
             <div class="flex justify-end">
                 <button type="submit" name="adicionar_modulo" class="bg-[#32e768] text-white font-bold py-3 px-6 rounded-lg hover:bg-[#28d15e] transition duration-300 flex items-center space-x-2">
@@ -1730,6 +1730,7 @@ try {
                     <label for="imagem_capa_modulo" class="block text-gray-300 text-sm font-semibold mb-2">Imagem de Capa do Módulo</label>
                     <img id="modal-imagem-preview" src="" alt="Preview da imagem" class="w-48 h-auto object-cover rounded-lg border border-dark-border mb-2 hidden">
                     <input type="file" id="imagem_capa_modulo" name="imagem_capa_modulo" class="w-full text-sm text-gray-300 bg-dark-elevated border border-dark-border rounded-lg px-4 py-2 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#32e768]/20 file:text-[#32e768] hover:file:bg-[#32e768]/30 file:cursor-pointer cursor-pointer" accept="image/*">
+                    <p class="mt-1 text-xs text-gray-400">Orientação <strong>vertical 2:3</strong> — recomendado: <strong>1080x1620</strong> (ou 720x1080). JPG/PNG/WebP.</p>
                     <label for="imagem_capa_modulo_url" class="block text-gray-300 text-sm font-semibold mt-3 mb-2">Ou use URL externa</label>
                     <input type="url" id="imagem_capa_modulo_url" name="imagem_capa_modulo_url" class="form-input-style" placeholder="https://seusite.com/imagem.jpg">
                     <label class="mt-2 flex items-center text-sm text-gray-400">
@@ -2289,6 +2290,27 @@ document.addEventListener('DOMContentLoaded', function() {
     var editCoverUpload = document.getElementById('edit_lesson_cover_upload');
     if (addCoverUpload) addCoverUpload.addEventListener('change', function() { validarRatioBanner(this, function(ok, msg) { if (!ok && msg) alert(msg); }); });
     if (editCoverUpload) editCoverUpload.addEventListener('change', function() { validarRatioBanner(this, function(ok, msg) { if (!ok && msg) alert(msg); }); });
+
+    // Validação de ratio da capa do módulo: vertical 2:3 (1080x1620, 720x1080, etc.)
+    // Container de exibição é aspect-[2/3], então o ideal é manter a proporção próxima.
+    function validarRatioCapaModulo(input, callback) {
+        if (!input || !input.files || !input.files[0]) return;
+        var f = input.files[0];
+        if (!f.type.match(/image\/(jpeg|png|webp)/i)) return;
+        var img = new Image();
+        img.onload = function() {
+            var w = img.width, h = img.height;
+            var ratio = w / h;
+            var ideal = 2 / 3; // 0.6667
+            // Tolerância ~25%: aceita de ~1:2 (0.5) até ~3:4 (0.83)
+            if (ratio < ideal * 0.75 || ratio > ideal * 1.25) {
+                if (typeof callback === 'function') callback(false, 'Proporção muito diferente do recomendado (vertical 2:3 — ex: 1080x1620 ou 720x1080). A imagem pode aparecer cortada no card do módulo.');
+            } else if (typeof callback === 'function') callback(true);
+        };
+        img.src = URL.createObjectURL(f);
+    }
+    var moduleCoverUpload = document.getElementById('imagem_capa_modulo');
+    if (moduleCoverUpload) moduleCoverUpload.addEventListener('change', function() { validarRatioCapaModulo(this, function(ok, msg) { if (!ok && msg) alert(msg); }); });
 
     // Chamada inicial para toggleAddLessonFields para garantir que o formulário "Adicionar Aula" esteja correto ao carregar
     toggleAddLessonFields();
