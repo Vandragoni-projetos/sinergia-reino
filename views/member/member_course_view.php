@@ -1207,8 +1207,10 @@ if (!isset($_GET['produto_id']) || !is_numeric($_GET['produto_id'])) {
                         <p class="text-sm">Verifique os materiais de apoio abaixo.</p>
                     </div>`;
                     let coverImg = null;
-                    // Banner: somente para "Somente Arquivos" (quando infoprodutor configurou)
-                    if (lesson.tipo_conteudo === 'files' && (lesson.lesson_cover_url || lesson.lesson_cover_path)) {
+                    // Banner (opcional): aceito para "Somente Arquivos", "Vídeo e Arquivos" e "Somente texto".
+                    // Substitui o placeholder genérico por um banner personalizado (anúncio, aviso, identidade visual).
+                    const tiposComBanner = ['files', 'mixed', 'text'];
+                    if (tiposComBanner.includes(lesson.tipo_conteudo) && (lesson.lesson_cover_url || lesson.lesson_cover_path)) {
                         coverImg = lesson.lesson_cover_url || ('/' + (lesson.lesson_cover_path || '').replace(/^\/+/, ''));
                     }
                     if (coverImg) {
