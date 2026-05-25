@@ -143,7 +143,7 @@
                        oninput="previewImageFromUrl(this.value)">
                 <p class="text-xs text-gray-400 mt-1">Cole a URL da imagem. Se preenchido, substitui o upload e evita perda de imagens no deploy.</p>
             </div>
-            <p class="text-xs text-gray-400 text-center">Recomendado: 800x800px (JPG/PNG/WebP). Upload ou URL externa.</p>
+            <p class="text-xs text-gray-400 text-center">Recomendado: 1080x1080px (JPG/PNG/WebP). Upload ou URL externa.</p>
         </div>
     </div>
 
