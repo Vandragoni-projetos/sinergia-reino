@@ -619,8 +619,8 @@ try {
                     } else {
                         $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Aula adicionada!</div>";
                     }
-                    // Banner/cover para Somente Arquivos ou Vídeo e Arquivos
-                    if (($tipo_conteudo === 'files' || $tipo_conteudo === 'mixed') && isset($nova_aula_id)) {
+                    // Banner/cover (opcional): aceito para "Somente Arquivos", "Vídeo e Arquivos" e "Somente texto".
+                    if (in_array($tipo_conteudo, ['files', 'mixed', 'text'], true) && isset($nova_aula_id)) {
                         $cover_type = null; $cover_url = null; $cover_path = null;
                         if (!empty($_FILES['lesson_cover_upload']['name']) && $_FILES['lesson_cover_upload']['error'] === UPLOAD_ERR_OK) {
                             $ext = strtolower(pathinfo($_FILES['lesson_cover_upload']['name'], PATHINFO_EXTENSION));
@@ -785,43 +785,49 @@ try {
                         $mensagem = "<div class='bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded' role='alert'>Aula atualizada!</div>";
                     }
                     if ($tipo_conteudo === 'text') {
+                        // "Somente texto" não tem anexos, mas pode ter banner (anúncio/aviso opcional).
                         aula_delete_all_attachments($pdo, (int)$aula_id_edit);
-                        aula_clear_lesson_cover($pdo, (int)$aula_id_edit);
                     }
-                    // Banner/cover: somente para "Somente Arquivos" (Edição)
+                    // Banner/cover (opcional): aceito para "Somente Arquivos", "Vídeo e Arquivos" e "Somente texto".
+                    // Para "Somente Vídeo", o banner é descartado (o player de vídeo já ocupa toda a área).
                     $chk_cover_col = @$pdo->query("SHOW COLUMNS FROM aulas LIKE 'lesson_cover_type'");
-                    if ($chk_cover_col && $chk_cover_col->rowCount() > 0 && $tipo_conteudo === 'files') {
-                        $cover_type = null; $cover_url = null; $cover_path = null;
-                        if (!empty($_POST['remove_lesson_cover'])) {
-                            $stmt_old = $pdo->prepare("SELECT lesson_cover_path FROM aulas WHERE id = ?");
-                            $stmt_old->execute([$aula_id_edit]);
-                            $old = $stmt_old->fetch(PDO::FETCH_ASSOC);
-                            if (!empty($old['lesson_cover_path']) && file_exists($old['lesson_cover_path'])) unlink($old['lesson_cover_path']);
-                        } elseif (!empty($_FILES['lesson_cover_upload']['name']) && $_FILES['lesson_cover_upload']['error'] === UPLOAD_ERR_OK) {
-                            $ext = strtolower(pathinfo($_FILES['lesson_cover_upload']['name'], PATHINFO_EXTENSION));
-                            if (in_array($ext, ['jpg','jpeg','png','webp'])) {
+                    if ($chk_cover_col && $chk_cover_col->rowCount() > 0) {
+                        if ($tipo_conteudo === 'video') {
+                            // Tipo virou vídeo puro: banner não tem mais uso, descarta para liberar espaço.
+                            aula_clear_lesson_cover($pdo, (int)$aula_id_edit);
+                        } elseif (in_array($tipo_conteudo, ['files', 'mixed', 'text'], true)) {
+                            $cover_type = null; $cover_url = null; $cover_path = null;
+                            if (!empty($_POST['remove_lesson_cover'])) {
                                 $stmt_old = $pdo->prepare("SELECT lesson_cover_path FROM aulas WHERE id = ?");
                                 $stmt_old->execute([$aula_id_edit]);
                                 $old = $stmt_old->fetch(PDO::FETCH_ASSOC);
                                 if (!empty($old['lesson_cover_path']) && file_exists($old['lesson_cover_path'])) unlink($old['lesson_cover_path']);
-                                $cover_name = 'lesson_cover_' . $aula_id_edit . '_' . uniqid('', true) . '.' . $ext;
-                                $cover_full = $aula_covers_dir . $cover_name;
-                                if (move_uploaded_file($_FILES['lesson_cover_upload']['tmp_name'], $cover_full)) {
-                                    $cover_type = 'upload'; $cover_path = $cover_full;
+                            } elseif (!empty($_FILES['lesson_cover_upload']['name']) && $_FILES['lesson_cover_upload']['error'] === UPLOAD_ERR_OK) {
+                                $ext = strtolower(pathinfo($_FILES['lesson_cover_upload']['name'], PATHINFO_EXTENSION));
+                                if (in_array($ext, ['jpg','jpeg','png','webp'])) {
+                                    $stmt_old = $pdo->prepare("SELECT lesson_cover_path FROM aulas WHERE id = ?");
+                                    $stmt_old->execute([$aula_id_edit]);
+                                    $old = $stmt_old->fetch(PDO::FETCH_ASSOC);
+                                    if (!empty($old['lesson_cover_path']) && file_exists($old['lesson_cover_path'])) unlink($old['lesson_cover_path']);
+                                    $cover_name = 'lesson_cover_' . $aula_id_edit . '_' . uniqid('', true) . '.' . $ext;
+                                    $cover_full = $aula_covers_dir . $cover_name;
+                                    if (move_uploaded_file($_FILES['lesson_cover_upload']['tmp_name'], $cover_full)) {
+                                        $cover_type = 'upload'; $cover_path = $cover_full;
+                                    }
+                                }
+                            } elseif (!empty(trim($_POST['lesson_cover_url'] ?? ''))) {
+                                $u = trim($_POST['lesson_cover_url']);
+                                if (filter_var($u, FILTER_VALIDATE_URL) && preg_match('/\.(jpg|jpeg|png|webp)(\?|$)/i', $u)) {
+                                    $cover_type = 'url'; $cover_url = $u;
                                 }
                             }
-                        } elseif (!empty(trim($_POST['lesson_cover_url'] ?? ''))) {
-                            $u = trim($_POST['lesson_cover_url']);
-                            if (filter_var($u, FILTER_VALIDATE_URL) && preg_match('/\.(jpg|jpeg|png|webp)(\?|$)/i', $u)) {
-                                $cover_type = 'url'; $cover_url = $u;
+                            if (!empty($_POST['remove_lesson_cover'])) {
+                                $stmt_cover = $pdo->prepare("UPDATE aulas SET lesson_cover_type=NULL, lesson_cover_url=NULL, lesson_cover_path=NULL WHERE id=?");
+                                $stmt_cover->execute([$aula_id_edit]);
+                            } elseif ($cover_type) {
+                                $stmt_cover = $pdo->prepare("UPDATE aulas SET lesson_cover_type=?, lesson_cover_url=?, lesson_cover_path=? WHERE id=?");
+                                $stmt_cover->execute([$cover_type, $cover_url, $cover_path, $aula_id_edit]);
                             }
-                        }
-                        if (!empty($_POST['remove_lesson_cover'])) {
-                            $stmt_cover = $pdo->prepare("UPDATE aulas SET lesson_cover_type=NULL, lesson_cover_url=NULL, lesson_cover_path=NULL WHERE id=?");
-                            $stmt_cover->execute([$aula_id_edit]);
-                        } elseif ($cover_type) {
-                            $stmt_cover = $pdo->prepare("UPDATE aulas SET lesson_cover_type=?, lesson_cover_url=?, lesson_cover_path=? WHERE id=?");
-                            $stmt_cover->execute([$cover_type, $cover_url, $cover_path, $aula_id_edit]);
                         }
                     }
                     } else {
@@ -1554,11 +1560,11 @@ try {
                     <p class="mt-1 text-xs text-gray-400">Múltiplos arquivos (PDF, imagens, zip, etc.)</p>
                 </div>
 
-                <!-- Banner/Thumbnail opcional (Somente Arquivos) - Add -->
+                <!-- Banner/Thumbnail opcional (Somente Arquivos, Vídeo e Arquivos, Somente texto) - Add -->
                 <div id="add-lesson-cover-container" class="hidden">
                     <div class="bg-dark-elevated p-4 rounded-lg border border-dark-border">
-                        <h4 class="text-sm font-semibold text-white mb-3">Banner/Thumbnail no lugar do placeholder</h4>
-                        <p class="text-xs text-gray-400 mb-3">Exibido no player no lugar de "Esta aula não contém vídeo". Orientação vertical: <strong>720x1280</strong> (prioritário) ou <strong>720x1080</strong>.</p>
+                        <h4 class="text-sm font-semibold text-white mb-3">Banner/Thumbnail no lugar do placeholder <span class="text-gray-400 font-normal">(opcional)</span></h4>
+                        <p class="text-xs text-gray-400 mb-3">Exibido na área do player como anúncio, aviso ou identidade visual. Orientação <strong>horizontal 16:9</strong> — recomendado: <strong>1920x1080</strong> ou <strong>1280x720</strong>.</p>
                         <div class="flex gap-4 mb-2">
                             <div class="flex-1">
                                 <label class="block text-gray-300 text-xs font-semibold mb-1">Upload de imagem</label>
@@ -1656,11 +1662,11 @@ try {
                     <p class="mt-1 text-xs text-gray-400">Múltiplos arquivos (PDF, imagens, zip, etc.)</p>
                 </div>
 
-                <!-- Banner/Thumbnail opcional (Somente Arquivos) -->
+                <!-- Banner/Thumbnail opcional (Somente Arquivos, Vídeo e Arquivos, Somente texto) -->
                 <div id="edit-lesson-cover-container" class="hidden">
                     <div class="bg-dark-elevated p-4 rounded-lg border border-dark-border">
-                        <h4 class="text-sm font-semibold text-white mb-3">Banner/Thumbnail no lugar do placeholder</h4>
-                        <p class="text-xs text-gray-400 mb-3">Exibido no player no lugar de "Esta aula não contém vídeo". Orientação vertical: <strong>720x1280</strong> (prioritário) ou <strong>720x1080</strong>.</p>
+                        <h4 class="text-sm font-semibold text-white mb-3">Banner/Thumbnail no lugar do placeholder <span class="text-gray-400 font-normal">(opcional)</span></h4>
+                        <p class="text-xs text-gray-400 mb-3">Exibido na área do player como anúncio, aviso ou identidade visual. Orientação <strong>horizontal 16:9</strong> — recomendado: <strong>1920x1080</strong> ou <strong>1280x720</strong>.</p>
                         <div class="flex gap-4 mb-2">
                             <div class="flex-1">
                                 <label class="block text-gray-300 text-xs font-semibold mb-1">Upload de imagem</label>
@@ -1980,8 +1986,9 @@ document.addEventListener('DOMContentLoaded', function() {
             addAulaFilesInput.required = true;
             if (addTermoDownloadContainer) addTermoDownloadContainer.classList.remove('hidden');
         }
-        // Banner/Thumbnail: somente para "Somente Arquivos" (não para Vídeo e Arquivos)
-        if (selectedType === 'files' && addLessonCoverContainer) {
+        // Banner/Thumbnail (opcional): disponível para "Somente Arquivos", "Vídeo e Arquivos" e "Somente texto".
+        // Não disponível para "Somente Vídeo" pois o player de vídeo já ocupa toda a área.
+        if ((selectedType === 'files' || selectedType === 'mixed' || selectedType === 'text') && addLessonCoverContainer) {
             addLessonCoverContainer.classList.remove('hidden');
         }
         if (addRequireTermoCb && addTermoTextWrapper) {
@@ -2056,8 +2063,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const anyExistingFileSelectedToKeep = existingFilesList.querySelectorAll('input[name="existing_files[]"]:checked').length > 0;
             if (!anyExistingFileSelectedToKeep) editAulaFilesInput.required = true;
         }
-        // Banner/Thumbnail: somente para "Somente Arquivos" (não para Vídeo e Arquivos)
-        if (selectedType === 'files' && editLessonCoverContainer) {
+        // Banner/Thumbnail (opcional): disponível para "Somente Arquivos", "Vídeo e Arquivos" e "Somente texto".
+        // Não disponível para "Somente Vídeo" pois o player de vídeo já ocupa toda a área.
+        if ((selectedType === 'files' || selectedType === 'mixed' || selectedType === 'text') && editLessonCoverContainer) {
             editLessonCoverContainer.classList.remove('hidden');
         }
         if (editRequireTermoCb && editTermoTextWrapper) {
@@ -2069,6 +2077,49 @@ document.addEventListener('DOMContentLoaded', function() {
     editTipoConteudoSelect.addEventListener('change', toggleEditLessonFields);
     existingFilesList.addEventListener('change', (e) => {
         if (e.target.type === 'checkbox' && (editTipoConteudoSelect.value === 'files' || editTipoConteudoSelect.value === 'mixed')) toggleEditLessonFields();
+    });
+
+    // Excluir arquivo individual (chamada imediata via API com validação de ownership no backend)
+    existingFilesList.addEventListener('click', (e) => {
+        const btn = e.target.closest('.delete-aula-file-btn');
+        if (!btn) return;
+        e.preventDefault();
+        const fileId = btn.dataset.fileId;
+        const fileName = btn.dataset.fileName || 'este arquivo';
+        if (!fileId) return;
+        if (!confirm(`Excluir permanentemente "${fileName}"?\n\nEsta ação NÃO pode ser desfeita. O arquivo será removido do servidor e do banco de dados imediatamente.`)) return;
+        const fileItem = btn.closest('[data-file-id]');
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>';
+        if (typeof lucide !== 'undefined') lucide.createIcons();
+        fetch('/api/api?action=delete_aula_file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file_id: parseInt(fileId, 10) })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data && data.success) {
+                if (fileItem) fileItem.remove();
+                if (existingFilesList.children.length === 0) {
+                    existingFilesList.innerHTML = '<p class="text-sm text-gray-400">Nenhum arquivo enviado para esta aula.</p>';
+                }
+                // Re-avalia required do input de novos arquivos (caso este fosse o único existente).
+                toggleEditLessonFields();
+            } else {
+                alert('Erro ao excluir arquivo: ' + (data && data.error ? data.error : 'erro desconhecido'));
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i>';
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+        })
+        .catch(err => {
+            console.error('Erro ao excluir arquivo da aula:', err);
+            alert('Erro de rede ao excluir o arquivo. Tente novamente.');
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4"></i>';
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        });
     });
 
     document.querySelectorAll('.edit-lesson-btn').forEach(button => {
@@ -2112,10 +2163,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 files.forEach(file => {
                     const fileItem = document.createElement('div');
                     fileItem.className = 'flex items-center space-x-2 p-2 bg-dark-elevated rounded-md border border-dark-border';
+                    fileItem.dataset.fileId = file.id;
                     fileItem.innerHTML = `
                         <input type="checkbox" name="existing_files[]" value="${file.id}" id="edit_file_${file.id}" class="h-4 w-4 text-[#32e768] focus:ring-[#32e768] rounded" checked>
-                        <label for="edit_file_${file.id}" class="text-sm text-gray-300">${file.nome_original}</label>
-                        <a href="${file.caminho_arquivo}" target="_blank" class="ml-auto text-blue-400 hover:text-blue-300 hover:underline"><i data-lucide="download" class="w-4 h-4"></i></a>
+                        <label for="edit_file_${file.id}" class="text-sm text-gray-300 flex-1 truncate">${file.nome_original}</label>
+                        <a href="${file.caminho_arquivo}" target="_blank" class="text-blue-400 hover:text-blue-300 hover:underline" title="Baixar"><i data-lucide="download" class="w-4 h-4"></i></a>
+                        <button type="button" class="delete-aula-file-btn text-red-400 hover:text-red-300 p-1 rounded" data-file-id="${file.id}" data-file-name="${file.nome_original}" title="Excluir arquivo permanentemente"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                     `;
                     existingFilesList.appendChild(fileItem);
                 });
@@ -2214,7 +2267,8 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Validação de ratio do banner (720x1280 ou 720x1080 = vertical)
+    // Validação de ratio do banner: horizontal 16:9 (1920x1080, 1280x720, etc.)
+    // Container de exibição (.lesson-cover-wrap) é forçado em 16:9, então o ideal é manter a proporção próxima.
     function validarRatioBanner(input, callback) {
         if (!input || !input.files || !input.files[0]) return;
         var f = input.files[0];
@@ -2223,9 +2277,10 @@ document.addEventListener('DOMContentLoaded', function() {
         img.onload = function() {
             var w = img.width, h = img.height;
             var ratio = w / h;
-            var idealMin = 720/1280; var idealMax = 720/1080;
-            if (ratio < idealMin * 0.7 || ratio > idealMax * 1.3) {
-                if (typeof callback === 'function') callback(false, 'Proporção muito diferente do recomendado (vertical 720x1280 ou 720x1080). A imagem pode não exibir bem.');
+            var ideal = 16 / 9; // 1.7778
+            // Tolerância de ~25% para cada lado: aceita de ~4:3 (1.33) até ~21:9 (2.33)
+            if (ratio < ideal * 0.75 || ratio > ideal * 1.3) {
+                if (typeof callback === 'function') callback(false, 'Proporção muito diferente do recomendado (horizontal 16:9 — ex: 1920x1080 ou 1280x720). A imagem pode aparecer cortada no player.');
             } else if (typeof callback === 'function') callback(true);
         };
         img.src = URL.createObjectURL(f);
