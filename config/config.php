@@ -105,7 +105,10 @@ $public_payment_scripts = [
     'obrigado.php',
 ];
 $current_script = basename($_SERVER['SCRIPT_NAME'] ?? '');
-$is_public_payment_endpoint = in_array($current_script, $public_payment_scripts, true);
+$request_path = basename(parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '');
+$public_payment_paths = ['notification', 'process_payment', 'check_status'];
+$is_public_payment_endpoint = in_array($current_script, $public_payment_scripts, true)
+    || in_array($request_path, $public_payment_paths, true);
 
 // 1) Sessão única: valida antes do timeout (evita renovar last_activity em sessão inválida)
 if (!$is_public_payment_endpoint && !enforce_single_session()) {
