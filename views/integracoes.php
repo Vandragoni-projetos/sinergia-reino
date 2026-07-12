@@ -104,7 +104,77 @@ $scriptDir = dirname($_SERVER['PHP_SELF']);
 $path = rtrim(str_replace('\\', '/', $scriptDir), '/');
 $webhook_url = "https://" . $domainName . $path . '/notification.php';
 
+$efi_webhook_registered_url = '';
+$efi_webhook_status_message = '';
+
+function integracoes_efi_cert_full_path($relative_path) {
+    return __DIR__ . '/../' . ltrim(str_replace('\\', '/', (string) $relative_path), '/');
+}
+
+function integracoes_try_register_efi_webhook($client_id, $client_secret, $certificate_path, $pix_key, $webhook_url) {
+    require_once __DIR__ . '/../gateways/efi.php';
+
+    $cert_full = integracoes_efi_cert_full_path($certificate_path);
+    $token_data = efi_get_access_token(trim((string) $client_id), trim((string) $client_secret), $cert_full);
+    if (!$token_data || empty($token_data['access_token'])) {
+        return ['success' => false, 'message' => 'Não foi possível autenticar na Efí. Verifique Client ID, Client Secret e certificado P12.'];
+    }
+
+    return efi_register_webhook(
+        $token_data['access_token'],
+        trim((string) $pix_key),
+        $webhook_url,
+        $cert_full
+    );
+}
+
+function integracoes_get_efi_webhook_status($client_id, $client_secret, $certificate_path, $pix_key) {
+    require_once __DIR__ . '/../gateways/efi.php';
+
+    $cert_full = integracoes_efi_cert_full_path($certificate_path);
+    $token_data = efi_get_access_token(trim((string) $client_id), trim((string) $client_secret), $cert_full);
+    if (!$token_data || empty($token_data['access_token'])) {
+        return ['success' => false, 'webhook_url' => '', 'message' => 'Não foi possível consultar webhook na Efí (falha de autenticação).'];
+    }
+
+    return efi_get_webhook($token_data['access_token'], trim((string) $pix_key), $cert_full);
+}
+
 // Salvar configurações de gateway
+if (isset($_POST['registrar_webhook_efi'])) {
+    try {
+        $stmt_current = $pdo->prepare("SELECT efi_client_id, efi_client_secret, efi_certificate_path, efi_pix_key FROM usuarios WHERE id = ?");
+        $stmt_current->execute([$usuario_id_logado]);
+        $current_efi = $stmt_current->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        if (empty($current_efi['efi_client_id']) || empty($current_efi['efi_client_secret']) || empty($current_efi['efi_certificate_path']) || empty($current_efi['efi_pix_key'])) {
+            $mensagem = 'Preencha Client ID, Client Secret, certificado P12 e Chave Pix antes de registrar o webhook.';
+            $msg_type = 'error';
+        } else {
+            $register_result = integracoes_try_register_efi_webhook(
+                $current_efi['efi_client_id'],
+                $current_efi['efi_client_secret'],
+                $current_efi['efi_certificate_path'],
+                $current_efi['efi_pix_key'],
+                $webhook_url
+            );
+
+            if (!empty($register_result['success'])) {
+                $mensagem = $register_result['message'];
+                $msg_type = 'success';
+                $efi_webhook_registered_url = $webhook_url;
+                $efi_webhook_status_message = 'Webhook Pix registrado na Efí.';
+            } else {
+                $mensagem = $register_result['message'] ?? 'Falha ao registrar webhook Pix na Efí.';
+                $msg_type = 'error';
+            }
+        }
+    } catch (PDOException $e) {
+        $mensagem = 'Erro ao registrar webhook na Efí: ' . $e->getMessage();
+        $msg_type = 'error';
+    }
+}
+
 if (isset($_POST['salvar_gateways'])) {
     $public_key = $_POST['mercado_pago_public_key'] ?? '';
     $access_token = $_POST['mercado_pago_access_token'] ?? '';
@@ -228,12 +298,42 @@ if (isset($_POST['salvar_gateways'])) {
         $efi_configured = !empty($efi_client_id) && !empty($efi_client_secret) && !empty($efi_certificate_path) && !empty($efi_pix_key);
         $beehive_configured = !empty($beehive_secret_key) && !empty($beehive_public_key);
         $hypercash_configured = !empty($hypercash_secret_key) && !empty($hypercash_public_key);
+
+        if ($efi_configured && $msg_type !== 'error') {
+            $register_result = integracoes_try_register_efi_webhook(
+                $efi_client_id,
+                $efi_client_secret,
+                $efi_certificate_path,
+                $efi_pix_key,
+                $webhook_url
+            );
+
+            if (!empty($register_result['success'])) {
+                $mensagem .= ' Webhook Pix registrado automaticamente na Efí.';
+                $efi_webhook_registered_url = $webhook_url;
+                $efi_webhook_status_message = 'Webhook Pix registrado na Efí.';
+            } elseif ($msg_type === 'success') {
+                $msg_type = 'warning';
+                $mensagem .= ' Atenção: não foi possível registrar o webhook Pix na Efí automaticamente. ' . ($register_result['message'] ?? '');
+            }
+        }
         
     } catch (PDOException $e) {
         $mensagem = "Erro ao salvar: " . $e->getMessage();
         $msg_type = 'error';
     }
 }
+
+if ($efi_configured && $efi_webhook_registered_url === '') {
+    $webhook_status = integracoes_get_efi_webhook_status($efi_client_id, $efi_client_secret, $efi_certificate_path, $efi_pix_key);
+    if (!empty($webhook_status['success'])) {
+        $efi_webhook_registered_url = $webhook_status['webhook_url'] ?? '';
+        $efi_webhook_status_message = $webhook_status['message'] ?? '';
+    }
+}
+
+$efi_webhook_matches_platform = !empty($efi_webhook_registered_url)
+    && rtrim($efi_webhook_registered_url, '/') === rtrim($webhook_url, '/');
 ?>
 
 <!DOCTYPE html>
@@ -290,8 +390,8 @@ if (isset($_POST['salvar_gateways'])) {
         <!-- Mensagens Flutuantes -->
         <?php if(!empty($mensagem)): ?>
             <div id='toast-msg' class='fixed top-5 right-5 z-50 animate-fade-in flex items-center w-full max-w-xs p-4 text-gray-300 bg-dark-card rounded-lg shadow-xl border border-dark-border' role='alert'>
-                <div class='inline-flex items-center justify-center flex-shrink-0 w-8 h-8 <?php echo ($msg_type == "success" ? "text-green-400 bg-green-900/30" : ($msg_type == "error" ? "text-red-400 bg-red-900/30" : "text-blue-400 bg-blue-900/30")); ?> rounded-lg'>
-                    <i data-lucide='<?php echo ($msg_type == "success" ? "check" : ($msg_type == "error" ? "alert-circle" : "info")); ?>' class='w-5 h-5'></i>
+                <div class='inline-flex items-center justify-center flex-shrink-0 w-8 h-8 <?php echo ($msg_type == "success" ? "text-green-400 bg-green-900/30" : ($msg_type == "error" ? "text-red-400 bg-red-900/30" : ($msg_type == "warning" ? "text-yellow-400 bg-yellow-900/30" : "text-blue-400 bg-blue-900/30"))); ?> rounded-lg'>
+                    <i data-lucide='<?php echo ($msg_type == "success" ? "check" : ($msg_type == "error" ? "alert-circle" : ($msg_type == "warning" ? "alert-triangle" : "info"))); ?>' class='w-5 h-5'></i>
                 </div>
                 <div class='ml-3 text-sm font-medium'><?php echo $mensagem; ?></div>
                 <button type='button' class='ml-auto -mx-1.5 -my-1.5 bg-dark-card text-gray-400 hover:text-gray-300 rounded-lg focus:ring-2 focus:ring-dark-border p-1.5 hover:bg-dark-elevated inline-flex h-8 w-8' onclick='this.parentElement.remove()'>
@@ -1139,6 +1239,34 @@ if (isset($_POST['salvar_gateways'])) {
                                     <button type="button" onclick="copyWebhookUrl()" id="copy-webhook-btn" 
                                             class="bg-dark-elevated hover:bg-dark-card text-gray-300 hover:text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors mr-1 flex items-center gap-2 border border-dark-border">
                                         <i data-lucide="copy" class="w-4 h-4"></i> <span class="hidden sm:inline">Copiar</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="mt-4 rounded-xl border p-4 <?php echo $efi_webhook_matches_platform ? 'bg-green-900/20 border-green-500/30' : 'bg-amber-900/20 border-amber-500/30'; ?>">
+                                <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                                    <div>
+                                        <h4 class="text-sm font-bold <?php echo $efi_webhook_matches_platform ? 'text-green-300' : 'text-amber-300'; ?>">
+                                            Webhook Pix na Efí
+                                        </h4>
+                                        <p class="text-sm text-gray-300 mt-1">
+                                            A Efí <strong>não possui tela manual</strong> para cadastrar webhook Pix por chave. O cadastro é feito via API.
+                                            Ao salvar as credenciais, a plataforma tenta registrar automaticamente.
+                                        </p>
+                                        <?php if (!empty($efi_webhook_registered_url)): ?>
+                                            <p class="text-xs mt-2 font-mono text-gray-400 break-all">
+                                                Cadastrado na Efí: <?php echo htmlspecialchars($efi_webhook_registered_url); ?>
+                                            </p>
+                                        <?php else: ?>
+                                            <p class="text-xs mt-2 text-amber-200">
+                                                Nenhum webhook Pix encontrado na Efí para a chave <?php echo htmlspecialchars($efi_pix_key ?: 'informada'); ?>.
+                                            </p>
+                                        <?php endif; ?>
+                                    </div>
+                                    <button type="submit" name="registrar_webhook_efi" value="1"
+                                        class="w-full lg:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-5 rounded-lg transition duration-300 flex items-center justify-center gap-2">
+                                        <i data-lucide="link" class="w-5 h-5"></i>
+                                        Registrar Webhook na Efí
                                     </button>
                                 </div>
                             </div>
