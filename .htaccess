@@ -114,6 +114,10 @@ RewriteRule ^ - [L]
 RewriteCond %{REQUEST_URI} ^/checkout_editor\.php
 RewriteRule ^ - [L]
 
+# Exceção para endpoints públicos de pagamento/webhook (Efí, Mercado Pago, etc.)
+RewriteCond %{REQUEST_URI} (notification|process_payment|check_status)(\.php)?/?$ [NC]
+RewriteRule ^ - [L]
+
 # Exceção para arquivos da API
 RewriteCond %{REQUEST_URI} ^/api/.*\.php
 RewriteRule ^ - [L]
