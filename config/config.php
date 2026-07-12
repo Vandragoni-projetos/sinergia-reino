@@ -96,14 +96,25 @@ $redirect_session_error = function ($error_key, $message_pt) {
     exit;
 };
 
+// Endpoints públicos de pagamento/webhook não devem ser redirecionados para login
+$public_payment_scripts = [
+    'notification.php',
+    'process_payment.php',
+    'check_status.php',
+    'checkout.php',
+    'obrigado.php',
+];
+$current_script = basename($_SERVER['SCRIPT_NAME'] ?? '');
+$is_public_payment_endpoint = in_array($current_script, $public_payment_scripts, true);
+
 // 1) Sessão única: valida antes do timeout (evita renovar last_activity em sessão inválida)
-if (!enforce_single_session()) {
+if (!$is_public_payment_endpoint && !enforce_single_session()) {
     $redirect_session_error('session_replaced', 'Sessão encerrada. Você entrou em outro navegador ou dispositivo.');
 }
 
 // 2) Timeout por inatividade: só atualiza last_activity se sessão passou nas validações acima
 // Regra: mínimo 60 min, padrão 120 min (configuracoes_sistema.session_timeout_minutes)
-if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
+if (!$is_public_payment_endpoint && isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
     $timeout_min = (int) (getSystemSetting('session_timeout_minutes', 120) ?: 120);
     $timeout_min = max(60, $timeout_min);
     $timeout_sec = $timeout_min * 60;
