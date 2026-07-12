@@ -172,6 +172,7 @@ try {
     $domainName = $_SERVER['HTTP_HOST'];
     $scriptDir = dirname($_SERVER['PHP_SELF']);
     $path = rtrim(str_replace('\\', '/', $scriptDir), '/');
+    $webhook_url = 'https://' . $domainName . $path . '/notification.php';
     
     // URL Obrigado (ou funil de vendas se ativo)
     $stmt_prod_conf = $pdo->prepare("SELECT checkout_config FROM produtos WHERE id = ?");
