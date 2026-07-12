@@ -760,23 +760,28 @@ function efi_get_payment_status($access_token, $txid, $certificate_path = null) 
  * @param string $access_token Token de acesso OAuth2
  * @param string $pix_key Chave Pix
  * @param string $webhook_url URL do webhook
- * @return bool true se sucesso, false caso contrário
+ * @param string|null $certificate_path Caminho do certificado P12 (obrigatório em produção)
+ * @return array{success: bool, message: string, http_code: int|null}
  */
-function efi_register_webhook($access_token, $pix_key, $webhook_url) {
+function efi_register_webhook($access_token, $pix_key, $webhook_url, $certificate_path = null) {
     if (empty($access_token) || empty($pix_key) || empty($webhook_url)) {
-        error_log("Efí: Parâmetros inválidos para registrar webhook");
-        return false;
+        return ['success' => false, 'message' => 'Parâmetros inválidos para registrar webhook.', 'http_code' => null];
     }
-    
-    $url = 'https://pix.api.efipay.com.br/v2/webhook/' . urlencode($pix_key);
-    
+
+    $certificate_path = $certificate_path ? str_replace('\\', '/', trim($certificate_path)) : null;
+    if (empty($certificate_path) || !file_exists($certificate_path)) {
+        return ['success' => false, 'message' => 'Certificado P12 não encontrado para registrar webhook na Efí.', 'http_code' => null];
+    }
+
+    $url = 'https://pix.api.efipay.com.br/v2/webhook/' . rawurlencode($pix_key);
+
     $payload = [
         'webhookUrl' => $webhook_url
     ];
-    
+
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_PUT, true);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
         'Authorization: Bearer ' . $access_token,
         'Content-Type: application/json'
@@ -784,23 +789,90 @@ function efi_register_webhook($access_token, $pix_key, $webhook_url) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
     curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-    
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+    curl_setopt($ch, CURLOPT_SSLCERT, $certificate_path);
+    curl_setopt($ch, CURLOPT_SSLCERTTYPE, 'P12');
+
     $response = curl_exec($ch);
     $curl_error = curl_error($ch);
     $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    
+
     if ($curl_error) {
         error_log("Efí Register Webhook Error: " . $curl_error);
-        return false;
+        return ['success' => false, 'message' => 'Erro de conexão ao registrar webhook: ' . $curl_error, 'http_code' => $http_code ?: null];
     }
-    
+
     if ($http_code >= 200 && $http_code < 300) {
-        return true;
+        return ['success' => true, 'message' => 'Webhook Pix registrado na Efí com sucesso.', 'http_code' => $http_code];
     }
-    
-    error_log("Efí Register Webhook HTTP Error ($http_code): " . substr($response, 0, 500));
-    return false;
+
+    $response_snippet = is_string($response) ? substr($response, 0, 500) : '';
+    error_log("Efí Register Webhook HTTP Error ($http_code): " . $response_snippet);
+    return [
+        'success' => false,
+        'message' => 'Efí retornou HTTP ' . $http_code . ($response_snippet ? ': ' . $response_snippet : '.'),
+        'http_code' => $http_code
+    ];
+}
+
+/**
+ * Consulta webhook Pix cadastrado na Efí para uma chave.
+ *
+ * @return array{success: bool, webhook_url: string, message: string, http_code: int|null}
+ */
+function efi_get_webhook($access_token, $pix_key, $certificate_path = null) {
+    if (empty($access_token) || empty($pix_key)) {
+        return ['success' => false, 'webhook_url' => '', 'message' => 'Parâmetros inválidos.', 'http_code' => null];
+    }
+
+    $certificate_path = $certificate_path ? str_replace('\\', '/', trim($certificate_path)) : null;
+    if (empty($certificate_path) || !file_exists($certificate_path)) {
+        return ['success' => false, 'webhook_url' => '', 'message' => 'Certificado P12 não encontrado.', 'http_code' => null];
+    }
+
+    $url = 'https://pix.api.efipay.com.br/v2/webhook/' . rawurlencode($pix_key);
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Authorization: Bearer ' . $access_token,
+        'Content-Type: application/json'
+    ]);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+    curl_setopt($ch, CURLOPT_SSLCERT, $certificate_path);
+    curl_setopt($ch, CURLOPT_SSLCERTTYPE, 'P12');
+
+    $response = curl_exec($ch);
+    $curl_error = curl_error($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($curl_error) {
+        return ['success' => false, 'webhook_url' => '', 'message' => $curl_error, 'http_code' => $http_code ?: null];
+    }
+
+    if ($http_code >= 200 && $http_code < 300) {
+        $data = json_decode($response, true) ?: [];
+        $registered_url = $data['webhookUrl'] ?? '';
+        return [
+            'success' => true,
+            'webhook_url' => $registered_url,
+            'message' => $registered_url ? 'Webhook encontrado na Efí.' : 'Nenhum webhook cadastrado para esta chave Pix.',
+            'http_code' => $http_code
+        ];
+    }
+
+    return [
+        'success' => false,
+        'webhook_url' => '',
+        'message' => 'Efí retornou HTTP ' . $http_code,
+        'http_code' => $http_code
+    ];
 }
 
 /**
