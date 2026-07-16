@@ -696,6 +696,8 @@ try {
             $email_template_html
         );
         
+        $smtp_password_configured = !empty($configs['smtp_password'] ?? '');
+
         $response_configs = [
             'smtp_host' => $configs['smtp_host'] ?? '',
             'smtp_port' => $configs['smtp_port'] ?? '587',
@@ -705,10 +707,10 @@ try {
             'smtp_from_name' => $configs['smtp_from_name'] ?? $nome_plataforma_atual,
             'email_template_delivery_subject' => $configs['email_template_delivery_subject'] ?? $default_subject,
             'email_template_delivery_html' => $email_template_html,
-            'member_area_login_url' => $configs['member_area_login_url'] ?? $default_member_area_login_url
+            'member_area_login_url' => $configs['member_area_login_url'] ?? $default_member_area_login_url,
+            // Nunca retorna a senha; só indica se já existe no banco
+            'smtp_password_configured' => $smtp_password_configured,
         ];
-        // NÃO retornar a senha por segurança
-        // $response_configs['smtp_password'] = '********'; 
 
         ob_clean();
         echo json_encode(['success' => true, 'data' => $response_configs]);
