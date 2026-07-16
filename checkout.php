@@ -2723,6 +2723,10 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         
                         if (!cardNumber || cardNumber.length < 13) { showAlert('Por favor, informe o número do cartão.'); return; }
                         if (!cardHolder || cardHolder.length < 3) { showAlert('Por favor, informe o nome no cartão.'); return; }
+                        if (cardHolder.trim().split(/\s+/).filter(Boolean).length < 2) {
+                            showAlert('Informe nome e sobrenome no cartão (como impresso). Ex.: Ivan Souza.');
+                            return;
+                        }
                         if (!cardExpiry || cardExpiry.length < 5) { showAlert('Por favor, informe a validade do cartão.'); return; }
                         if (!cardCvv || cardCvv.length < 3) { showAlert('Por favor, informe o CVV do cartão.'); return; }
                         
@@ -2773,6 +2777,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                                     ...payerData,
                                     product_id: mainProductId,
                                     payment_token: paymentTokenValue,
+                                    card_holder_name: cardHolder,
                                     transaction_amount: parseFloat(currentAmount).toFixed(2),
                                     installments: 1,
                                     order_bump_product_ids: acceptedOrderBumps,
