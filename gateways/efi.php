@@ -927,12 +927,74 @@ function efi_normalize_phone_for_card_charge($raw) {
 }
 
 /**
+ * Normaliza nome do cliente para a API Efí Cartão.
+ * Padrão Efí (resumido): sem acentos/caracteres especiais e pelo menos nome + sobrenome
+ * (regex do tipo: ^(?!.*[À-ü])[ ]*(.+[ ]+)+.+[ ]*$).
+ *
+ * @param string $primary Preferencialmente nome no cartão
+ * @param string $fallback Nome do comprador no checkout
+ * @return string
+ */
+function efi_normalize_customer_name_for_card($primary, $fallback = '') {
+    foreach ([$primary, $fallback] as $raw) {
+        $raw = trim((string)$raw);
+        if ($raw === '') {
+            continue;
+        }
+
+        $normalized = $raw;
+        if (function_exists('iconv')) {
+            $converted = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $raw);
+            if ($converted !== false && $converted !== '') {
+                $normalized = $converted;
+            }
+        }
+        // Remove acentos restantes e qualquer coisa que não seja letra/espaço
+        $normalized = preg_replace('/[^\p{L}\s]/u', ' ', $normalized);
+        $normalized = preg_replace('/[^a-zA-Z\s]/', ' ', $normalized);
+        $normalized = trim(preg_replace('/\s+/', ' ', (string)$normalized));
+
+        $parts = preg_split('/\s+/', $normalized, -1, PREG_SPLIT_NO_EMPTY);
+        if (!$parts) {
+            continue;
+        }
+        if (count($parts) >= 2) {
+            return implode(' ', array_slice($parts, 0, 6));
+        }
+        // Um único nome (ex.: "Vandragoni") — Efí rejeita; completa com sobrenome genérico
+        if (strlen($parts[0]) >= 2) {
+            return $parts[0] . ' Cliente';
+        }
+    }
+
+    return 'Cliente Comprador';
+}
+
+/**
+ * Nome do item sem acentos/caracteres problemáticos para a API de cobranças.
+ */
+function efi_sanitize_item_name($name) {
+    $name = trim((string)$name);
+    if ($name === '') {
+        return 'Produto';
+    }
+    if (function_exists('iconv')) {
+        $converted = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $name);
+        if ($converted !== false && $converted !== '') {
+            $name = $converted;
+        }
+    }
+    $name = preg_replace('/\s+/', ' ', trim($name));
+    return substr($name !== '' ? $name : 'Produto', 0, 200);
+}
+
+/**
  * Cria uma cobrança de cartão de crédito via One Step
  * 
  * @param string $access_token Token de acesso OAuth2
  * @param float $amount Valor da cobrança em reais
  * @param string $payment_token Payment token gerado no frontend via biblioteca JavaScript Efí
- * @param array $customer_data Dados do cliente ['name' => string, 'email' => string, 'cpf' => string, 'phone' => string]
+ * @param array $customer_data Dados do cliente ['name' => string, 'email' => string, 'cpf' => string, 'phone' => string, 'card_holder_name' => string]
  * @param string $description Descrição da cobrança
  * @param string $webhook_url URL do webhook para notificações
  * @param string $certificate_path Caminho do certificado P12
@@ -1017,12 +1079,18 @@ function efi_create_card_charge($access_token, $amount, $payment_token, $custome
             'message' => 'Telefone inválido para pagamento com cartão. Informe DDD e número com 9 no celular (apenas números). Ex.: 11988887777.',
         ];
     }
+
+    $customer_name = efi_normalize_customer_name_for_card(
+        $customer_data['card_holder_name'] ?? '',
+        $customer_data['name'] ?? ''
+    );
+    error_log('Efí Cartão: Nome cliente normalizado: ' . $customer_name . ' (origem cartão: ' . ($customer_data['card_holder_name'] ?? '') . ' / comprador: ' . ($customer_data['name'] ?? '') . ')');
     
     // Preparar payload conforme documentação Efí
     $payload = [
         'items' => [
             [
-                'name' => !empty($description) ? substr($description, 0, 200) : 'Produto',
+                'name' => efi_sanitize_item_name(!empty($description) ? $description : 'Produto'),
                 'value' => $amount_cents,
                 'amount' => 1
             ]
@@ -1034,12 +1102,12 @@ function efi_create_card_charge($access_token, $amount, $payment_token, $custome
                     'street' => 'Rua',
                     'number' => '0',
                     'neighborhood' => 'Centro',
-                    'zipcode' => '00000000',
-                    'city' => 'São Paulo',
+                    'zipcode' => '01310100',
+                    'city' => 'Sao Paulo',
                     'state' => 'SP'
                 ],
                 'customer' => [
-                    'name' => $customer_data['name'] ?? 'Cliente',
+                    'name' => $customer_name,
                     'email' => $email,
                     'cpf' => $cpf,
                     'phone_number' => $phone
