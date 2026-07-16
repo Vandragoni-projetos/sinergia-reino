@@ -41,6 +41,72 @@ function returnJsonSuccess($data) {
     exit;
 }
 
+/**
+ * Responde JSON ao cliente imediatamente e continua o PHP (entrega/e-mail).
+ * Evita o checkout ficar em "Aguardando pagamento..." enquanto SMTP/webhook rodam.
+ */
+function returnJsonSuccessThen(array $data, callable $after) {
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    http_response_code(200);
+    header('Content-Type: application/json');
+    header('Connection: close');
+    $payload = json_encode($data);
+    header('Content-Length: ' . strlen($payload));
+    echo $payload;
+
+    if (function_exists('fastcgi_finish_request')) {
+        @fastcgi_finish_request();
+    } else {
+        @flush();
+    }
+
+    ignore_user_abort(true);
+    @set_time_limit(120);
+
+    try {
+        $after();
+    } catch (Throwable $e) {
+        log_check_status('Erro pós-resposta (entrega): ' . $e->getMessage());
+    }
+    exit;
+}
+
+function trigger_internal_notification_webhook($payment_id) {
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || (isset($_SERVER['SERVER_PORT']) && (string)$_SERVER['SERVER_PORT'] === '443')
+        || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+    $webhook_url = ($https ? 'https' : 'http') . '://' . $host . '/notification.php';
+
+    $webhook_payload = json_encode([
+        'pix' => [['txid' => $payment_id]],
+        'status' => 'paid'
+    ]);
+
+    log_check_status("Efí: Disparando webhook interno para: " . $webhook_url);
+
+    $ch_webhook = curl_init($webhook_url);
+    curl_setopt($ch_webhook, CURLOPT_POST, true);
+    curl_setopt($ch_webhook, CURLOPT_POSTFIELDS, $webhook_payload);
+    curl_setopt($ch_webhook, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    curl_setopt($ch_webhook, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch_webhook, CURLOPT_TIMEOUT, 45);
+    curl_setopt($ch_webhook, CURLOPT_CONNECTTIMEOUT, 5);
+    curl_setopt($ch_webhook, CURLOPT_SSL_VERIFYPEER, false);
+    $webhook_result = curl_exec($ch_webhook);
+    $webhook_error = curl_error($ch_webhook);
+    $webhook_http = (int)curl_getinfo($ch_webhook, CURLINFO_HTTP_CODE);
+    curl_close($ch_webhook);
+
+    if ($webhook_error) {
+        log_check_status("Efí: Erro webhook interno: " . $webhook_error);
+    } else {
+        log_check_status("Efí: Webhook interno HTTP $webhook_http — " . substr((string)$webhook_result, 0, 200));
+    }
+}
+
 // Função para log de check_status
 function log_check_status($message) {
     $log_file = __DIR__ . '/../check_status_log.txt';
@@ -193,68 +259,38 @@ try {
             $status = ($status_data['status'] === 'approved' || $status_data['status'] === 'paid') ? 'approved' : $status_data['status'];
             log_check_status("Efí: Status obtido: " . $status . " (raw: " . ($status_data['status_raw'] ?? 'n/a') . ")");
             
-            // Se o status for aprovado, atualiza no banco e dispara webhook interno
+            // Se o status for aprovado, atualiza no banco, responde ao checkout e entrega depois
             if ($status === 'approved') {
+                $needs_delivery = false;
                 try {
-                    // Verifica se o status no banco já está aprovado e se a entrega/e-mail já rodou
                     $stmt_check = $pdo->prepare("SELECT status_pagamento, email_entrega_enviado FROM vendas WHERE transacao_id = ? LIMIT 1");
                     $stmt_check->execute([$payment_id]);
                     $venda_check = $stmt_check->fetch(PDO::FETCH_ASSOC);
-                    
-                    $needs_delivery = false;
+
                     if ($venda_check) {
                         if ($venda_check['status_pagamento'] !== 'approved') {
-                            log_check_status("Efí: Status 'approved' detectado via polling. Atualizando BD e disparando entrega.");
+                            log_check_status("Efí: Status 'approved' detectado via polling. Atualizando BD.");
                             $pdo->prepare("UPDATE vendas SET status_pagamento = 'approved' WHERE transacao_id = ?")->execute([$payment_id]);
                             $needs_delivery = true;
                         } elseif ((int)($venda_check['email_entrega_enviado'] ?? 0) === 0) {
-                            // Já aprovada, mas e-mail/entrega não concluídos — reprocessa
                             log_check_status("Efí: Venda já approved, mas email_entrega_enviado=0. Reprocessando entrega.");
                             $needs_delivery = true;
                         }
-                    }
-
-                    if ($needs_delivery) {
-                        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-                        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-                        $script_path = dirname(dirname($_SERVER['PHP_SELF'] ?? ''));
-                        $webhook_url = $protocol . '://' . $host . rtrim(str_replace('\\', '/', $script_path), '/') . '/notification.php';
-
-                        // Payload no formato Efí Pix (txid), para o notification.php processar entrega + e-mail
-                        $webhook_payload = [
-                            'pix' => [
-                                ['txid' => $payment_id]
-                            ],
-                            'status' => 'paid'
-                        ];
-
-                        log_check_status("Efí: Disparando webhook interno (async) para: " . $webhook_url);
-
-                        // Fire-and-forget: NÃO esperar o notification.php terminar.
-                        // Esperar causa deadlock no PHP-FPM (check_status segura um worker
-                        // enquanto notification.php precisa de outro).
-                        $ch_webhook = curl_init($webhook_url);
-                        curl_setopt($ch_webhook, CURLOPT_POST, true);
-                        curl_setopt($ch_webhook, CURLOPT_POSTFIELDS, json_encode($webhook_payload));
-                        curl_setopt($ch_webhook, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-                        curl_setopt($ch_webhook, CURLOPT_RETURNTRANSFER, false);
-                        curl_setopt($ch_webhook, CURLOPT_TIMEOUT, 2);
-                        curl_setopt($ch_webhook, CURLOPT_CONNECTTIMEOUT, 1);
-                        curl_setopt($ch_webhook, CURLOPT_NOSIGNAL, 1);
-                        curl_setopt($ch_webhook, CURLOPT_SSL_VERIFYPEER, false);
-                        @curl_exec($ch_webhook);
-                        $webhook_error = curl_error($ch_webhook);
-                        curl_close($ch_webhook);
-
-                        if ($webhook_error) {
-                            log_check_status("Efí: Aviso ao disparar webhook interno: " . $webhook_error);
-                        } else {
-                            log_check_status("Efí: Webhook interno disparado (processamento em background).");
-                        }
+                    } else {
+                        log_check_status("Efí: AVISO - Nenhuma venda com transacao_id=$payment_id ao aprovar.");
                     }
                 } catch (Exception $e) {
                     log_check_status("Efí: Erro ao atualizar status: " . $e->getMessage());
                 }
+
+                if ($needs_delivery) {
+                    $pid = $payment_id;
+                    returnJsonSuccessThen(['status' => 'approved'], function () use ($pid) {
+                        trigger_internal_notification_webhook($pid);
+                    });
+                }
+
+                returnJsonSuccess(['status' => 'approved']);
             }
             
             returnJsonSuccess(['status' => $status]);
