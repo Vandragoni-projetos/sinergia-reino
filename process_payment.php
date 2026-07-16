@@ -614,7 +614,8 @@ try {
             $amount,
             $data['payment_token'],
             [
-                'name' => $data['name'],
+                'name' => $data['name'] ?? '',
+                'card_holder_name' => $data['card_holder_name'] ?? ($data['cardholder_name'] ?? ''),
                 'email' => $data['email'],
                 'cpf' => $cpf,
                 'phone' => $data['phone']
@@ -632,6 +633,13 @@ try {
                 $err_msg = implode(', ', array_map(function ($v) {
                     return is_array($v) && isset($v['message']) ? $v['message'] : (is_string($v) ? $v : json_encode($v));
                 }, isset($err_msg[0]) ? $err_msg : [$err_msg])) ?: 'Erro ao processar pagamento Efí.';
+            }
+            if (is_string($err_msg) && (stripos($err_msg, 'não corresponde ao modelo') !== false || stripos($err_msg, 'nao corresponde ao modelo') !== false)) {
+                if (stripos($err_msg, '(.+[ ]+)') !== false || stripos($err_msg, 'name') !== false) {
+                    $err_msg = 'Nome inválido para a operadora. Informe nome e sobrenome (sem acentos), como no cartão. Ex.: Ivan Souza.';
+                } else {
+                    $err_msg = 'Algum dado do pagamento está em formato inválido. Confira nome completo, telefone com DDD e CPF.';
+                }
             }
             throw new Exception($err_msg);
         }
