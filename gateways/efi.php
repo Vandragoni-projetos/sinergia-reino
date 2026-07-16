@@ -571,11 +571,11 @@ function efi_get_payment_status($access_token, $txid, $certificate_path = null) 
         return false;
     }
     
-    // Tentar primeiro com endpoint de pagamentos recebidos (/v2/pix/{txid})
-    // Se falhar, tentar consultar a cobrança (/v2/cob/{txid})
+    // Cobrança por txid (/v2/cob) é a fonte correta.
+    // /v2/pix/{id} espera e2eid (não txid) — fica como fallback.
     $urls = [
-        'https://pix.api.efipay.com.br/v2/pix/' . urlencode($txid), // Pagamentos recebidos
-        'https://pix.api.efipay.com.br/v2/cob/' . urlencode($txid)  // Cobrança (alternativa)
+        'https://pix.api.efipay.com.br/v2/cob/' . urlencode($txid),
+        'https://pix.api.efipay.com.br/v2/pix/' . urlencode($txid)
     ];
     
     error_log("Efí: Consultando status do pagamento - txid: " . substr($txid, 0, 20) . '...');
@@ -681,7 +681,7 @@ function efi_get_payment_status($access_token, $txid, $certificate_path = null) 
         error_log("Efí: Tipo de dados retornados: " . gettype($data) . ", Chaves: " . (is_array($data) ? implode(', ', array_keys($data)) : 'não é array'));
         
         // Efí retorna array de pagamentos (endpoint /v2/pix) ou objeto de cobrança (endpoint /v2/cob)
-        if (isset($data[0])) {
+        if (isset($data[0]) && is_array($data[0])) {
             // Formato array de pagamentos (endpoint /v2/pix)
             $payment = $data[0];
             error_log("Efí: Primeiro pagamento encontrado - Chaves: " . implode(', ', array_keys($payment)));
@@ -690,61 +690,86 @@ function efi_get_payment_status($access_token, $txid, $certificate_path = null) 
                 error_log("Efí: Pagamento aprovado - horario: " . ($payment['horario'] ?? 'não informado') . ", valor: " . ($payment['valor'] ?? 'não informado'));
                 return [
                     'status' => 'approved',
+                    'status_raw' => 'pago',
                     'valor' => isset($payment['valor']) ? (float)$payment['valor'] : null,
                     'horario' => $payment['horario'] ?? null
                 ];
-            } else {
-                // Pagamento ainda não foi realizado
-                error_log("Efí: Pagamento ainda pendente - sem horario na resposta. Chaves disponíveis: " . implode(', ', array_keys($payment)));
-                return ['status' => 'pending'];
             }
-        } else {
-            // Resposta não é um array - pode ser objeto único ou formato diferente
-            error_log("Efí: Resposta não é array - tipo: " . gettype($data) . ", conteúdo: " . substr(json_encode($data), 0, 500));
-            
-            // Verificar se é objeto de cobrança (endpoint /v2/cob) com status
-            if (isset($data['status'])) {
-                $cob_status = strtolower($data['status']);
-                error_log("Efí: Status da cobrança: " . $cob_status);
-                // Se a cobrança tem status 'CONCLUIDA' ou similar, verificar se tem pagamento
-                if (isset($data['pix']) && is_array($data['pix']) && count($data['pix']) > 0) {
-                    // Tem pagamentos associados
+            // Sem horario neste endpoint — tenta /v2/cob em vez de declarar pending cedo
+            error_log("Efí: Array sem horario neste endpoint; tentando próxima URL se houver.");
+            if ($url_index < count($urls) - 1) {
+                continue;
+            }
+            return ['status' => 'pending', 'status_raw' => 'sem_horario'];
+        }
+
+        // Resposta objeto: cobrança (/v2/cob) ou pagamento único
+        error_log("Efí: Resposta objeto - tipo: " . gettype($data) . ", conteúdo: " . substr(json_encode($data), 0, 500));
+
+        if (isset($data['status'])) {
+            $cob_status = strtolower(trim((string)$data['status']));
+            // Remove acento para comparar CONCLUÍDA/CONCLUIDA
+            $cob_status_norm = strtr($cob_status, ['á' => 'a', 'ã' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ç' => 'c']);
+            error_log("Efí: Status da cobrança: " . $cob_status . " (norm: " . $cob_status_norm . ")");
+
+            // CONCLUIDA = Pix pago na Efí (definitivo) — NÃO exigir pix[].horario
+            if (in_array($cob_status_norm, ['concluida', 'completed', 'pago', 'paid'], true)) {
+                $valor = null;
+                $horario = null;
+                if (!empty($data['pix'][0]) && is_array($data['pix'][0])) {
                     $pix_payment = $data['pix'][0];
-                    if (isset($pix_payment['horario'])) {
-                        error_log("Efí: Pagamento aprovado via cobrança - horario: " . ($pix_payment['horario'] ?? 'não informado'));
-                        return [
-                            'status' => 'approved',
-                            'valor' => isset($pix_payment['valor']) ? (float)$pix_payment['valor'] : null,
-                            'horario' => $pix_payment['horario'] ?? null
-                        ];
-                    }
+                    $valor = isset($pix_payment['valor']) ? (float)$pix_payment['valor'] : null;
+                    $horario = $pix_payment['horario'] ?? null;
+                } elseif (isset($data['valor']['original'])) {
+                    $valor = (float)$data['valor']['original'];
+                } elseif (isset($data['valor']) && is_numeric($data['valor'])) {
+                    $valor = (float)$data['valor'];
                 }
-                // Se status é 'ATIVA' ou similar, ainda está pendente
-                if ($cob_status === 'ativa' || $cob_status === 'active') {
-                    error_log("Efí: Cobrança ainda ativa (pendente)");
-                    return ['status' => 'pending'];
-                }
-            }
-            
-            // Tenta verificar se é um objeto único com horario
-            if (isset($data['horario'])) {
-                error_log("Efí: Pagamento aprovado (formato objeto único) - horario: " . ($data['horario'] ?? 'não informado'));
+                error_log("Efí: Cobrança CONCLUIDA — aprovando. valor=" . ($valor ?? 'n/a'));
                 return [
                     'status' => 'approved',
-                    'valor' => isset($data['valor']) ? (float)$data['valor'] : null,
-                    'horario' => $data['horario'] ?? null
+                    'status_raw' => $cob_status,
+                    'valor' => $valor,
+                    'horario' => $horario
                 ];
             }
+
+            // Tem pix com horario mesmo sem status concluida
+            if (!empty($data['pix'][0]['horario'])) {
+                $pix_payment = $data['pix'][0];
+                error_log("Efí: Pagamento aprovado via pix[].horario");
+                return [
+                    'status' => 'approved',
+                    'status_raw' => $cob_status,
+                    'valor' => isset($pix_payment['valor']) ? (float)$pix_payment['valor'] : null,
+                    'horario' => $pix_payment['horario']
+                ];
+            }
+
+            if (in_array($cob_status_norm, ['ativa', 'active', 'ativa_aguardando'], true)) {
+                error_log("Efí: Cobrança ainda ativa (pendente)");
+                return ['status' => 'pending', 'status_raw' => $cob_status];
+            }
         }
-        
+
+        // Objeto único com horario
+        if (isset($data['horario'])) {
+            error_log("Efí: Pagamento aprovado (formato objeto único) - horario: " . $data['horario']);
+            return [
+                'status' => 'approved',
+                'status_raw' => 'horario',
+                'valor' => isset($data['valor']) ? (float)$data['valor'] : null,
+                'horario' => $data['horario']
+            ];
+        }
+
         // Se chegou aqui, não encontrou pagamento aprovado nesta tentativa
-        // Tentar próxima URL se houver
         if ($url_index < count($urls) - 1) {
             continue;
         }
-        
+
         error_log("Efí: Nenhum pagamento encontrado na resposta - retornando pending. Resposta completa: " . substr(json_encode($data), 0, 1000));
-        return ['status' => 'pending'];
+        return ['status' => 'pending', 'status_raw' => 'nao_mapeado'];
     }
     
     // Se todas as tentativas falharam, retornar false
