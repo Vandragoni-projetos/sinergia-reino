@@ -228,25 +228,28 @@ try {
                             'status' => 'paid'
                         ];
 
-                        log_check_status("Efí: Disparando webhook interno para: " . $webhook_url);
+                        log_check_status("Efí: Disparando webhook interno (async) para: " . $webhook_url);
 
+                        // Fire-and-forget: NÃO esperar o notification.php terminar.
+                        // Esperar causa deadlock no PHP-FPM (check_status segura um worker
+                        // enquanto notification.php precisa de outro).
                         $ch_webhook = curl_init($webhook_url);
                         curl_setopt($ch_webhook, CURLOPT_POST, true);
                         curl_setopt($ch_webhook, CURLOPT_POSTFIELDS, json_encode($webhook_payload));
                         curl_setopt($ch_webhook, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-                        curl_setopt($ch_webhook, CURLOPT_RETURNTRANSFER, true);
-                        curl_setopt($ch_webhook, CURLOPT_TIMEOUT, 15);
-                        curl_setopt($ch_webhook, CURLOPT_CONNECTTIMEOUT, 5);
+                        curl_setopt($ch_webhook, CURLOPT_RETURNTRANSFER, false);
+                        curl_setopt($ch_webhook, CURLOPT_TIMEOUT, 2);
+                        curl_setopt($ch_webhook, CURLOPT_CONNECTTIMEOUT, 1);
+                        curl_setopt($ch_webhook, CURLOPT_NOSIGNAL, 1);
                         curl_setopt($ch_webhook, CURLOPT_SSL_VERIFYPEER, false);
-                        $webhook_result = curl_exec($ch_webhook);
+                        @curl_exec($ch_webhook);
                         $webhook_error = curl_error($ch_webhook);
-                        $webhook_http = curl_getinfo($ch_webhook, CURLINFO_HTTP_CODE);
                         curl_close($ch_webhook);
 
                         if ($webhook_error) {
-                            log_check_status("Efí: Erro ao chamar webhook interno: " . $webhook_error);
+                            log_check_status("Efí: Aviso ao disparar webhook interno: " . $webhook_error);
                         } else {
-                            log_check_status("Efí: Webhook interno HTTP $webhook_http — resposta: " . substr((string)$webhook_result, 0, 200));
+                            log_check_status("Efí: Webhook interno disparado (processamento em background).");
                         }
                     }
                 } catch (Exception $e) {
