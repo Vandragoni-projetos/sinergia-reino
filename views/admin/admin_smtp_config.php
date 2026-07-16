@@ -45,10 +45,16 @@
                        class="form-input-style" placeholder="Ex: seuemail@seudominio.com">
             </div>
             <div>
-                <label for="smtp_password" class="block text-gray-300 text-sm font-semibold mb-2">Senha SMTP</label>
+                <label for="smtp_password" class="block text-gray-300 text-sm font-semibold mb-2">Senha SMTP / Senha de App</label>
                 <input type="password" id="smtp_password" name="smtp_password"
-                       class="form-input-style" placeholder="••••••••">
-                <p class="text-xs text-gray-400 mt-1">Deixe em branco para manter a senha atual.</p>
+                       class="form-input-style" placeholder="Digite apenas para alterar"
+                       autocomplete="new-password" value="">
+                <p id="smtp-password-status" class="text-xs mt-1 text-gray-400">
+                    Deixe em branco para manter a senha atual salva no banco.
+                </p>
+                <p class="text-xs text-amber-300/80 mt-1">
+                    Gmail exige <strong>Senha de App</strong> (não a senha da conta). Se o campo aparecer preenchido sozinho, limpe-o — é preenchimento automático do navegador.
+                </p>
             </div>
         </div>
 
@@ -227,6 +233,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('smtp_encryption').value = data.smtp_encryption || 'tls';
                 document.getElementById('smtp_from_email').value = data.smtp_from_email || '';
                 document.getElementById('smtp_from_name').value = data.smtp_from_name || 'GatewayPro';
+
+                // Senha NUNCA volta da API. Limpa autofill do navegador.
+                const passwordInput = document.getElementById('smtp_password');
+                passwordInput.value = '';
+                setTimeout(() => { passwordInput.value = ''; }, 100);
+
+                const passwordStatus = document.getElementById('smtp-password-status');
+                if (data.smtp_password_configured) {
+                    passwordStatus.className = 'text-xs mt-1 text-green-400';
+                    passwordStatus.innerHTML = '<i data-lucide="check-circle" class="w-3 h-3 inline-block mr-1"></i> Senha já salva no banco. Deixe em branco para mantê-la, ou digite uma nova senha de app para substituir.';
+                } else {
+                    passwordStatus.className = 'text-xs mt-1 text-amber-300';
+                    passwordStatus.innerHTML = '<i data-lucide="alert-triangle" class="w-3 h-3 inline-block mr-1"></i> Nenhuma senha SMTP salva ainda. Informe a senha de app e clique em Salvar.';
+                }
                 
                 // Populate new fields
                 document.getElementById('email_template_delivery_subject').value = data.email_template_delivery_subject || '';
@@ -315,9 +335,18 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault(); // Prevent default form submission
         const result = await sendSmtpRequest('save_email_settings');
         if(result.success) {
+            document.getElementById('smtp_password').value = '';
             // Re-fetch to update original values in case user cancels HTML editing later
             await fetchEmailSettings(); 
         }
+    });
+
+    // Evita que o autofill do navegador “finja” que a senha já está na tela
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            const passwordInput = document.getElementById('smtp_password');
+            if (passwordInput) passwordInput.value = '';
+        }, 300);
     });
 
     // --- HTML Template Editor Logic ---
