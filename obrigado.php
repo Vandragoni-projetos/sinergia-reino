@@ -339,6 +339,35 @@ if ($payment_id) {
                 
                 error_log("Obrigado.php: Total de produtos processados com sucesso: " . count($processed_prods));
                 
+                // Notificação no sininho do infoprodutor (painel)
+                if (!empty($main_sale['usuario_id'])) {
+                    try {
+                        $valor_total = array_sum(array_map(function ($s) { return (float)($s['valor'] ?? 0); }, $all_sales));
+                        $msg_notif = "Venda Aprovada! R$ " . number_format($valor_total, 2, ',', '.');
+                        $link_notif = "/index?pagina=vendas&id=" . (int)$main_sale['id'];
+
+                        // Evita duplicar se o webhook já criou a notificação desta venda
+                        $stmt_dup = $pdo->prepare("SELECT id FROM notificacoes WHERE usuario_id = ? AND venda_id_fk = ? AND tipo = 'Compra Aprovada' LIMIT 1");
+                        $stmt_dup->execute([(int)$main_sale['usuario_id'], (int)$main_sale['id']]);
+                        if (!$stmt_dup->fetch()) {
+                            $pdo->prepare("INSERT INTO notificacoes (usuario_id, tipo, mensagem, valor, link_acao, venda_id_fk, metodo_pagamento) VALUES (?, 'Compra Aprovada', ?, ?, ?, ?, ?)")
+                                ->execute([
+                                    (int)$main_sale['usuario_id'],
+                                    $msg_notif,
+                                    $valor_total,
+                                    $link_notif,
+                                    (int)$main_sale['id'],
+                                    $main_sale['metodo_pagamento'] ?? null
+                                ]);
+                            error_log("Obrigado.php: Notificação 'Compra Aprovada' criada para usuario_id=" . $main_sale['usuario_id']);
+                        } else {
+                            error_log("Obrigado.php: Notificação já existia para venda_id=" . $main_sale['id']);
+                        }
+                    } catch (Throwable $e) {
+                        error_log("Obrigado.php: Erro ao criar notificação: " . $e->getMessage());
+                    }
+                }
+
                 // Envia email se houver produtos processados
                 if (!empty($processed_prods)) {
                     $login_url_stmt = $pdo->query("SELECT valor FROM configuracoes WHERE chave = 'member_area_login_url'");
