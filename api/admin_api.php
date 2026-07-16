@@ -80,6 +80,8 @@ try {
 
     // Função auxiliar para obter configurações SMTP, incluindo a senha do BD se não fornecida
     function getSmtpConfigFromRequest($pdo, $input_data) {
+        global $adminApiDebug;
+
         $smtp_config = [
             'host' => $input_data['smtp_host'] ?? '',
             'port' => (int)($input_data['smtp_port'] ?? 587),
@@ -89,7 +91,7 @@ try {
             'from_name' => $input_data['smtp_from_name'] ?? 'Hub SinergIA',
         ];
 
-        if ($adminApiDebug) {
+        if (!empty($adminApiDebug)) {
             error_log("ADMIN_API: getSmtpConfigFromRequest - input_data['smtp_password'] está vazio: " . (empty($input_data['smtp_password']) ? 'true' : 'false'));
         }
 
@@ -98,7 +100,7 @@ try {
             $stmt = $pdo->query("SELECT valor FROM configuracoes WHERE chave = 'smtp_password'");
             $db_password = $stmt->fetchColumn() ?? '';
             $smtp_config['password'] = $db_password;
-            if ($adminApiDebug) {
+            if (!empty($adminApiDebug)) {
                 error_log("ADMIN_API: getSmtpConfigFromRequest - Senha buscada do BD (comprimento: " . strlen($db_password) . ")");
                 if (empty($db_password)) {
                     error_log("ADMIN_API: getSmtpConfigFromRequest - Aviso: Senha 'smtp_password' está vazia no banco de dados.");
@@ -106,7 +108,7 @@ try {
             }
         } else {
             $smtp_config['password'] = $input_data['smtp_password'];
-            if ($adminApiDebug) {
+            if (!empty($adminApiDebug)) {
                 error_log("ADMIN_API: getSmtpConfigFromRequest - Senha do input (comprimento: " . strlen($input_data['smtp_password']) . ")");
             }
         }
