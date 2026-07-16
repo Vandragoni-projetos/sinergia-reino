@@ -323,11 +323,24 @@ function send_delivery_email_consolidated($to_email, $customer_name, $products, 
 
 function create_notification($usuario_id, $tipo, $mensagem, $valor, $venda_id_fk = null, $metodo = null) {
     global $pdo;
-    if (!$usuario_id) return;
+    if (!$usuario_id) {
+        log_webhook("create_notification: usuario_id vazio — notificação ignorada.");
+        return;
+    }
     try {
+        // Evita duplicatas da mesma venda/tipo
+        if ($venda_id_fk) {
+            $stmt_dup = $pdo->prepare("SELECT id FROM notificacoes WHERE usuario_id = ? AND venda_id_fk = ? AND tipo = ? LIMIT 1");
+            $stmt_dup->execute([(int)$usuario_id, (int)$venda_id_fk, $tipo]);
+            if ($stmt_dup->fetch()) {
+                log_webhook("create_notification: já existe notificação tipo={$tipo} para venda_id={$venda_id_fk}");
+                return;
+            }
+        }
         $link = $venda_id_fk ? "/index?pagina=vendas&id={$venda_id_fk}" : null;
         $pdo->prepare("INSERT INTO notificacoes (usuario_id, tipo, mensagem, valor, link_acao, venda_id_fk, metodo_pagamento) VALUES (?, ?, ?, ?, ?, ?, ?)")
             ->execute([$usuario_id, $tipo, $mensagem, $valor, $link, $venda_id_fk, $metodo]);
+        log_webhook("create_notification: OK usuario_id={$usuario_id}, tipo={$tipo}, venda_id=" . ($venda_id_fk ?? 'null'));
     } catch (Exception $e) {
         log_webhook("Erro notificacao: " . $e->getMessage());
     }
