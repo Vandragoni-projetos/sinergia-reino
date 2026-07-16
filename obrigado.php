@@ -214,15 +214,42 @@ if ($payment_id) {
                 error_log("Obrigado.php: Status no BD é '" . $sale_details['status_pagamento'] . "'. Verificando na API...");
                 
                 // Busca token do gateway
-                $stmt_gateway = $pdo->prepare("SELECT u.mp_access_token, u.pushinpay_token, u.paypal_client_id, u.paypal_client_secret, p.gateway FROM produtos p LEFT JOIN usuarios u ON p.usuario_id = u.id WHERE p.id = ?");
+                $stmt_gateway = $pdo->prepare("SELECT u.mp_access_token, u.pushinpay_token, u.paypal_client_id, u.paypal_client_secret, u.efi_client_id, u.efi_client_secret, u.efi_certificate_path, p.gateway FROM produtos p LEFT JOIN usuarios u ON p.usuario_id = u.id WHERE p.id = ?");
                 $stmt_gateway->execute([$sale_details['produto_id']]);
                 $gateway_info = $stmt_gateway->fetch(PDO::FETCH_ASSOC);
                 
                 if ($gateway_info) {
                     $payment_id = $sale_details['transacao_id'];
-                    
+                    $has_efi = !empty($gateway_info['efi_client_id'])
+                        && !empty($gateway_info['efi_client_secret'])
+                        && !empty($gateway_info['efi_certificate_path']);
+                    // txid Pix Efí: 26–35 chars alfanuméricos (padrão Bacen/Efí)
+                    $looks_like_efi_txid = $has_efi
+                        && (bool)preg_match('/^[a-zA-Z0-9]{26,35}$/', (string)$payment_id);
+
+                    // Verifica Efí Pix primeiro quando o ID é txid (evita cair no MP por token antigo)
+                    if ($looks_like_efi_txid || ($has_efi && ($gateway_info['gateway'] ?? '') === 'efi')) {
+                        require_once __DIR__ . '/gateways/efi.php';
+                        $full_cert_path = __DIR__ . '/' . ltrim(str_replace('\\', '/', $gateway_info['efi_certificate_path']), '/');
+                        if (file_exists($full_cert_path)) {
+                            $token_data = efi_get_access_token($gateway_info['efi_client_id'], $gateway_info['efi_client_secret'], $full_cert_path);
+                            if ($token_data && !empty($token_data['access_token'])) {
+                                $status_data = efi_get_payment_status($token_data['access_token'], $payment_id, $full_cert_path);
+                                error_log("Obrigado.php: Efí status: " . json_encode($status_data));
+                                if ($status_data && in_array(($status_data['status'] ?? ''), ['approved', 'paid'], true)) {
+                                    $status_aprovado = true;
+                                    $pdo->prepare("UPDATE vendas SET status_pagamento = 'approved' WHERE transacao_id = ?")->execute([$payment_id]);
+                                    error_log("Obrigado.php: Status atualizado para 'approved' no BD após verificação na API Efí");
+                                }
+                            } else {
+                                error_log("Obrigado.php: Efí - falha ao obter access token");
+                            }
+                        } else {
+                            error_log("Obrigado.php: Efí - certificado não encontrado: " . $full_cert_path);
+                        }
+                    }
                     // Verifica Mercado Pago
-                    if (!empty($gateway_info['mp_access_token']) && ($gateway_info['gateway'] === 'mercadopago' || empty($gateway_info['gateway']))) {
+                    elseif (!empty($gateway_info['mp_access_token']) && ($gateway_info['gateway'] === 'mercadopago' || empty($gateway_info['gateway']))) {
                         $ch = curl_init("https://api.mercadopago.com/v1/payments/" . $payment_id);
                         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $gateway_info['mp_access_token']]);
