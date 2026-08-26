@@ -88,6 +88,16 @@
                     <p class="text-xs text-gray-400 mt-1">Deixe em branco para não exibir o preço cortado.</p>
                 </div>
                 <div class="md:col-span-2">
+                    <label for="preco_order_bump" class="block text-gray-300 text-sm font-semibold mb-2">Preço para Order Bump (opcional)</label>
+                    <input type="number" step="0.01" min="0.01" id="preco_order_bump" name="preco_order_bump" class="form-input w-full max-w-xs" placeholder="Ex: 9.90" value="<?php
+                        $pob_raw = $produto['preco_order_bump'] ?? null;
+                        echo ($pob_raw !== null && $pob_raw !== '' && is_numeric($pob_raw) && (float) $pob_raw > 0)
+                            ? htmlspecialchars(number_format((float) $pob_raw, 2, '.', ''))
+                            : '';
+                    ?>">
+                    <p class="text-xs text-gray-400 mt-1">Usado somente quando este produto for oferecido como Order Bump em outro checkout. Se ficar vazio, será utilizado o preço normal do produto.</p>
+                </div>
+                <div class="md:col-span-2">
                     <label for="price_usd" class="block text-gray-300 text-sm font-semibold mb-2">Preço USD (US$) – Checkout internacional</label>
                     <input type="number" step="0.01" id="price_usd" name="price_usd" class="form-input w-full max-w-xs" placeholder="Ex: 19.99" value="<?php echo !empty($produto['price_usd']) ? htmlspecialchars($produto['price_usd']) : ''; ?>">
                     <p id="price-usd-preview" class="text-xs text-gray-400 mt-1" data-usd-rate="<?php echo htmlspecialchars(function_exists('getSystemSetting') ? getSystemSetting('usd_rate', '5.00') : '5.00'); ?>"><?php
