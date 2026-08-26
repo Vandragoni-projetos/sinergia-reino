@@ -280,6 +280,31 @@ if (isset($_POST['salvar_produto_config'])) {
                 if (!$result) {
                     throw new Exception("Erro ao atualizar produto: " . implode(", ", $stmt_update->errorInfo()));
                 }
+
+                // Taxonomia temática (main_category_id / subcategory_id) — UPDATE pontual
+                if (function_exists('db_table_has_column') && db_table_has_column($pdo, 'produtos', 'main_category_id')
+                    && function_exists('taxonomy_validate_product_category_assignment')) {
+                    $taxonomy = taxonomy_validate_product_category_assignment(
+                        $pdo,
+                        (int) $usuario_id,
+                        $_POST['main_category_id'] ?? '',
+                        $_POST['subcategory_id'] ?? ''
+                    );
+                    if (!$taxonomy['ok']) {
+                        throw new Exception($taxonomy['error']);
+                    }
+                    $stmt_taxonomy = $pdo->prepare("
+                        UPDATE produtos
+                        SET main_category_id = ?, subcategory_id = ?
+                        WHERE id = ? AND usuario_id = ?
+                    ");
+                    $stmt_taxonomy->execute([
+                        $taxonomy['main_category_id'],
+                        $taxonomy['subcategory_id'],
+                        $id_produto,
+                        $usuario_id,
+                    ]);
+                }
             }
 
             // Se o gateway mudou, atualizar current_gateway
