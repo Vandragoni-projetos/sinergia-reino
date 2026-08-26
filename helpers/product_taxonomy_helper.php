@@ -415,3 +415,99 @@ if (!function_exists('taxonomy_delete_subcategory')) {
         }
     }
 }
+
+if (!function_exists('taxonomy_list_active_main_categories')) {
+    /**
+     * Categorias principais ativas do usuário (para selects de produto).
+     */
+    function taxonomy_list_active_main_categories(PDO $pdo, int $usuario_id) {
+        $items = taxonomy_list_main_categories($pdo, $usuario_id);
+        return array_values(array_filter($items, function ($row) {
+            return (int) ($row['ativo'] ?? 1) === 1;
+        }));
+    }
+}
+
+if (!function_exists('taxonomy_list_active_subcategories')) {
+    /**
+     * Subcategorias ativas do usuário, opcionalmente filtradas por categoria principal.
+     */
+    function taxonomy_list_active_subcategories(PDO $pdo, int $usuario_id, ?int $main_category_id = null) {
+        $items = taxonomy_list_subcategories($pdo, $usuario_id, $main_category_id);
+        return array_values(array_filter($items, function ($row) {
+            return (int) ($row['ativo'] ?? 1) === 1;
+        }));
+    }
+}
+
+if (!function_exists('taxonomy_validate_product_category_assignment')) {
+    /**
+     * Valida associação produto → categoria principal / subcategoria (save backend).
+     *
+     * @param mixed $main_raw Valor bruto do POST (main_category_id)
+     * @param mixed $sub_raw Valor bruto do POST (subcategory_id)
+     * @return array{ok:bool, main_category_id:?int, subcategory_id:?int, error:?string}
+     */
+    function taxonomy_validate_product_category_assignment(PDO $pdo, int $usuario_id, $main_raw, $sub_raw) {
+        if ($usuario_id <= 0) {
+            return ['ok' => false, 'main_category_id' => null, 'subcategory_id' => null, 'error' => 'Usuário inválido'];
+        }
+
+        $main_int = is_numeric($main_raw) ? (int) $main_raw : 0;
+        $sub_int = is_numeric($sub_raw) ? (int) $sub_raw : 0;
+        if ($main_int < 0) {
+            $main_int = 0;
+        }
+        if ($sub_int < 0) {
+            $sub_int = 0;
+        }
+
+        if ($sub_int > 0 && $main_int <= 0) {
+            return [
+                'ok' => false,
+                'main_category_id' => null,
+                'subcategory_id' => null,
+                'error' => 'Não é permitido associar subcategoria sem categoria principal.',
+            ];
+        }
+
+        $main_id = null;
+        $sub_id = null;
+
+        if ($main_int > 0) {
+            $main_assert = taxonomy_assert_main_category_owner($pdo, $main_int, $usuario_id);
+            if (!$main_assert['ok']) {
+                return [
+                    'ok' => false,
+                    'main_category_id' => null,
+                    'subcategory_id' => null,
+                    'error' => 'Categoria principal inválida ou não pertence ao seu usuário.',
+                ];
+            }
+            $main_id = $main_int;
+        }
+
+        if ($sub_int > 0) {
+            if ($main_id === null) {
+                return [
+                    'ok' => false,
+                    'main_category_id' => null,
+                    'subcategory_id' => null,
+                    'error' => 'Não é permitido associar subcategoria sem categoria principal.',
+                ];
+            }
+            $check = taxonomy_validate_subcategory_belongs_to_main($pdo, $sub_int, $main_id, $usuario_id);
+            if (!$check['ok']) {
+                return [
+                    'ok' => false,
+                    'main_category_id' => $main_id,
+                    'subcategory_id' => null,
+                    'error' => 'Subcategoria inválida ou não pertence à categoria principal selecionada.',
+                ];
+            }
+            $sub_id = $sub_int;
+        }
+
+        return ['ok' => true, 'main_category_id' => $main_id, 'subcategory_id' => $sub_id, 'error' => null];
+    }
+}
