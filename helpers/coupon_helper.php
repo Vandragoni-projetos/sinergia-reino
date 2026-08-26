@@ -114,6 +114,86 @@ if (!function_exists('validarCupom')) {
     }
 }
 
+if (!function_exists('calcularDescontoCupomPorId')) {
+    /**
+     * Recalcula desconto de um cupom já identificado (checkout/pagamento).
+     * Não confia em valor_desconto enviado pelo cliente.
+     * @return array ['valid' => bool, 'cupom_id' => int|null, 'valor_desconto' => float, 'mensagem' => string]
+     */
+    function calcularDescontoCupomPorId($cupom_id, $produto_id, $valor_total, $usuario_id) {
+        global $pdo;
+        $result = ['valid' => false, 'cupom_id' => null, 'valor_desconto' => 0.0, 'mensagem' => ''];
+        $cupom_id = (int)$cupom_id;
+        $produto_id = (int)$produto_id;
+        $usuario_id = (int)$usuario_id;
+        $valor_total = (float)$valor_total;
+
+        if ($cupom_id <= 0 || $produto_id <= 0 || $usuario_id <= 0 || !isset($pdo)) {
+            $result['mensagem'] = 'Cupom inválido.';
+            return $result;
+        }
+
+        try {
+            $stmt = $pdo->prepare("SELECT * FROM cupons WHERE id = ? AND usuario_id = ? AND ativo = 1");
+            $stmt->execute([$cupom_id, $usuario_id]);
+            $cupom = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$cupom) {
+                $result['mensagem'] = 'Cupom não encontrado ou inativo.';
+                return $result;
+            }
+
+            $now = date('Y-m-d H:i:s');
+            if ($cupom['valido_de'] && $cupom['valido_de'] > $now) {
+                $result['mensagem'] = 'Este cupom ainda não está válido.';
+                return $result;
+            }
+            if ($cupom['valido_ate'] && $cupom['valido_ate'] < $now) {
+                $result['mensagem'] = 'Este cupom expirou.';
+                return $result;
+            }
+            if ($cupom['max_usos'] !== null && (int)$cupom['usos_atual'] >= (int)$cupom['max_usos']) {
+                $result['mensagem'] = 'Este cupom atingiu o limite de usos.';
+                return $result;
+            }
+
+            $pedido_minimo = $cupom['pedido_minimo'] !== null ? (float)$cupom['pedido_minimo'] : null;
+            if ($pedido_minimo !== null && $valor_total < $pedido_minimo) {
+                $result['mensagem'] = 'Pedido mínimo de R$ ' . number_format($pedido_minimo, 2, ',', '.') . ' para usar este cupom.';
+                return $result;
+            }
+
+            $stmt_cp = $pdo->prepare("SELECT COUNT(*) FROM cupom_produtos WHERE cupom_id = ? AND produto_id = ?");
+            $stmt_cp->execute([$cupom['id'], $produto_id]);
+            $tem_restricao = $stmt_cp->fetchColumn() > 0;
+            $stmt_all = $pdo->prepare("SELECT COUNT(*) FROM cupom_produtos WHERE cupom_id = ?");
+            $stmt_all->execute([$cupom['id']]);
+            $total_produtos = $stmt_all->fetchColumn();
+            if ($total_produtos > 0 && !$tem_restricao) {
+                $result['mensagem'] = 'Este cupom não é válido para este produto.';
+                return $result;
+            }
+
+            $valor_desconto = 0.0;
+            if ($cupom['tipo'] === 'percentual') {
+                $pct = min(100, max(0, (float)$cupom['valor']));
+                $valor_desconto = round($valor_total * ($pct / 100), 2);
+            } else {
+                $valor_desconto = min((float)$cupom['valor'], $valor_total);
+            }
+
+            $result['valid'] = true;
+            $result['cupom_id'] = (int)$cupom['id'];
+            $result['valor_desconto'] = $valor_desconto;
+            $result['mensagem'] = 'Cupom aplicado.';
+            return $result;
+        } catch (PDOException $e) {
+            error_log("coupon_helper calcularDescontoCupomPorId: " . $e->getMessage());
+            $result['mensagem'] = 'Erro ao validar cupom.';
+            return $result;
+        }
+    }
+}
+
 if (!function_exists('incrementarUsoCupom')) {
     function incrementarUsoCupom($cupom_id) {
         global $pdo;
