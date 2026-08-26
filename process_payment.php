@@ -208,6 +208,18 @@ try {
     // UTMs
     $utm_parameters = $data['utm_parameters'] ?? [];
 
+    // Fonte da verdade: recalcula total no servidor (IDs de bump + preços do banco; ignora valor monetário do navegador)
+    $recalc = process_payment_recalculate_from_db($pdo, $data, (int)$main_product_id, $product_info, $checkout_config, (int)$usuario_id);
+    $data['transaction_amount'] = $recalc['transaction_amount'];
+    $data['order_bump_product_ids'] = $recalc['order_bump_product_ids'];
+    $data['cupom_id'] = $recalc['cupom_id'];
+    $data['valor_desconto'] = $recalc['valor_desconto'];
+    $data['_resolved_bump_prices'] = $recalc['bump_prices'];
+    if (array_key_exists('oferta_id', $recalc)) {
+        $data['oferta_id'] = $recalc['oferta_id'];
+    }
+    log_process('Total recalculado no servidor: ' . number_format((float)$data['transaction_amount'], 2, '.', '') . ' | bumps=' . count($recalc['order_bump_product_ids']) . ' | cupom_desc=' . number_format((float)$data['valor_desconto'], 2, '.', ''));
+
     // ==========================================================
     // FLUXO PUSHINPAY
     // ==========================================================
@@ -986,6 +998,166 @@ try {
     returnJsonError($msg ?: 'Erro interno do servidor', 500);
 }
 
+function process_payment_resolve_bump_price($preco, $preco_order_bump) {
+    $preco = (float)$preco;
+    if ($preco_order_bump === null || $preco_order_bump === '') {
+        return $preco;
+    }
+    $pob = (float)$preco_order_bump;
+    return ($pob > 0) ? $pob : $preco;
+}
+
+/**
+ * Recalcula o valor cobrado a partir do banco:
+ * principal (+ oferta) + bumps (preço efetivo OB) -> cupom -> Pix.
+ * Ignora transaction_amount / preços monetários do cliente.
+ */
+function process_payment_recalculate_from_db(PDO $pdo, array $data, int $main_product_id, array $product_info, array $checkout_config, int $usuario_id) {
+    $main_price_brl = (float)($product_info['preco'] ?? 0);
+    $preco_catalogo_brl = $main_price_brl;
+
+    $oferta_id = isset($data['oferta_id']) && $data['oferta_id'] ? (int)$data['oferta_id'] : 0;
+    if ($oferta_id > 0) {
+        try {
+            $stmt_oferta = $pdo->prepare("SELECT preco FROM produto_ofertas WHERE id = ? AND produto_id = ? AND ativo = 1");
+            $stmt_oferta->execute([$oferta_id, $main_product_id]);
+            $oferta = $stmt_oferta->fetch(PDO::FETCH_ASSOC);
+            if ($oferta) {
+                $main_price_brl = (float)$oferta['preco'];
+            } else {
+                $oferta_id = 0;
+            }
+        } catch (PDOException $e) {
+            $oferta_id = 0;
+        }
+    }
+
+    // Filtra IDs de bump: apenas os vinculados e ativos neste checkout
+    $requested_bump_ids = [];
+    if (isset($data['order_bump_product_ids']) && is_array($data['order_bump_product_ids'])) {
+        foreach ($data['order_bump_product_ids'] as $raw_id) {
+            $bid = (int)$raw_id;
+            if ($bid > 0 && $bid !== $main_product_id) {
+                $requested_bump_ids[$bid] = $bid;
+            }
+        }
+        $requested_bump_ids = array_values($requested_bump_ids);
+    }
+
+    $bump_prices = []; // id => preço efetivo na moeda de cobrança
+    $bump_prices_brl = [];
+    $order_bump_product_ids = [];
+
+    if (!empty($requested_bump_ids)) {
+        $placeholders = implode(',', array_fill(0, count($requested_bump_ids), '?'));
+        $sql = "
+            SELECT p.id, p.preco, p.preco_order_bump
+            FROM order_bumps ob
+            INNER JOIN produtos p ON p.id = ob.offer_product_id
+            WHERE ob.main_product_id = ?
+              AND ob.is_active = 1
+              AND p.usuario_id = ?
+              AND ob.offer_product_id IN ($placeholders)
+        ";
+        $params = array_merge([$main_product_id, $usuario_id], $requested_bump_ids);
+        $stmt_bumps = $pdo->prepare($sql);
+        $stmt_bumps->execute($params);
+        while ($row = $stmt_bumps->fetch(PDO::FETCH_ASSOC)) {
+            $bid = (int)$row['id'];
+            $eff = process_payment_resolve_bump_price($row['preco'], $row['preco_order_bump'] ?? null);
+            $bump_prices_brl[$bid] = $eff;
+            $order_bump_product_ids[] = $bid;
+        }
+    }
+
+    $bumps_total_brl = array_sum($bump_prices_brl);
+
+    // Moeda de cobrança (USD internacional espelha a proporção do checkout)
+    $currency = strtolower((string)($data['currency'] ?? 'brl'));
+    $price_usd = (!empty($product_info['price_usd']) && (float)$product_info['price_usd'] > 0)
+        ? (float)$product_info['price_usd']
+        : null;
+    $use_usd = ($currency === 'usd' && $price_usd !== null);
+
+    if ($use_usd) {
+        $main_price = $price_usd;
+        if ($oferta_id > 0 && $preco_catalogo_brl > 0 && abs($main_price_brl - $preco_catalogo_brl) > 0.00001) {
+            $main_price = $price_usd * ($main_price_brl / $preco_catalogo_brl);
+        }
+        $rate = ($main_price_brl > 0) ? ($main_price / $main_price_brl) : 0.0;
+        foreach ($bump_prices_brl as $bid => $eff_brl) {
+            $bump_prices[$bid] = round($eff_brl * $rate, 2);
+        }
+        $bumps_total = array_sum($bump_prices);
+    } else {
+        $main_price = $main_price_brl;
+        $bump_prices = $bump_prices_brl;
+        $bumps_total = $bumps_total_brl;
+    }
+
+    $subtotal = round($main_price + $bumps_total, 2);
+
+    // Cupom (sobre principal + bumps), recalculado no servidor
+    $cupom_id = isset($data['cupom_id']) && $data['cupom_id'] ? (int)$data['cupom_id'] : null;
+    $valor_desconto = 0.0;
+    if ($cupom_id && function_exists('calcularDescontoCupomPorId')) {
+        $cupom_result = calcularDescontoCupomPorId($cupom_id, $main_product_id, $subtotal, $usuario_id);
+        if (!empty($cupom_result['valid'])) {
+            $cupom_id = (int)$cupom_result['cupom_id'];
+            $valor_desconto = (float)$cupom_result['valor_desconto'];
+        } else {
+            $cupom_id = null;
+            $valor_desconto = 0.0;
+        }
+    } else {
+        $cupom_id = null;
+    }
+
+    $after_coupon = max(0.0, round($subtotal - $valor_desconto, 2));
+
+    // Pix (após cupom), a partir de checkout_config — mesma ordem do frontend
+    $pix_discount = 0.0;
+    $is_pix = process_payment_is_pix_request($data);
+    if ($is_pix) {
+        $pix_cfg = $checkout_config['paymentMethods']['pix_discount'] ?? [];
+        $pix_enabled = !empty($pix_cfg['enabled']);
+        $pix_type = $pix_cfg['type'] ?? 'percentage';
+        $pix_value = (float)($pix_cfg['value'] ?? 0);
+        if ($pix_enabled && $pix_value > 0 && $after_coupon > 0) {
+            if ($pix_type === 'percentage') {
+                $pix_discount = round($after_coupon * ($pix_value / 100), 2);
+            } else {
+                $pix_discount = min($pix_value, $after_coupon);
+            }
+        }
+    }
+
+    $transaction_amount = max(0.0, round($after_coupon - $pix_discount, 2));
+
+    return [
+        'transaction_amount' => $transaction_amount,
+        'order_bump_product_ids' => $order_bump_product_ids,
+        'bump_prices' => $bump_prices,
+        'cupom_id' => $cupom_id,
+        'valor_desconto' => $valor_desconto,
+        'main_price' => $main_price,
+        'oferta_id' => $oferta_id > 0 ? $oferta_id : null,
+    ];
+}
+
+function process_payment_is_pix_request(array $data) {
+    $pm = strtolower((string)($data['payment_method_id'] ?? ''));
+    $gw = strtolower((string)($data['gateway'] ?? ''));
+    if (strpos($pm, 'pix') !== false) {
+        return true;
+    }
+    // PushinPay neste fluxo é sempre Pix
+    if ($gw === 'pushinpay') {
+        return true;
+    }
+    return false;
+}
+
 function save_sales($pdo, $data, $main_id, $payment_id, $status, $metodo, $uuid, $utm_params) {
     // Verifica limitações via hooks (SaaS) - antes de criar venda
     $hooks_paths = [
@@ -1038,21 +1210,31 @@ function save_sales($pdo, $data, $main_id, $payment_id, $status, $metodo, $uuid,
         }
         
         $placeholders = implode(',', array_fill(0, count($products), '?'));
-        $stmt_info = $pdo->prepare("SELECT id, preco, COALESCE(community_id, 1) AS community_id FROM produtos WHERE id IN ($placeholders)");
+        $stmt_info = $pdo->prepare("SELECT id, preco, preco_order_bump, COALESCE(community_id, 1) AS community_id FROM produtos WHERE id IN ($placeholders)");
         $stmt_info->execute($products);
         $prod_map = $stmt_info->fetchAll(PDO::FETCH_UNIQUE | PDO::FETCH_ASSOC);
 
         $stmt_insert = $pdo->prepare("INSERT INTO vendas (produto_id, community_id, oferta_id, comprador_nome, comprador_email, comprador_cpf, comprador_telefone, valor, status_pagamento, transacao_id, metodo_pagamento, checkout_session_uuid, cupom_id, valor_desconto, email_entrega_enviado, utm_source, utm_campaign, utm_medium, utm_content, utm_term, src, sck) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)");
 
-        // Calcular o valor total dos order bumps para determinar o valor do produto principal
+        $resolved_bump_prices = (isset($data['_resolved_bump_prices']) && is_array($data['_resolved_bump_prices']))
+            ? $data['_resolved_bump_prices']
+            : [];
+
+        // Soma dos bumps com preço efetivo de Order Bump (banco), nunca preço do navegador
         $order_bumps_total = 0;
         foreach ($order_bump_ids as $ob_id) {
-            if (isset($prod_map[$ob_id])) {
-                $order_bumps_total += (float)$prod_map[$ob_id]['preco'];
+            $ob_id = (int)$ob_id;
+            if (isset($resolved_bump_prices[$ob_id])) {
+                $order_bumps_total += (float)$resolved_bump_prices[$ob_id];
+            } elseif (isset($prod_map[$ob_id])) {
+                $order_bumps_total += process_payment_resolve_bump_price(
+                    $prod_map[$ob_id]['preco'] ?? 0,
+                    $prod_map[$ob_id]['preco_order_bump'] ?? null
+                );
             }
         }
         
-        // O transaction_amount inclui produto principal (com desconto Pix se aplicável) + order bumps
+        // O transaction_amount (já recalculado no servidor) inclui principal (com cupom/Pix) + order bumps
         // Valor do produto principal = transaction_amount - total dos order bumps
         $transaction_amount = isset($data['transaction_amount']) ? (float)$data['transaction_amount'] : 0;
         $main_product_value = $transaction_amount - $order_bumps_total;
@@ -1065,15 +1247,24 @@ function save_sales($pdo, $data, $main_id, $payment_id, $status, $metodo, $uuid,
         foreach ($products as $pid) {
             if (isset($prod_map[$pid])) {
                 // Produto principal usa o valor calculado (com desconto Pix/cupom se aplicável)
-                // Order bumps usam o preço original e não têm oferta_id nem cupom
-                $val = ($pid == $main_id) ? $main_product_value : $prod_map[$pid]['preco'];
+                // Order bumps usam o preço efetivo de OB e não têm oferta_id nem cupom
+                if ($pid == $main_id) {
+                    $val = $main_product_value;
+                } elseif (isset($resolved_bump_prices[$pid])) {
+                    $val = (float)$resolved_bump_prices[$pid];
+                } else {
+                    $val = process_payment_resolve_bump_price(
+                        $prod_map[$pid]['preco'] ?? 0,
+                        $prod_map[$pid]['preco_order_bump'] ?? null
+                    );
+                }
                 $current_oferta_id = ($pid == $main_id) ? $oferta_id : null;
                 $current_cupom_id = ($pid == $main_id) ? $cupom_id : null;
                 $current_valor_desconto = ($pid == $main_id) ? $valor_desconto : 0.0;
                 $cid = (int)($prod_map[$pid]['community_id'] ?? 1);
                 $stmt_insert->execute([
                     $pid, $cid, $current_oferta_id, $data['name'], $data['email'], 
-                    preg_replace('/[^0-9]/', '', $data['cpf']), 
+                    preg_replace('/[^0-9]/', '', $data['cpf'] ?? ''), 
                     preg_replace('/[^0-9]/', '', $data['phone']), 
                     $val, $status, $payment_id, $metodo, $uuid,
                     $current_cupom_id, $current_valor_desconto,
