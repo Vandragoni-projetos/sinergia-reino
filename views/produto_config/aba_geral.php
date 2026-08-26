@@ -260,6 +260,70 @@
         </div>
     </div>
 
+    <?php
+    $taxonomy_main_categories = [];
+    $taxonomy_subcategories = [];
+    $current_main_category_id = isset($produto['main_category_id']) ? (int) $produto['main_category_id'] : 0;
+    $current_subcategory_id = isset($produto['subcategory_id']) ? (int) $produto['subcategory_id'] : 0;
+    $taxonomy_ui_enabled = function_exists('taxonomy_list_active_main_categories')
+        && function_exists('db_table_has_column')
+        && db_table_has_column($pdo, 'produtos', 'main_category_id');
+    if ($taxonomy_ui_enabled) {
+        $taxonomy_main_categories = taxonomy_list_active_main_categories($pdo, (int) ($usuario_id ?? $_SESSION['id'] ?? 0));
+        if ($current_main_category_id > 0 && function_exists('taxonomy_list_active_subcategories')) {
+            $taxonomy_subcategories = taxonomy_list_active_subcategories(
+                $pdo,
+                (int) ($usuario_id ?? $_SESSION['id'] ?? 0),
+                $current_main_category_id
+            );
+        }
+    }
+    ?>
+
+    <!-- Classificação Temática (complementar ao Tipo/Categoria) -->
+    <?php if ($taxonomy_ui_enabled): ?>
+    <div>
+        <h2 class="text-xl font-semibold mb-4 text-white flex items-center gap-2">
+            <i data-lucide="folder-tree" class="w-5 h-5 text-[#32e768]"></i>
+            Classificação Temática
+            <span class="text-sm font-normal text-gray-400">(opcional)</span>
+        </h2>
+        <div class="bg-dark-elevated p-6 rounded-lg border border-dark-border space-y-4">
+            <p class="text-xs text-gray-400">
+                Diferente do <strong class="text-gray-300">Tipo/Categoria</strong> (formato do produto). Use para organizar por tema.
+                <a href="/index?pagina=categorias_produto" class="text-[#32e768] hover:text-[#28d15e] hover:underline ml-1">Gerenciar categorias temáticas</a>
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label for="main_category_id" class="block text-gray-300 text-sm font-semibold mb-2">Categoria Principal</label>
+                    <select id="main_category_id" name="main_category_id" class="form-input cursor-pointer">
+                        <option value="">Selecione uma categoria...</option>
+                        <?php foreach ($taxonomy_main_categories as $main_cat): ?>
+                            <option value="<?php echo (int) $main_cat['id']; ?>" <?php echo $current_main_category_id === (int) $main_cat['id'] ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($main_cat['nome']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div>
+                    <label for="subcategory_id" class="block text-gray-300 text-sm font-semibold mb-2">Subcategoria</label>
+                    <select id="subcategory_id" name="subcategory_id" class="form-input cursor-pointer" <?php echo $current_main_category_id <= 0 ? 'disabled' : ''; ?>>
+                        <option value="">Selecione uma subcategoria...</option>
+                        <?php foreach ($taxonomy_subcategories as $sub_cat): ?>
+                            <option value="<?php echo (int) $sub_cat['id']; ?>" <?php echo $current_subcategory_id === (int) $sub_cat['id'] ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($sub_cat['nome']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <p id="subcategory-hint" class="text-xs text-gray-500 mt-1 <?php echo $current_main_category_id > 0 ? 'hidden' : ''; ?>">
+                        Selecione uma categoria principal primeiro.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- URL da Página de Vendas -->
     <div>
         <h2 class="text-xl font-semibold mb-4 text-white flex items-center gap-2">
@@ -489,6 +553,75 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+(function() {
+    var mainSelect = document.getElementById('main_category_id');
+    var subSelect = document.getElementById('subcategory_id');
+    if (!mainSelect || !subSelect) return;
+
+    var subHint = document.getElementById('subcategory-hint');
+    var initialSubId = subSelect.value || '';
+
+    function setSubcategoryOptions(items, selectedId) {
+        subSelect.innerHTML = '<option value="">Selecione uma subcategoria...</option>';
+        (items || []).forEach(function(item) {
+            var opt = document.createElement('option');
+            opt.value = String(item.id);
+            opt.textContent = item.nome || '';
+            if (selectedId && String(item.id) === String(selectedId)) {
+                opt.selected = true;
+            }
+            subSelect.appendChild(opt);
+        });
+    }
+
+    function loadSubcategories(mainId, preserveSelection) {
+        if (!mainId) {
+            subSelect.innerHTML = '<option value="">Selecione uma subcategoria...</option>';
+            subSelect.value = '';
+            subSelect.disabled = true;
+            if (subHint) subHint.classList.remove('hidden');
+            return;
+        }
+
+        subSelect.disabled = true;
+        subSelect.innerHTML = '<option value="">Carregando...</option>';
+        if (subHint) subHint.classList.add('hidden');
+
+        fetch('/api/api?action=list_product_subcategories&main_category_id=' + encodeURIComponent(mainId))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data.success) {
+                    setSubcategoryOptions([], '');
+                    subSelect.disabled = false;
+                    return;
+                }
+                var activeItems = (data.items || []).filter(function(item) {
+                    return Number(item.ativo) === 1;
+                });
+                var selected = preserveSelection ? initialSubId : '';
+                if (preserveSelection && selected && !activeItems.some(function(i) { return String(i.id) === String(selected); })) {
+                    selected = '';
+                }
+                setSubcategoryOptions(activeItems, selected);
+                subSelect.disabled = false;
+                if (preserveSelection) initialSubId = '';
+            })
+            .catch(function() {
+                setSubcategoryOptions([], '');
+                subSelect.disabled = false;
+            });
+    }
+
+    mainSelect.addEventListener('change', function() {
+        initialSubId = '';
+        loadSubcategories(mainSelect.value, false);
+    });
+
+    if (mainSelect.value && subSelect.options.length <= 1) {
+        loadSubcategories(mainSelect.value, true);
+    }
+})();
 
 // Inicializa o estado dos campos de preço e do toggle ao carregar a página
 document.addEventListener('DOMContentLoaded', function() {
