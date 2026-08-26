@@ -263,19 +263,33 @@
     <?php
     $taxonomy_main_categories = [];
     $taxonomy_subcategories = [];
+    $taxonomy_preserve_sub = null;
     $current_main_category_id = isset($produto['main_category_id']) ? (int) $produto['main_category_id'] : 0;
     $current_subcategory_id = isset($produto['subcategory_id']) ? (int) $produto['subcategory_id'] : 0;
-    $taxonomy_ui_enabled = function_exists('taxonomy_list_active_main_categories')
+    $taxonomy_ui_enabled = function_exists('taxonomy_main_categories_for_product_select')
         && function_exists('db_table_has_column')
         && db_table_has_column($pdo, 'produtos', 'main_category_id');
     if ($taxonomy_ui_enabled) {
-        $taxonomy_main_categories = taxonomy_list_active_main_categories($pdo, (int) ($usuario_id ?? $_SESSION['id'] ?? 0));
-        if ($current_main_category_id > 0 && function_exists('taxonomy_list_active_subcategories')) {
-            $taxonomy_subcategories = taxonomy_list_active_subcategories(
+        $uid_tax = (int) ($usuario_id ?? $_SESSION['id'] ?? 0);
+        $taxonomy_main_categories = taxonomy_main_categories_for_product_select($pdo, $uid_tax, $current_main_category_id ?: null);
+        if ($current_main_category_id > 0 && function_exists('taxonomy_subcategories_for_product_select')) {
+            $taxonomy_subcategories = taxonomy_subcategories_for_product_select(
                 $pdo,
-                (int) ($usuario_id ?? $_SESSION['id'] ?? 0),
-                $current_main_category_id
+                $uid_tax,
+                $current_main_category_id,
+                $current_subcategory_id ?: null
             );
+            if ($current_subcategory_id > 0) {
+                foreach ($taxonomy_subcategories as $sub_row) {
+                    if ((int) $sub_row['id'] === $current_subcategory_id && (int) ($sub_row['ativo'] ?? 1) !== 1) {
+                        $taxonomy_preserve_sub = [
+                            'id' => (int) $sub_row['id'],
+                            'nome' => taxonomy_format_select_option_label($sub_row),
+                        ];
+                        break;
+                    }
+                }
+            }
         }
     }
     ?>
@@ -300,7 +314,7 @@
                         <option value="">Selecione uma categoria...</option>
                         <?php foreach ($taxonomy_main_categories as $main_cat): ?>
                             <option value="<?php echo (int) $main_cat['id']; ?>" <?php echo $current_main_category_id === (int) $main_cat['id'] ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($main_cat['nome']); ?>
+                                <?php echo htmlspecialchars(taxonomy_format_select_option_label($main_cat)); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -311,7 +325,7 @@
                         <option value="">Selecione uma subcategoria...</option>
                         <?php foreach ($taxonomy_subcategories as $sub_cat): ?>
                             <option value="<?php echo (int) $sub_cat['id']; ?>" <?php echo $current_subcategory_id === (int) $sub_cat['id'] ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($sub_cat['nome']); ?>
+                                <?php echo htmlspecialchars(taxonomy_format_select_option_label($sub_cat)); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
@@ -561,18 +575,34 @@ document.addEventListener('DOMContentLoaded', function() {
 
     var subHint = document.getElementById('subcategory-hint');
     var initialSubId = subSelect.value || '';
+    var preserveSubOption = <?php echo json_encode($taxonomy_preserve_sub, JSON_UNESCAPED_UNICODE); ?>;
 
-    function setSubcategoryOptions(items, selectedId) {
+    function inactiveLabel(nome) {
+        return (nome || '').indexOf('(Inativa)') !== -1 ? nome : (nome + ' (Inativa)');
+    }
+
+    function setSubcategoryOptions(items, selectedId, includePreserve) {
         subSelect.innerHTML = '<option value="">Selecione uma subcategoria...</option>';
+        var seen = {};
         (items || []).forEach(function(item) {
+            var id = String(item.id);
+            if (seen[id]) return;
+            seen[id] = true;
             var opt = document.createElement('option');
-            opt.value = String(item.id);
-            opt.textContent = item.nome || '';
-            if (selectedId && String(item.id) === String(selectedId)) {
+            opt.value = id;
+            opt.textContent = item.nome || item.label || '';
+            if (selectedId && id === String(selectedId)) {
                 opt.selected = true;
             }
             subSelect.appendChild(opt);
         });
+        if (includePreserve && preserveSubOption && selectedId && String(preserveSubOption.id) === String(selectedId) && !seen[String(preserveSubOption.id)]) {
+            var preserveOpt = document.createElement('option');
+            preserveOpt.value = String(preserveSubOption.id);
+            preserveOpt.textContent = preserveSubOption.nome || inactiveLabel('');
+            preserveOpt.selected = true;
+            subSelect.appendChild(preserveOpt);
+        }
     }
 
     function loadSubcategories(mainId, preserveSelection) {
@@ -592,31 +622,40 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (!data.success) {
-                    setSubcategoryOptions([], '');
+                    setSubcategoryOptions([], '', preserveSelection);
                     subSelect.disabled = false;
                     return;
                 }
                 var activeItems = (data.items || []).filter(function(item) {
                     return Number(item.ativo) === 1;
+                }).map(function(item) {
+                    return { id: item.id, nome: item.nome };
                 });
                 var selected = preserveSelection ? initialSubId : '';
-                if (preserveSelection && selected && !activeItems.some(function(i) { return String(i.id) === String(selected); })) {
-                    selected = '';
-                }
-                setSubcategoryOptions(activeItems, selected);
+                setSubcategoryOptions(activeItems, selected, preserveSelection);
                 subSelect.disabled = false;
                 if (preserveSelection) initialSubId = '';
             })
             .catch(function() {
-                setSubcategoryOptions([], '');
+                setSubcategoryOptions([], '', false);
                 subSelect.disabled = false;
             });
     }
 
     mainSelect.addEventListener('change', function() {
         initialSubId = '';
+        preserveSubOption = null;
         loadSubcategories(mainSelect.value, false);
     });
+
+    var productForm = document.querySelector('form[action*="produto_config"]');
+    if (productForm) {
+        productForm.addEventListener('submit', function() {
+            if (mainSelect.value) {
+                subSelect.disabled = false;
+            }
+        });
+    }
 
     if (mainSelect.value && subSelect.options.length <= 1) {
         loadSubcategories(mainSelect.value, true);
