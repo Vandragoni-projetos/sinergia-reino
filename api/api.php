@@ -3680,6 +3680,152 @@ EOT;
     }
 
     // =====================================================
+    // TAXONOMIA TEMÁTICA (product_main_categories / product_subcategories)
+    // Independente de product_type / product_type_categories
+    // =====================================================
+
+    if ($action == 'list_product_main_categories') {
+        try {
+            $items = taxonomy_list_main_categories($pdo, (int) $usuario_id_logado);
+            ob_clean();
+            echo json_encode(['success' => true, 'items' => $items]);
+        } catch (PDOException $e) {
+            http_response_code(500);
+            ob_clean();
+            error_log("API: Erro ao listar categorias principais: " . $e->getMessage());
+            echo json_encode(['success' => false, 'error' => 'Erro ao listar categorias principais']);
+        }
+        exit;
+    }
+
+    if ($action == 'create_product_main_category' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true) ?: [];
+        $result = taxonomy_create_main_category($pdo, (int) $usuario_id_logado, $input);
+        ob_clean();
+        if (!$result['success']) {
+            echo json_encode(['success' => false, 'error' => $result['error']]);
+        } else {
+            echo json_encode([
+                'success' => true,
+                'message' => $result['message'],
+                'id' => $result['id'] ?? null,
+            ]);
+        }
+        exit;
+    }
+
+    if ($action == 'update_product_main_category' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true) ?: [];
+        $id = (int) ($input['id'] ?? 0);
+        if ($id <= 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'ID inválido']);
+            exit;
+        }
+        $result = taxonomy_update_main_category($pdo, (int) $usuario_id_logado, $id, $input);
+        ob_clean();
+        echo json_encode($result['success']
+            ? ['success' => true, 'message' => $result['message']]
+            : ['success' => false, 'error' => $result['error']]);
+        exit;
+    }
+
+    if ($action == 'delete_product_main_category' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true) ?: [];
+        $id = (int) ($input['id'] ?? 0);
+        if ($id <= 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'ID inválido']);
+            exit;
+        }
+        $result = taxonomy_delete_main_category($pdo, (int) $usuario_id_logado, $id);
+        ob_clean();
+        echo json_encode($result['success']
+            ? ['success' => true, 'message' => $result['message']]
+            : ['success' => false, 'error' => $result['error']]);
+        exit;
+    }
+
+    if ($action == 'list_product_subcategories') {
+        try {
+            $main_category_id = isset($_GET['main_category_id']) ? (int) $_GET['main_category_id'] : 0;
+            if ($main_category_id <= 0 && $_SERVER['REQUEST_METHOD'] === 'POST') {
+                $input = json_decode(file_get_contents('php://input'), true) ?: [];
+                $main_category_id = (int) ($input['main_category_id'] ?? 0);
+            }
+            if ($main_category_id > 0) {
+                $main_assert = taxonomy_assert_main_category_owner($pdo, $main_category_id, (int) $usuario_id_logado);
+                if (!$main_assert['ok']) {
+                    ob_clean();
+                    echo json_encode(['success' => false, 'error' => $main_assert['error']]);
+                    exit;
+                }
+            }
+            $items = taxonomy_list_subcategories(
+                $pdo,
+                (int) $usuario_id_logado,
+                $main_category_id > 0 ? $main_category_id : null
+            );
+            ob_clean();
+            echo json_encode(['success' => true, 'items' => $items]);
+        } catch (PDOException $e) {
+            http_response_code(500);
+            ob_clean();
+            error_log("API: Erro ao listar subcategorias: " . $e->getMessage());
+            echo json_encode(['success' => false, 'error' => 'Erro ao listar subcategorias']);
+        }
+        exit;
+    }
+
+    if ($action == 'create_product_subcategory' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true) ?: [];
+        $result = taxonomy_create_subcategory($pdo, (int) $usuario_id_logado, $input);
+        ob_clean();
+        if (!$result['success']) {
+            echo json_encode(['success' => false, 'error' => $result['error']]);
+        } else {
+            echo json_encode([
+                'success' => true,
+                'message' => $result['message'],
+                'id' => $result['id'] ?? null,
+            ]);
+        }
+        exit;
+    }
+
+    if ($action == 'update_product_subcategory' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true) ?: [];
+        $id = (int) ($input['id'] ?? 0);
+        if ($id <= 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'ID inválido']);
+            exit;
+        }
+        $result = taxonomy_update_subcategory($pdo, (int) $usuario_id_logado, $id, $input);
+        ob_clean();
+        echo json_encode($result['success']
+            ? ['success' => true, 'message' => $result['message']]
+            : ['success' => false, 'error' => $result['error']]);
+        exit;
+    }
+
+    if ($action == 'delete_product_subcategory' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $input = json_decode(file_get_contents('php://input'), true) ?: [];
+        $id = (int) ($input['id'] ?? 0);
+        if ($id <= 0) {
+            ob_clean();
+            echo json_encode(['success' => false, 'error' => 'ID inválido']);
+            exit;
+        }
+        $result = taxonomy_delete_subcategory($pdo, (int) $usuario_id_logado, $id);
+        ob_clean();
+        echo json_encode($result['success']
+            ? ['success' => true, 'message' => $result['message']]
+            : ['success' => false, 'error' => $result['error']]);
+        exit;
+    }
+
+    // =====================================================
     // CUPONS DE DESCONTO
     // =====================================================
 
