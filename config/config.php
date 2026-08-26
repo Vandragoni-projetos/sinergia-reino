@@ -81,6 +81,7 @@ require_once __DIR__ . '/../helpers/community_helper.php';
 require_once __DIR__ . '/../helpers/security_helper.php';
 require_once __DIR__ . '/../helpers/image_helper.php';
 require_once __DIR__ . '/../helpers/product_helper.php';
+require_once __DIR__ . '/../helpers/product_taxonomy_helper.php';
 require_once __DIR__ . '/../helpers/coupon_helper.php';
 
 $redirect_session_error = function ($error_key, $message_pt) {
