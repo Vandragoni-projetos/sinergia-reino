@@ -93,7 +93,8 @@ try {
             ob.*, 
             p.id as ob_id,
             p.nome as ob_nome, 
-            p.preco as ob_preco, 
+            p.preco as ob_preco,
+            p.preco_order_bump as ob_preco_order_bump,
             p.preco_anterior as ob_preco_anterior,
             p.foto as ob_foto 
         FROM order_bumps as ob
@@ -103,6 +104,16 @@ try {
     ");
     $stmt_ob->execute([$produto['id']]);
     $order_bumps = $stmt_ob->fetchAll(PDO::FETCH_ASSOC);
+
+    // Preço efetivo no contexto Order Bump: preco_order_bump > 0 ? preco_order_bump : preco
+    foreach ($order_bumps as &$bump_row) {
+        $ob_preco_normal = floatval($bump_row['ob_preco'] ?? 0);
+        $ob_preco_secundario = isset($bump_row['ob_preco_order_bump']) && $bump_row['ob_preco_order_bump'] !== null && $bump_row['ob_preco_order_bump'] !== ''
+            ? floatval($bump_row['ob_preco_order_bump'])
+            : 0.0;
+        $bump_row['preco_efetivo_order_bump'] = ($ob_preco_secundario > 0) ? $ob_preco_secundario : $ob_preco_normal;
+    }
+    unset($bump_row);
 
     $checkout_config = json_decode($produto['checkout_config'] ?? '{}', true);
     if (!is_array($checkout_config)) { $checkout_config = []; }
@@ -384,8 +395,8 @@ function render_order_bumps_section($order_bumps_array) {
         $ob_headline = htmlspecialchars($bump['headline']);
         $ob_description = htmlspecialchars($bump['description']);
         $ob_name = htmlspecialchars($bump['ob_nome']);
-        $ob_price_formatted = 'R$ ' . number_format($bump['ob_preco'], 2, ',', '.');
-        $ob_price_raw = floatval($bump['ob_preco']);
+        $ob_price_raw = floatval($bump['preco_efetivo_order_bump'] ?? $bump['ob_preco']);
+        $ob_price_formatted = 'R$ ' . number_format($ob_price_raw, 2, ',', '.');
         $ob_id = intval($bump['ob_id']);
 
         $html .= "<div class='order-bump-wrapper'>";
@@ -1217,7 +1228,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         </div>
                         <div class="space-y-2">
                             <?php foreach ($order_bumps as $bump) {
-                                $ob_id = intval($bump['ob_id']); $ob_name = htmlspecialchars($bump['ob_nome']); $ob_price = floatval($bump['ob_preco']);
+                                $ob_id = intval($bump['ob_id']); $ob_name = htmlspecialchars($bump['ob_nome']); $ob_price = floatval($bump['preco_efetivo_order_bump'] ?? $bump['ob_preco']);
                                 $ob_usd = ($main_price_usd !== null && $main_price > 0) ? $ob_price * $main_price_usd / $main_price : null;
                                 $ob_brl = 'R$ ' . number_format($ob_price, 2, ',', '.');
                                 $ob_usd_str = $ob_usd !== null ? 'US$ ' . number_format($ob_usd, 2, ',', '.') : '';
