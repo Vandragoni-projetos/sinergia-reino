@@ -440,26 +440,120 @@ if (!function_exists('taxonomy_list_active_subcategories')) {
     }
 }
 
+if (!function_exists('taxonomy_format_select_option_label')) {
+    function taxonomy_format_select_option_label(array $row, bool $mark_inactive = true) {
+        $nome = (string) ($row['nome'] ?? '');
+        if ($mark_inactive && (int) ($row['ativo'] ?? 1) !== 1) {
+            return $nome . ' (Inativa)';
+        }
+        return $nome;
+    }
+}
+
+if (!function_exists('taxonomy_main_categories_for_product_select')) {
+    /**
+     * Opções de categoria principal para select de produto: ativas + vínculo inativo atual.
+     */
+    function taxonomy_main_categories_for_product_select(PDO $pdo, int $usuario_id, ?int $linked_main_id = null) {
+        $items = taxonomy_list_active_main_categories($pdo, $usuario_id);
+        $known_ids = [];
+        foreach ($items as $row) {
+            $known_ids[(int) $row['id']] = true;
+        }
+        $linked_main_id = (int) ($linked_main_id ?? 0);
+        if ($linked_main_id > 0 && !isset($known_ids[$linked_main_id])) {
+            $linked = taxonomy_get_main_category($pdo, $linked_main_id, $usuario_id);
+            if ($linked) {
+                $items[] = $linked;
+            }
+        }
+        usort($items, function ($a, $b) {
+            $ordem_cmp = ((int) ($a['ordem'] ?? 0)) <=> ((int) ($b['ordem'] ?? 0));
+            if ($ordem_cmp !== 0) {
+                return $ordem_cmp;
+            }
+            return strcasecmp((string) ($a['nome'] ?? ''), (string) ($b['nome'] ?? ''));
+        });
+        return $items;
+    }
+}
+
+if (!function_exists('taxonomy_subcategories_for_product_select')) {
+    /**
+     * Opções de subcategoria para select de produto: ativas + vínculo inativo atual.
+     */
+    function taxonomy_subcategories_for_product_select(PDO $pdo, int $usuario_id, ?int $main_category_id, ?int $linked_sub_id = null) {
+        $main_category_id = (int) ($main_category_id ?? 0);
+        if ($main_category_id <= 0) {
+            return [];
+        }
+        $items = taxonomy_list_active_subcategories($pdo, $usuario_id, $main_category_id);
+        $known_ids = [];
+        foreach ($items as $row) {
+            $known_ids[(int) $row['id']] = true;
+        }
+        $linked_sub_id = (int) ($linked_sub_id ?? 0);
+        if ($linked_sub_id > 0 && !isset($known_ids[$linked_sub_id])) {
+            $linked = taxonomy_get_subcategory($pdo, $linked_sub_id, $usuario_id);
+            if ($linked && (int) $linked['main_category_id'] === $main_category_id) {
+                $items[] = $linked;
+            }
+        }
+        usort($items, function ($a, $b) {
+            $ordem_cmp = ((int) ($a['ordem'] ?? 0)) <=> ((int) ($b['ordem'] ?? 0));
+            if ($ordem_cmp !== 0) {
+                return $ordem_cmp;
+            }
+            return strcasecmp((string) ($a['nome'] ?? ''), (string) ($b['nome'] ?? ''));
+        });
+        return $items;
+    }
+}
+
 if (!function_exists('taxonomy_validate_product_category_assignment')) {
     /**
      * Valida associação produto → categoria principal / subcategoria (save backend).
      *
      * @param mixed $main_raw Valor bruto do POST (main_category_id)
-     * @param mixed $sub_raw Valor bruto do POST (subcategory_id)
+     * @param mixed $sub_raw Valor bruto do POST (subcategory_id); null se campo ausente (ex.: disabled)
+     * @param int|null $existing_main_id Vínculo atual do produto (preservação)
+     * @param int|null $existing_sub_id Vínculo atual do produto (preservação)
+     * @param bool $subcategory_id_in_post Se subcategory_id veio no POST
      * @return array{ok:bool, main_category_id:?int, subcategory_id:?int, error:?string}
      */
-    function taxonomy_validate_product_category_assignment(PDO $pdo, int $usuario_id, $main_raw, $sub_raw) {
+    function taxonomy_validate_product_category_assignment(
+        PDO $pdo,
+        int $usuario_id,
+        $main_raw,
+        $sub_raw,
+        ?int $existing_main_id = null,
+        ?int $existing_sub_id = null,
+        bool $subcategory_id_in_post = true
+    ) {
         if ($usuario_id <= 0) {
             return ['ok' => false, 'main_category_id' => null, 'subcategory_id' => null, 'error' => 'Usuário inválido'];
         }
 
+        $existing_main_id = ($existing_main_id !== null && $existing_main_id > 0) ? (int) $existing_main_id : null;
+        $existing_sub_id = ($existing_sub_id !== null && $existing_sub_id > 0) ? (int) $existing_sub_id : null;
+
         $main_int = is_numeric($main_raw) ? (int) $main_raw : 0;
-        $sub_int = is_numeric($sub_raw) ? (int) $sub_raw : 0;
+        if ($subcategory_id_in_post) {
+            $sub_int = is_numeric($sub_raw) ? (int) $sub_raw : 0;
+        } else {
+            $sub_int = 0;
+        }
         if ($main_int < 0) {
             $main_int = 0;
         }
         if ($sub_int < 0) {
             $sub_int = 0;
+        }
+
+        // Campo sub ausente (disabled): preservar vínculo existente se main não mudou
+        if (!$subcategory_id_in_post && $existing_sub_id !== null && $existing_main_id !== null
+            && $main_int > 0 && $main_int === $existing_main_id) {
+            $sub_int = $existing_sub_id;
         }
 
         if ($sub_int > 0 && $main_int <= 0) {
