@@ -260,8 +260,8 @@ function update_banner($pdo, $usuario_id, $community_id) {
         throw new Exception('ID do banner não fornecido');
     }
     
-    // Verificar se o banner pertence ao usuário
-    $check_sql = "SELECT id FROM banners WHERE id = ? AND usuario_id = ?";
+    // Verificar se o banner pertence ao usuário (e carregar imagem atual)
+    $check_sql = "SELECT id, image_path, image_url FROM banners WHERE id = ? AND usuario_id = ?";
     $check_params = [$banner_id, $usuario_id];
     
     if ($community_id !== null) {
@@ -271,8 +271,9 @@ function update_banner($pdo, $usuario_id, $community_id) {
     
     $stmt_check = $pdo->prepare($check_sql);
     $stmt_check->execute($check_params);
+    $existing = $stmt_check->fetch(PDO::FETCH_ASSOC);
     
-    if (!$stmt_check->fetch()) {
+    if (!$existing) {
         throw new Exception('Banner não encontrado ou não pertence ao usuário');
     }
     
@@ -280,6 +281,14 @@ function update_banner($pdo, $usuario_id, $community_id) {
     $titulo = isset($data['titulo']) ? trim($data['titulo']) : null;
     $image_path = isset($data['image_path']) ? trim($data['image_path']) : null;
     $image_url = isset($data['image_url']) ? filter_var(trim($data['image_url']), FILTER_VALIDATE_URL) : null;
+    // Sem nova imagem no payload: preservar a já salva (ex.: só alterar "Onde exibir")
+    if (empty($image_path) && empty($image_url)) {
+        $image_path = !empty($existing['image_path']) ? $existing['image_path'] : null;
+        $image_url = !empty($existing['image_url']) ? $existing['image_url'] : null;
+    }
+    if (empty($image_path) && empty($image_url)) {
+        throw new Exception('É necessário fornecer uma imagem (upload ou URL)');
+    }
     $click_url = isset($data['click_url']) ? filter_var(trim($data['click_url']), FILTER_VALIDATE_URL) : null;
     $open_new_tab = isset($data['open_new_tab']) ? (int)$data['open_new_tab'] : 0;
     $is_active = isset($data['is_active']) ? (int)$data['is_active'] : 1;
