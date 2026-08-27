@@ -1629,6 +1629,7 @@ function render_sales_notification($config, $produto_nome_fallback) {
             const checkoutHash = '<?php echo htmlspecialchars($checkout_hash ?? '', ENT_QUOTES, 'UTF-8'); ?>';
             const infoprodutorId = <?php echo (int)$infoprodutor_id; ?>;
             const mainProductId = <?php echo (int)$produto['id']; ?>;
+            const CHECKOUT_RECOVERY_OBSERVE = <?php echo getSystemSetting('checkout_recovery_observe', '0') === '1' ? 'true' : 'false'; ?>;
             const summaryMainName = <?php echo json_encode($main_name, JSON_UNESCAPED_UNICODE); ?>;
             const summarySublineRaw = <?php echo $checkout_description_html !== '' ? json_encode($checkout_description_html, JSON_UNESCAPED_UNICODE) : 'null'; ?>;
             const summaryBadgesHtml = <?php echo json_encode($summary_benefit_badges_html, JSON_UNESCAPED_UNICODE); ?>;
@@ -1679,6 +1680,137 @@ function render_sales_notification($config, $produto_nome_fallback) {
             const emailInput = document.getElementById('email');
             const phoneInput = document.getElementById('phone');
             const cpfInput = document.getElementById('cpf');
+
+            // --- Observação de jornada (paralela ao pagamento; fail-open; flag off = zero requests) ---
+            const checkoutObserveNativeFetch = (typeof window.fetch === 'function') ? window.fetch.bind(window) : null;
+            let checkoutObserveLastMethod = null;
+            let checkoutObserveLastCustomerAt = 0;
+            let checkoutObserveLastCustomerKey = '';
+            let checkoutObserveLastPixKey = '';
+
+            function checkoutObserveGetBrowserUuid() {
+                const key = 'GatewayPro_observe_sid';
+                try {
+                    let id = sessionStorage.getItem(key);
+                    if (id && /^[A-Za-z0-9_-]{8,64}$/.test(id)) return id;
+                    id = generateUUID();
+                    sessionStorage.setItem(key, id);
+                    return id;
+                } catch (e) {
+                    return generateUUID();
+                }
+            }
+
+            function checkoutObserveIsProcessPaymentRequest(input) {
+                let raw = '';
+                if (typeof input === 'string') {
+                    raw = input;
+                } else if (typeof URL !== 'undefined' && input instanceof URL) {
+                    raw = input.href;
+                } else if (input && typeof input.url === 'string') {
+                    raw = input.url;
+                } else {
+                    return false;
+                }
+                let path = '';
+                try {
+                    if (/^https?:\/\//i.test(raw)) {
+                        path = new URL(raw).pathname;
+                    } else {
+                        const rel = raw.split('?')[0].split('#')[0];
+                        path = rel.charAt(0) === '/' ? rel : new URL(raw, window.location.href).pathname;
+                    }
+                } catch (e) {
+                    return false;
+                }
+                path = path.replace(/\/+$/, '') || '/';
+                return path === '/process_payment' || path === '/process_payment.php';
+            }
+
+            function observeCheckoutEvent(eventName, extra) {
+                if (!CHECKOUT_RECOVERY_OBSERVE || !checkoutObserveNativeFetch) return;
+                try {
+                    const body = {
+                        event_name: eventName,
+                        produto_id: mainProductId,
+                        browser_uuid: checkoutObserveGetBrowserUuid()
+                    };
+                    if (ofertaId) body.oferta_id = ofertaId;
+                    if (extra && typeof extra === 'object') {
+                        if (extra.nome) body.nome = extra.nome;
+                        if (extra.email) body.email = extra.email;
+                        if (extra.telefone) body.telefone = extra.telefone;
+                        if (extra.payment_method) body.payment_method = extra.payment_method;
+                        if (Array.isArray(extra.order_bump_product_ids) && extra.order_bump_product_ids.length) {
+                            body.order_bump_product_ids = extra.order_bump_product_ids;
+                        }
+                        if (extra.coupon_code) body.coupon_code = extra.coupon_code;
+                        if (extra.transacao_id) body.transacao_id = extra.transacao_id;
+                    }
+                    const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+                    const timer = controller ? setTimeout(function() { try { controller.abort(); } catch (e) {} }, 2000) : null;
+                    const opts = {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    };
+                    if (controller) opts.signal = controller.signal;
+                    const pending = checkoutObserveNativeFetch('/api/checkout_session_observe', opts);
+                    if (pending && typeof pending.catch === 'function') {
+                        pending.catch(function() {});
+                    }
+                    if (pending && typeof pending.finally === 'function') {
+                        pending.finally(function() { if (timer) clearTimeout(timer); });
+                    } else if (timer) {
+                        setTimeout(function() { clearTimeout(timer); }, 2000);
+                    }
+                } catch (e) {}
+            }
+
+            if (CHECKOUT_RECOVERY_OBSERVE) {
+                try {
+                    observeCheckoutEvent('opened');
+                } catch (e) {}
+
+                const checkoutObserveOriginalFetch = window.fetch;
+                window.fetch = function() {
+                    try {
+                        if (checkoutObserveIsProcessPaymentRequest(arguments[0])) {
+                            const extra = {};
+                            if (selectedPaymentMethod) extra.payment_method = selectedPaymentMethod;
+                            if (Array.isArray(acceptedOrderBumps) && acceptedOrderBumps.length) {
+                                extra.order_bump_product_ids = acceptedOrderBumps.slice();
+                            }
+                            const couponEl = document.getElementById('coupon-input');
+                            if (couponApplied && couponEl && couponEl.value) extra.coupon_code = couponEl.value.trim();
+                            observeCheckoutEvent('payment_attempted', extra);
+                        }
+                    } catch (e) {}
+                    return checkoutObserveOriginalFetch.apply(this, arguments);
+                };
+
+                const checkoutObserveCustomerBlur = function() {
+                    try {
+                        const nome = nameInput ? String(nameInput.value || '').trim() : '';
+                        const email = emailInput ? String(emailInput.value || '').trim() : '';
+                        if (!nome || !email) return;
+                        const phoneEl = document.getElementById('phone');
+                        let telefone = phoneEl ? String(phoneEl.value || '').replace(/\D+/g, '') : '';
+                        if (!telefone || telefone.replace(/0/g, '') === '' || telefone.length < 8) telefone = '';
+                        const key = nome + '|' + email + '|' + telefone;
+                        const now = Date.now();
+                        if (key === checkoutObserveLastCustomerKey && (now - checkoutObserveLastCustomerAt) < 2000) return;
+                        checkoutObserveLastCustomerKey = key;
+                        checkoutObserveLastCustomerAt = now;
+                        const extra = { nome: nome, email: email };
+                        if (telefone) extra.telefone = telefone;
+                        observeCheckoutEvent('customer_info', extra);
+                    } catch (e) {}
+                };
+                if (nameInput) nameInput.addEventListener('blur', checkoutObserveCustomerBlur);
+                if (emailInput) emailInput.addEventListener('blur', checkoutObserveCustomerBlur);
+                if (phoneInput) phoneInput.addEventListener('blur', checkoutObserveCustomerBlur);
+            }
             const customerFieldsConfig = <?php echo json_encode($customer_fields_config); ?>;
             let emailAlreadyExists = false; // Flag para indicar se o e-mail já existe no sistema
 
@@ -2234,6 +2366,11 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 
                 // Recriar ícones Lucide
                 lucide.createIcons();
+
+                if (CHECKOUT_RECOVERY_OBSERVE && methodType && methodType !== checkoutObserveLastMethod) {
+                    checkoutObserveLastMethod = methodType;
+                    try { observeCheckoutEvent('payment_method_selected', { payment_method: methodType }); } catch (e) {}
+                }
             }
             
             // Event listeners nos cards do grid
@@ -3211,6 +3348,21 @@ function render_sales_notification($config, $produto_nome_fallback) {
                 // Inicia verificação de status se tiver payment_id (usa URL do funil se enviada pelo backend)
                 if (paymentId) {
                     startPaymentCheck(paymentId, infoprodutorId, gatewayUsed, redirectUrlAfterApproval);
+                }
+
+                if (CHECKOUT_RECOVERY_OBSERVE) {
+                    try {
+                        const gw = String(gatewayUsed || '');
+                        const pid = (paymentId !== undefined && paymentId !== null) ? String(paymentId) : '';
+                        const pixSeenTxidGateways = { pushinpay: true, efi: true, mercadopago: true };
+                        if (pixSeenTxidGateways[gw] && pid !== '' && pid !== 'undefined' && pid !== 'null') {
+                            const pixKey = gw + '|' + pid;
+                            if (pixKey !== checkoutObserveLastPixKey) {
+                                checkoutObserveLastPixKey = pixKey;
+                                observeCheckoutEvent('pix_seen', { transacao_id: pid });
+                            }
+                        }
+                    } catch (e) {}
                 }
             }
 
