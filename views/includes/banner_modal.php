@@ -165,6 +165,10 @@
         return;
     }
 
+    // Imagem já salva no banner (edição): permite salvar checkboxes sem reenviar arquivo
+    let existingImagePath = null;
+    let existingImageUrl = null;
+
     let badgesCache = null;
     function carregarBadges() {
         if (badgesCache) return Promise.resolve(badgesCache);
@@ -227,6 +231,8 @@
             carregarBanner(bannerId);
         } else {
             // Limpar form para novo banner
+            existingImagePath = null;
+            existingImageUrl = null;
             form.reset();
             document.getElementById('banner-id').value = '';
             document.getElementById('banner-modal-title').innerHTML = '<i data-lucide="image" class="w-6 h-6 mr-3 text-[#32e768]"></i>Novo Banner Publicitário';
@@ -266,6 +272,8 @@
     // Fechar modal
     function fecharModal() {
         if (modal) modal.style.display = 'none';
+        existingImagePath = null;
+        existingImageUrl = null;
         if (form) form.reset();
         limparPreview();
     }
@@ -384,13 +392,16 @@
                     popularDropdownBadges(banner.badge_id || '');
                     carregarProdutosDropdown(banner.product_id || '');
 
+                    existingImagePath = banner.image_path || null;
+                    existingImageUrl = banner.image_url || null;
+
                     if (banner.image_url) {
                         tabUrl.click();
                         bannerUrl.value = banner.image_url;
                         document.getElementById('preview-url-img').src = banner.image_url;
                         document.getElementById('url-preview').classList.remove('hidden');
                     } else if (banner.image_path) {
-                        // Mostrar preview do upload existente
+                        // Mostrar preview do upload existente (sem exigir novo arquivo)
                         document.getElementById('preview-banner-img').src = '/' + banner.image_path;
                         document.getElementById('upload-placeholder').classList.add('hidden');
                         document.getElementById('upload-preview').classList.remove('hidden');
@@ -416,8 +427,9 @@
         try {
             let image_path = null;
             let image_url = bannerUrl.value.trim() || null;
+            const isEdit = !!(document.getElementById('banner-id').value);
 
-            // Se tem upload, fazer upload primeiro
+            // Se tem upload novo, fazer upload primeiro
             if (bannerUpload.files.length > 0) {
                 const formData = new FormData();
                 formData.append('banner_image', bannerUpload.files[0]);
@@ -435,9 +447,16 @@
                 
                 image_path = uploadData.image_path;
                 image_url = null; // Se fez upload, anula URL externa
+            } else if (image_url) {
+                // URL externa informada: substitui upload anterior
+                image_path = null;
+            } else if (isEdit && (existingImagePath || existingImageUrl)) {
+                // Edição sem trocar imagem: reutiliza a já salva (checkboxes, link, badge etc.)
+                image_path = existingImagePath;
+                image_url = existingImageUrl;
             }
 
-            // Validação: precisa de imagem (path ou url)
+            // Validação: precisa de imagem (nova OU já existente na edição)
             if (!image_path && !image_url) {
                 // Destaca a seção de imagem para o usuário
                 const imagemSection = document.querySelector('.bg-dark-elevated.p-6.rounded-xl');
