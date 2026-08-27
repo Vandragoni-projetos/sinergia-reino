@@ -33,6 +33,12 @@ try {
 } catch (PDOException $e) {}
 $cursos_adquiridos = [];
 $upload_dir = 'uploads/';
+$member_has_taxonomy_cols = function_exists('db_table_has_column') && db_table_has_column($pdo, 'produtos', 'main_category_id');
+$member_taxonomy_select_sql = $member_has_taxonomy_cols
+    ? ", p.main_category_id AS produto_main_category_id, p.subcategory_id AS produto_subcategory_id"
+    : '';
+$member_taxonomy_main_options = [];
+$member_taxonomy_sub_by_main = [];
 
 // Busca a logo do sistema
 $logo_url = 'https://midias.vitrineacademy.com.br/wp-content/uploads/2026/03/Logomarca-Hub-Sinergia-1000x412-1.png';
@@ -59,7 +65,7 @@ try {
             p.is_showcase AS produto_is_showcase,
             p.product_type AS produto_type,
             p.product_tagline AS produto_tagline,
-            p.usuario_id AS usuario_id,
+            p.usuario_id AS usuario_id{$member_taxonomy_select_sql},
             c.id AS curso_id,
             c.titulo AS curso_titulo,
             c.descricao AS curso_descricao,
@@ -170,6 +176,58 @@ try {
             $c['ultima_aula_id'] = $ultima_aula_por_produto[(int)$c['produto_id']] ?? null;
         }
         unset($c);
+    }
+
+    // Opções de filtro temático (somente categorias/sub presentes na biblioteca do aluno)
+    if ($member_has_taxonomy_cols && !empty($cursos_adquiridos)) {
+        $main_ids_library = [];
+        $sub_ids_library = [];
+        $seller_ids_library = [];
+        foreach ($cursos_adquiridos as $c) {
+            $seller_ids_library[(int) ($c['usuario_id'] ?? 0)] = true;
+            $mid = (int) ($c['produto_main_category_id'] ?? 0);
+            $sid = (int) ($c['produto_subcategory_id'] ?? 0);
+            if ($mid > 0) {
+                $main_ids_library[$mid] = true;
+            }
+            if ($sid > 0) {
+                $sub_ids_library[$sid] = true;
+            }
+        }
+        $seller_ids_library = array_keys(array_filter($seller_ids_library));
+        if (!empty($main_ids_library) && !empty($seller_ids_library)) {
+            $main_ph = implode(',', array_fill(0, count($main_ids_library), '?'));
+            $seller_ph = implode(',', array_fill(0, count($seller_ids_library), '?'));
+            $stmt_tax_main = $pdo->prepare("
+                SELECT id, nome, ordem
+                FROM product_main_categories
+                WHERE id IN ($main_ph) AND usuario_id IN ($seller_ph)
+                ORDER BY ordem ASC, nome ASC
+            ");
+            $stmt_tax_main->execute(array_merge(array_keys($main_ids_library), $seller_ids_library));
+            $member_taxonomy_main_options = $stmt_tax_main->fetchAll(PDO::FETCH_ASSOC);
+        }
+        if (!empty($sub_ids_library) && !empty($seller_ids_library)) {
+            $sub_ph = implode(',', array_fill(0, count($sub_ids_library), '?'));
+            $seller_ph = implode(',', array_fill(0, count($seller_ids_library), '?'));
+            $stmt_tax_sub = $pdo->prepare("
+                SELECT id, main_category_id, nome, ordem
+                FROM product_subcategories
+                WHERE id IN ($sub_ph) AND usuario_id IN ($seller_ph)
+                ORDER BY main_category_id ASC, ordem ASC, nome ASC
+            ");
+            $stmt_tax_sub->execute(array_merge(array_keys($sub_ids_library), $seller_ids_library));
+            while ($row = $stmt_tax_sub->fetch(PDO::FETCH_ASSOC)) {
+                $main_id = (int) $row['main_category_id'];
+                if (!isset($member_taxonomy_sub_by_main[$main_id])) {
+                    $member_taxonomy_sub_by_main[$main_id] = [];
+                }
+                $member_taxonomy_sub_by_main[$main_id][] = [
+                    'id' => (int) $row['id'],
+                    'nome' => $row['nome'],
+                ];
+            }
+        }
     }
 
     // Banners do infoprodutor para exibir no dashboard do cliente (com badge)
@@ -341,9 +399,10 @@ if (!isset($feed_items_biblioteca)) {
                     <a href="/member_area_dashboard">
                         <img src="<?php echo htmlspecialchars($logo_url); ?>" alt="Prime SinergIA Logo" class="h-10">
                     </a>
+                <div class="flex items-center flex-wrap gap-2 sm:gap-3">
                     <div class="relative flex items-center gap-2">
-                        <span class="text-sm text-gray-400 hidden sm:inline">Categoria</span>
-                        <select id="category-filter" class="bg-gray-800 border border-gray-600 text-gray-200 text-sm rounded-lg pl-3 pr-8 py-2 focus:ring-2 focus:ring-green-500/50 focus:border-green-500 cursor-pointer appearance-none" title="Filtrar por categoria">
+                        <span class="text-sm text-gray-400 hidden sm:inline">Tipo</span>
+                        <select id="category-filter" class="bg-gray-800 border border-gray-600 text-gray-200 text-sm rounded-lg pl-3 pr-8 py-2 focus:ring-2 focus:ring-green-500/50 focus:border-green-500 cursor-pointer appearance-none max-w-[11rem]" title="Filtrar por tipo/categoria do produto">
                             <option value="">Todas</option>
                             <?php foreach (getProductTypeOptions() as $group => $items): ?>
                             <optgroup label="— <?php echo htmlspecialchars($group); ?> —">
@@ -355,6 +414,26 @@ if (!isset($feed_items_biblioteca)) {
                         </select>
                         <i data-lucide="chevron-down" class="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"></i>
                     </div>
+                    <?php if ($member_has_taxonomy_cols && !empty($member_taxonomy_main_options)): ?>
+                    <div class="relative flex items-center gap-2">
+                        <span class="text-sm text-gray-400 hidden lg:inline">Categoria Principal</span>
+                        <select id="main-category-filter" class="bg-gray-800 border border-gray-600 text-gray-200 text-sm rounded-lg pl-3 pr-8 py-2 focus:ring-2 focus:ring-green-500/50 focus:border-green-500 cursor-pointer appearance-none max-w-[12rem]" title="Filtrar por categoria principal">
+                            <option value="">Todas</option>
+                            <?php foreach ($member_taxonomy_main_options as $main_opt): ?>
+                            <option value="<?php echo (int) $main_opt['id']; ?>"><?php echo htmlspecialchars($main_opt['nome']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <i data-lucide="chevron-down" class="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"></i>
+                    </div>
+                    <div class="relative flex items-center gap-2">
+                        <span class="text-sm text-gray-400 hidden lg:inline">Subcategoria</span>
+                        <select id="subcategory-filter" class="bg-gray-800 border border-gray-600 text-gray-200 text-sm rounded-lg pl-3 pr-8 py-2 focus:ring-2 focus:ring-green-500/50 focus:border-green-500 cursor-pointer appearance-none max-w-[12rem] disabled:opacity-50 disabled:cursor-not-allowed" title="Filtrar por subcategoria" disabled>
+                            <option value="">Todas</option>
+                        </select>
+                        <i data-lucide="chevron-down" class="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"></i>
+                    </div>
+                    <?php endif; ?>
+                </div>
                 </div>
                 <div class="flex items-center space-x-5">
                     <!-- Dropdown do Perfil -->
@@ -531,7 +610,7 @@ if (!isset($feed_items_biblioteca)) {
             <!-- Empty state quando filtro não encontra cursos -->
             <div id="biblioteca-filter-empty" class="hidden bg-gray-800 p-8 rounded-lg shadow-md text-center text-gray-400 border border-gray-700 mb-8">
                 <i data-lucide="folder-x" class="mx-auto w-16 h-16 text-gray-600 mb-4"></i>
-                <p class="text-lg font-semibold text-white">Nenhum curso encontrado nesta categoria</p>
+                <p class="text-lg font-semibold text-white">Nenhum curso encontrado com os filtros selecionados</p>
                 <button type="button" id="biblioteca-reset-filter" class="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white font-medium rounded-lg transition-colors">
                     Ver todos os cursos
                 </button>
@@ -550,7 +629,9 @@ if (!isset($feed_items_biblioteca)) {
                             ?>
                             <a href="<?php echo htmlspecialchars($href); ?>"
                                class="group bg-gray-800 rounded-2xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-2xl hover:scale-[1.02] border border-gray-700/50 flex flex-col biblioteca-course-card"
-                               data-product-type="<?php echo htmlspecialchars($curso['produto_type'] ?? ''); ?>">
+                               data-product-type="<?php echo htmlspecialchars($curso['produto_type'] ?? ''); ?>"
+                               data-main-category-id="<?php echo (int) ($curso['produto_main_category_id'] ?? 0); ?>"
+                               data-subcategory-id="<?php echo (int) ($curso['produto_subcategory_id'] ?? 0); ?>">
                                 <div class="relative aspect-square overflow-hidden bg-gray-900">
                                     <?php
                                     $image_path = null;
@@ -718,23 +799,67 @@ if (!isset($feed_items_biblioteca)) {
     <script>
         lucide.createIcons();
         
-        // Filtro de categorias (localStorage + aplicação)
+        // Filtros da biblioteca (tipo + taxonomia temática; client-side sobre cards já liberados)
         const CATEGORY_FILTER_KEY = 'member_dashboard_category_filter';
+        const MAIN_CATEGORY_FILTER_KEY = 'member_dashboard_main_category_filter';
+        const SUBCATEGORY_FILTER_KEY = 'member_dashboard_subcategory_filter';
+        const memberTaxonomySubByMain = <?php echo json_encode($member_taxonomy_sub_by_main, JSON_UNESCAPED_UNICODE); ?>;
+
         function getCategoryFilter() {
-            try {
-                return localStorage.getItem(CATEGORY_FILTER_KEY) || '';
-            } catch (_) { return ''; }
+            try { return localStorage.getItem(CATEGORY_FILTER_KEY) || ''; } catch (_) { return ''; }
         }
         function setCategoryFilter(value) {
-            try {
-                localStorage.setItem(CATEGORY_FILTER_KEY, value);
-            } catch (_) {}
+            try { localStorage.setItem(CATEGORY_FILTER_KEY, value); } catch (_) {}
         }
+        function getMainCategoryFilter() {
+            try { return localStorage.getItem(MAIN_CATEGORY_FILTER_KEY) || ''; } catch (_) { return ''; }
+        }
+        function setMainCategoryFilter(value) {
+            try { localStorage.setItem(MAIN_CATEGORY_FILTER_KEY, value); } catch (_) {}
+        }
+        function getSubcategoryFilter() {
+            try { return localStorage.getItem(SUBCATEGORY_FILTER_KEY) || ''; } catch (_) { return ''; }
+        }
+        function setSubcategoryFilter(value) {
+            try { localStorage.setItem(SUBCATEGORY_FILTER_KEY, value); } catch (_) {}
+        }
+
+        function populateSubcategoryFilterOptions(mainId, selectedSubId) {
+            const subFilter = document.getElementById('subcategory-filter');
+            if (!subFilter) return;
+            subFilter.innerHTML = '<option value="">Todas</option>';
+            if (!mainId) {
+                subFilter.value = '';
+                subFilter.disabled = true;
+                return;
+            }
+            const items = memberTaxonomySubByMain[String(mainId)] || memberTaxonomySubByMain[mainId] || [];
+            items.forEach(function(item) {
+                const opt = document.createElement('option');
+                opt.value = String(item.id);
+                opt.textContent = item.nome || '';
+                if (selectedSubId && String(item.id) === String(selectedSubId)) {
+                    opt.selected = true;
+                }
+                subFilter.appendChild(opt);
+            });
+            subFilter.disabled = false;
+            if (selectedSubId && subFilter.querySelector('option[value="' + selectedSubId + '"]')) {
+                subFilter.value = String(selectedSubId);
+            } else {
+                subFilter.value = '';
+            }
+        }
+
         function applyCategoryFilter() {
-            const filterVal = document.getElementById('category-filter')?.value || '';
-            const filterSelect = document.getElementById('category-filter');
-            if (filterSelect) filterSelect.value = filterVal;
-            const showAll = !filterVal;
+            const typeVal = document.getElementById('category-filter')?.value || '';
+            const mainVal = document.getElementById('main-category-filter')?.value || '';
+            const subVal = document.getElementById('subcategory-filter')?.value || '';
+            const showAllType = !typeVal;
+            const showAllMain = !mainVal;
+            const showAllSub = !subVal;
+            const anyFilterActive = !showAllType || !showAllMain || !showAllSub;
+
             const courseCards = document.querySelectorAll('.biblioteca-course-card');
             const banners = document.querySelectorAll('.biblioteca-banner');
             const offerCards = document.querySelectorAll('#exclusive-offers-grid [data-product-type]');
@@ -742,27 +867,35 @@ if (!isset($feed_items_biblioteca)) {
             const emptyState = document.getElementById('biblioteca-filter-empty');
             const bibliotecaContent = document.getElementById('biblioteca-content');
             let visibleCount = 0;
+
             courseCards.forEach(function(card) {
                 const pt = (card.getAttribute('data-product-type') || '').trim();
-                const match = showAll || pt === filterVal;
+                const mainId = (card.getAttribute('data-main-category-id') || '').trim();
+                const subId = (card.getAttribute('data-subcategory-id') || '').trim();
+                const matchType = showAllType || pt === typeVal;
+                const matchMain = showAllMain || mainId === mainVal;
+                const matchSub = showAllSub || subId === subVal;
+                const match = matchType && matchMain && matchSub;
                 card.style.display = match ? '' : 'none';
                 if (match) visibleCount++;
             });
+
             banners.forEach(function(b) {
-                b.classList.toggle('hidden', !showAll);
+                b.classList.toggle('hidden', anyFilterActive);
             });
             exclusiveBanners.forEach(function(b) {
-                b.style.display = showAll ? '' : 'none';
+                b.style.display = showAllType ? '' : 'none';
             });
             offerCards.forEach(function(card) {
                 const pt = (card.getAttribute('data-product-type') || '').trim();
-                const match = showAll || pt === filterVal;
+                const match = showAllType || pt === typeVal;
                 const wrapper = card.closest('#exclusive-offers-grid > div') || card.parentElement;
                 if (wrapper) wrapper.style.display = match ? '' : 'none';
             });
+
             if (emptyState && bibliotecaContent) {
                 const hasCourses = courseCards.length > 0;
-                if (hasCourses && !showAll && visibleCount === 0) {
+                if (hasCourses && anyFilterActive && visibleCount === 0) {
                     emptyState.classList.remove('hidden');
                     bibliotecaContent.classList.add('hidden');
                 } else {
@@ -771,26 +904,58 @@ if (!isset($feed_items_biblioteca)) {
                 }
             }
         }
+
+        function resetLibraryFilters() {
+            const catFilter = document.getElementById('category-filter');
+            const mainFilter = document.getElementById('main-category-filter');
+            const subFilter = document.getElementById('subcategory-filter');
+            if (catFilter) catFilter.value = '';
+            if (mainFilter) mainFilter.value = '';
+            if (subFilter) {
+                subFilter.innerHTML = '<option value="">Todas</option>';
+                subFilter.value = '';
+                subFilter.disabled = true;
+            }
+            setCategoryFilter('');
+            setMainCategoryFilter('');
+            setSubcategoryFilter('');
+            applyCategoryFilter();
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             const catFilter = document.getElementById('category-filter');
+            const mainFilter = document.getElementById('main-category-filter');
+            const subFilter = document.getElementById('subcategory-filter');
             const resetBtn = document.getElementById('biblioteca-reset-filter');
+
             if (catFilter) {
                 catFilter.value = getCategoryFilter();
                 catFilter.addEventListener('change', function() {
                     setCategoryFilter(this.value);
                     applyCategoryFilter();
                 });
-                applyCategoryFilter();
             }
-            if (resetBtn) {
-                resetBtn.addEventListener('click', function() {
-                    if (catFilter) {
-                        catFilter.value = '';
-                        setCategoryFilter('');
-                        applyCategoryFilter();
-                    }
+            if (mainFilter) {
+                mainFilter.value = getMainCategoryFilter();
+                const savedSub = getSubcategoryFilter();
+                populateSubcategoryFilterOptions(mainFilter.value, mainFilter.value ? savedSub : '');
+                mainFilter.addEventListener('change', function() {
+                    setMainCategoryFilter(this.value);
+                    setSubcategoryFilter('');
+                    populateSubcategoryFilterOptions(this.value, '');
+                    applyCategoryFilter();
                 });
             }
+            if (subFilter) {
+                subFilter.addEventListener('change', function() {
+                    setSubcategoryFilter(this.value);
+                    applyCategoryFilter();
+                });
+            }
+            if (resetBtn) {
+                resetBtn.addEventListener('click', resetLibraryFilters);
+            }
+            applyCategoryFilter();
         });
         
         // Dropdown do Perfil
