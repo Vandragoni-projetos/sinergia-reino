@@ -480,41 +480,6 @@ if (!isset($feed_items_biblioteca)) {
         </div>
     </header>
 
-    <!-- Banner: ativar notificações push (novo usuário deve clicar para inscrever) -->
-    <div id="pwa-push-banner" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2" role="region" aria-label="Notificações">
-        <div class="flex items-center justify-between gap-4 rounded-lg border border-gray-600 bg-gray-800/90 px-4 py-3 text-sm">
-            <span id="pwa-push-banner-text" class="text-gray-300"></span>
-            <button type="button" id="pwa-push-banner-btn" class="hidden shrink-0 rounded-lg bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-500 transition">Receber notificações</button>
-        </div>
-    </div>
-
-    <!-- Card pós-login: notificações + instalar como app (mostra uma vez) -->
-    <div id="pwa-welcome-card" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div class="rounded-xl border border-gray-600 bg-gray-800/95 p-6 shadow-lg">
-            <div class="flex items-start justify-between gap-4">
-                <div>
-                    <h3 class="text-lg font-semibold text-white mb-1">Instale o app e não perca o acesso</h3>
-                    <p class="text-gray-400 text-sm mb-4">Adicione à tela inicial do celular ou instale no computador para acessar seus cursos com um toque e não esquecer da plataforma. Você também pode ativar as notificações para receber avisos.</p>
-                    <div class="flex flex-wrap gap-3">
-                        <button type="button" id="pwa-welcome-install-btn" class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500 transition">
-                            Instalar como app
-                        </button>
-                        <button type="button" id="pwa-welcome-notify-btn" class="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-500 transition">
-                            Receber notificações
-                        </button>
-                        <button type="button" id="pwa-welcome-close" class="inline-flex items-center gap-2 rounded-lg border border-gray-600 px-4 py-2.5 text-sm font-medium text-gray-400 hover:text-white hover:border-gray-500 transition">
-                            Agora não
-                        </button>
-                    </div>
-                </div>
-                <button type="button" id="pwa-welcome-dismiss" class="text-gray-500 hover:text-white p-1 rounded" aria-label="Fechar">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-            </div>
-            <p id="pwa-install-hint" class="hidden mt-3 text-xs text-gray-500">No Chrome: menu (⋮) → Instalar aplicativo. No celular: Adicionar à tela inicial.</p>
-        </div>
-    </div>
-
     <!-- Modal Editar Perfil -->
     <div id="profile-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] hidden flex items-center justify-center p-4">
         <div class="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md shadow-2xl">
@@ -576,6 +541,19 @@ if (!isset($feed_items_biblioteca)) {
             <p class="text-xl text-gray-400">
                 Todo seu conhecimento adquirido em um só lugar. Pronto para começar?
             </p>
+        </div>
+
+        <div id="pwa-invite-bar" class="hidden mb-4 rounded-lg border border-gray-700 bg-gray-800/80 px-3 py-2" role="region" aria-label="Instalação e notificações">
+            <div class="flex items-center gap-2 sm:gap-3">
+                <p id="pwa-invite-text" class="flex-1 min-w-0 text-xs sm:text-sm text-gray-300"></p>
+                <button type="button" id="pwa-invite-install-btn" class="hidden shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-xs sm:text-sm font-medium text-white hover:bg-blue-500 transition">Instalar app</button>
+                <button type="button" id="pwa-invite-notify-btn" class="hidden shrink-0 rounded-md bg-green-600 px-3 py-1.5 text-xs sm:text-sm font-medium text-white hover:bg-green-500 transition">Receber avisos</button>
+                <button type="button" id="pwa-invite-snooze" class="hidden shrink-0 rounded-md border border-gray-600 px-2.5 py-1.5 text-xs text-gray-400 hover:text-white hover:border-gray-500 transition">Agora não</button>
+                <button type="button" id="pwa-invite-dismiss" class="shrink-0 text-gray-500 hover:text-white p-1 rounded" aria-label="Fechar">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <p id="pwa-install-hint" class="hidden mt-1.5 text-xs text-gray-500">No iPhone: Compartilhar → Adicionar à Tela de Início.</p>
         </div>
 
 
@@ -1267,116 +1245,123 @@ if (!isset($feed_items_biblioteca)) {
                     console.log('Falha no registro do ServiceWorker:', err);
                 });
             });
-        }a
+        }
     </script>
     <script src="/pwa/pwa_push_register.js"></script>
     <script>
     (function() {
-        var banner = document.getElementById('pwa-push-banner');
-        var text = document.getElementById('pwa-push-banner-text');
-        var btn = document.getElementById('pwa-push-banner-btn');
-        if (!banner || !text || !btn) return;
-        function showBanner(msg, showButton) {
-            text.textContent = msg;
-            btn.style.display = showButton ? 'block' : 'none';
-            banner.classList.remove('hidden');
-        }
-        function hideBanner() {
-            banner.classList.add('hidden');
-        }
-        function updateFromState() {
-            if (typeof window.PwaPush === 'undefined') return;
-            if (window.PwaPush.isSubscribed) {
-                showBanner('Você está inscrito para receber notificações.', false);
-                setTimeout(hideBanner, 4000);
-                return;
-            }
-            if (window.PwaPush.isDenied) {
-                showBanner('Para receber notificações, ative no ícone de cadeado da barra de endereço.', false);
-                return;
-            }
-            if (window.PwaPush.isRequestable) {
-                showBanner('Deseja receber notificações de novidades e avisos?', true);
-            }
-        }
-        window.addEventListener('pwa-push-state', function(e) {
-            var d = e.detail || {};
-            if (d.subscribed) { showBanner('Notificações ativadas. Você passará a receber avisos.', false); setTimeout(hideBanner, 4000); return; }
-            if (d.denied) { showBanner('Para receber notificações, ative no ícone de cadeado da barra de endereço.', false); return; }
-            if (d.requestable) { showBanner('Deseja receber notificações de novidades e avisos?', true); }
-        });
-        btn.addEventListener('click', function() {
-            if (window.PwaPush && window.PwaPush.requestPermission) {
-                btn.disabled = true;
-                btn.textContent = 'Aguarde...';
-                window.PwaPush.requestPermission().then(function(ok) {
-                    btn.disabled = false;
-                    btn.textContent = 'Receber notificações';
-                    if (ok) { showBanner('Notificações ativadas.', false); setTimeout(hideBanner, 4000); }
-                }).catch(function() { btn.disabled = false; btn.textContent = 'Receber notificações'; });
-            }
-        });
-        setTimeout(updateFromState, 1500);
-    })();
-    </script>
-    <script>
-    (function() {
-        var welcomeCard = document.getElementById('pwa-welcome-card');
-        var notifyBtn = document.getElementById('pwa-welcome-notify-btn');
-        var installBtn = document.getElementById('pwa-welcome-install-btn');
+        var bar = document.getElementById('pwa-invite-bar');
+        var textEl = document.getElementById('pwa-invite-text');
+        var installBtn = document.getElementById('pwa-invite-install-btn');
+        var notifyBtn = document.getElementById('pwa-invite-notify-btn');
+        var snoozeBtn = document.getElementById('pwa-invite-snooze');
+        var dismissBtn = document.getElementById('pwa-invite-dismiss');
         var installHint = document.getElementById('pwa-install-hint');
-        var closeBtn = document.getElementById('pwa-welcome-close');
-        var dismissBtn = document.getElementById('pwa-welcome-dismiss');
-        if (!welcomeCard) return;
+        if (!bar || !textEl) return;
 
+        var KEY_CLOSED = 'pwa_welcome_closed';
+        var KEY_SNOOZE = 'pwa_welcome_snooze_until';
+        var SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
         var deferredPrompt = null;
+        var installed = false;
+        var mode = '';
+
+        function isStandalone() {
+            try {
+                if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+            } catch (e) {}
+            return window.navigator.standalone === true;
+        }
+        function isIos() {
+            return /iPad|iPhone|iPod/.test(navigator.userAgent || '')
+                || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        }
+        function isClosed() {
+            try { return localStorage.getItem(KEY_CLOSED) === '1'; } catch (e) { return false; }
+        }
+        function isSnoozed() {
+            try {
+                var until = parseInt(localStorage.getItem(KEY_SNOOZE) || '0', 10);
+                return until > Date.now();
+            } catch (e) { return false; }
+        }
+        function canInstall() {
+            return !installed && !isStandalone() && !!deferredPrompt;
+        }
+        function canNotify() {
+            if (typeof Notification === 'undefined') return false;
+            if (Notification.permission === 'granted') return false;
+            if (Notification.permission === 'denied') return false;
+            return !!(window.PwaPush && window.PwaPush.isRequestable);
+        }
+        function hideBar() {
+            bar.classList.add('hidden');
+            if (installBtn) installBtn.classList.add('hidden');
+            if (notifyBtn) notifyBtn.classList.add('hidden');
+            if (snoozeBtn) snoozeBtn.classList.add('hidden');
+            if (installHint) installHint.classList.add('hidden');
+            mode = '';
+        }
+        function showBar(nextMode) {
+            mode = nextMode;
+            bar.classList.remove('hidden');
+            if (installBtn) installBtn.classList.toggle('hidden', nextMode !== 'install');
+            if (notifyBtn) notifyBtn.classList.toggle('hidden', nextMode !== 'notify');
+            if (snoozeBtn) snoozeBtn.classList.remove('hidden');
+            if (installHint) installHint.classList.toggle('hidden', nextMode !== 'ios-hint');
+            if (nextMode === 'install') textEl.textContent = 'Instale o app para abrir seus cursos com um toque.';
+            else if (nextMode === 'notify') textEl.textContent = 'Receba avisos de novidades nos seus cursos.';
+            else textEl.textContent = 'Adicione à tela inicial para acessar com um toque.';
+        }
+        function updateInvite() {
+            if (isClosed() || isSnoozed()) { hideBar(); return; }
+            if (canInstall()) { showBar('install'); return; }
+            if (canNotify()) { showBar('notify'); return; }
+            if (!isStandalone() && !installed && isIos() && !deferredPrompt) { showBar('ios-hint'); return; }
+            hideBar();
+        }
+
         window.addEventListener('beforeinstallprompt', function(e) {
             e.preventDefault();
             deferredPrompt = e;
-            if (installBtn) installBtn.classList.remove('hidden');
+            updateInvite();
         });
-
-        function closeWelcome() {
-            try { localStorage.setItem('pwa_welcome_closed', '1'); } catch (x) {}
-            welcomeCard.classList.add('hidden');
-        }
-
-        function showWelcomeIfNeeded() {
-            if (localStorage.getItem('pwa_welcome_closed') === '1') return;
-            var isMobile = window.matchMedia('(max-width: 768px)').matches || /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            var show = deferredPrompt || (window.PwaPush && window.PwaPush.isRequestable) || isMobile;
-            if (show) welcomeCard.classList.remove('hidden');
-        }
-
-        if (notifyBtn) notifyBtn.addEventListener('click', function() {
-            if (window.PwaPush && window.PwaPush.requestPermission) {
-                notifyBtn.disabled = true;
-                notifyBtn.textContent = 'Aguarde...';
-                window.PwaPush.requestPermission().then(function(ok) {
-                    notifyBtn.disabled = false;
-                    notifyBtn.textContent = 'Receber notificações';
-                    if (ok) closeWelcome();
-                }).catch(function() { notifyBtn.disabled = false; notifyBtn.textContent = 'Receber notificações'; });
-            }
+        window.addEventListener('appinstalled', function() {
+            installed = true;
+            deferredPrompt = null;
+            updateInvite();
         });
-        if (installBtn) installBtn.addEventListener('click', function() {
-            if (deferredPrompt) {
-                deferredPrompt.prompt();
-                deferredPrompt.userChoice.then(function(choice) {
-                    if (choice.outcome === 'accepted') closeWelcome();
-                    deferredPrompt = null;
-                });
-            } else if (installHint) {
-                installHint.classList.remove('hidden');
-            }
-        });
-        if (closeBtn) closeBtn.addEventListener('click', closeWelcome);
-        if (dismissBtn) dismissBtn.addEventListener('click', closeWelcome);
-
         window.addEventListener('pwa-push-state', function() {
-            if (window.PwaPush && window.PwaPush.isRequestable) showWelcomeIfNeeded();
+            updateInvite();
         });
-        setTimeout(showWelcomeIfNeeded, 2000);
+
+        if (installBtn) installBtn.addEventListener('click', function() {
+            if (!deferredPrompt) return;
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then(function(choice) {
+                deferredPrompt = null;
+                if (choice && choice.outcome === 'accepted') installed = true;
+                updateInvite();
+            }).catch(function() { updateInvite(); });
+        });
+        if (notifyBtn) notifyBtn.addEventListener('click', function() {
+            if (!window.PwaPush || !window.PwaPush.requestPermission) return;
+            notifyBtn.disabled = true;
+            window.PwaPush.requestPermission().then(function() {
+                notifyBtn.disabled = false;
+                updateInvite();
+            }).catch(function() { notifyBtn.disabled = false; updateInvite(); });
+        });
+        if (snoozeBtn) snoozeBtn.addEventListener('click', function() {
+            try { localStorage.setItem(KEY_SNOOZE, String(Date.now() + SNOOZE_MS)); } catch (e) {}
+            hideBar();
+        });
+        if (dismissBtn) dismissBtn.addEventListener('click', function() {
+            try { localStorage.setItem(KEY_CLOSED, '1'); } catch (e) {}
+            hideBar();
+        });
+
+        setTimeout(updateInvite, 1500);
     })();
     </script>
     <?php 
