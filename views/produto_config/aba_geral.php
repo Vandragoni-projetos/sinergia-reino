@@ -89,13 +89,13 @@
                 </div>
                 <div class="md:col-span-2">
                     <label for="preco_order_bump" class="block text-gray-300 text-sm font-semibold mb-2">Preço para Order Bump (opcional)</label>
-                    <input type="number" step="0.01" min="0.01" id="preco_order_bump" name="preco_order_bump" class="form-input w-full max-w-xs" placeholder="Ex: 9.90" value="<?php
+                    <input type="text" inputmode="decimal" autocomplete="off" id="preco_order_bump" name="preco_order_bump" class="form-input w-full max-w-xs" placeholder="Ex: 9,90" value="<?php
                         $pob_raw = $produto['preco_order_bump'] ?? null;
-                        echo ($pob_raw !== null && $pob_raw !== '' && is_numeric($pob_raw) && (float) $pob_raw > 0)
-                            ? htmlspecialchars(number_format((float) $pob_raw, 2, '.', ''))
+                        echo ($pob_raw !== null && $pob_raw !== '' && is_numeric($pob_raw) && (float) $pob_raw >= 0.01)
+                            ? htmlspecialchars(number_format((float) $pob_raw, 2, ',', '.'))
                             : '';
                     ?>">
-                    <p class="text-xs text-gray-400 mt-1">Usado somente quando este produto for oferecido como Order Bump em outro checkout. Se ficar vazio, será utilizado o preço normal do produto.</p>
+                    <p class="text-xs text-gray-400 mt-1">Usado somente quando este produto for oferecido como Order Bump em outro checkout. Apague o campo por completo e salve para voltar a usar o preço principal. Não use 0,00.</p>
                 </div>
                 <div class="md:col-span-2">
                     <label for="price_usd" class="block text-gray-300 text-sm font-semibold mb-2">Preço USD (US$) – Checkout internacional</label>
