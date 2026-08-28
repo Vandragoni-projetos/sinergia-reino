@@ -158,7 +158,7 @@ if (isset($_POST['salvar_produto_config'])) {
             $preco_anterior = !empty($_POST['preco_anterior']) ? floatval(str_replace(',', '.', $_POST['preco_anterior'])) : null;
             $price_usd = !empty($_POST['price_usd']) && is_numeric($_POST['price_usd']) ? floatval($_POST['price_usd']) : null;
             if ($price_usd !== null && $price_usd <= 0) $price_usd = null;
-            // Preço Order Bump: vazio → NULL; >= 0,01 → gravar; 0/negativo/inválido → rejeitar (não converter vazio em 0)
+            // Preço Order Bump: vazio ou 0,00 → NULL (usa preço principal); >= 0,01 → gravar; negativo/inválido → rejeitar
             $preco_order_bump = null;
             $preco_order_bump_valid = true;
             if (array_key_exists('preco_order_bump', $_POST)) {
@@ -169,15 +169,14 @@ if (isset($_POST['salvar_produto_config'])) {
                     $preco_order_bump = null;
                 } elseif (!is_numeric($raw_pob)) {
                     $preco_order_bump_valid = false;
-                    $mensagem = "<div class='bg-red-900/20 border-l-4 border-red-500 text-red-300 p-4 rounded-md shadow-sm mb-6' role='alert'>Preço para Order Bump inválido. Informe um valor (ex.: 14,70) ou deixe o campo vazio para usar o preço principal.</div>";
+                    $mensagem = "<div class='bg-red-900/20 border-l-4 border-red-500 text-red-300 p-4 rounded-md shadow-sm mb-6' role='alert'>Preço para Order Bump inválido. Informe um valor (ex.: 14,70), 0,00 ou deixe vazio para usar o preço principal.</div>";
                 } else {
                     $pob_val = (float) $raw_pob;
                     if ($pob_val < 0) {
                         $preco_order_bump_valid = false;
-                        $mensagem = "<div class='bg-red-900/20 border-l-4 border-red-500 text-red-300 p-4 rounded-md shadow-sm mb-6' role='alert'>O Preço para Order Bump não pode ser negativo. Deixe o campo vazio para usar o preço principal.</div>";
+                        $mensagem = "<div class='bg-red-900/20 border-l-4 border-red-500 text-red-300 p-4 rounded-md shadow-sm mb-6' role='alert'>O Preço para Order Bump não pode ser negativo. Use 0,00 ou deixe vazio para usar o preço principal.</div>";
                     } elseif ($pob_val < 0.01) {
-                        $preco_order_bump_valid = false;
-                        $mensagem = "<div class='bg-red-900/20 border-l-4 border-red-500 text-red-300 p-4 rounded-md shadow-sm mb-6' role='alert'>O Preço para Order Bump deve ser de pelo menos R$ 0,01. Para remover o preço especial, apague o campo por completo (não use 0,00).</div>";
+                        $preco_order_bump = null;
                     } else {
                         $preco_order_bump = round($pob_val, 2);
                     }
@@ -788,7 +787,9 @@ if (isset($_POST['salvar_produto_config'])) {
         } // Fim do if ($aba_atual === 'funil')
 
         $pdo->commit();
-        $mensagem = "<div class='bg-green-900/20 border border-green-500 text-green-300 px-4 py-3 rounded relative mb-4' role='alert'>Configurações salvas com sucesso!</div>";
+        if ($mensagem === '') {
+            $mensagem = "<div class='bg-green-900/20 border border-green-500 text-green-300 px-4 py-3 rounded relative mb-4' role='alert'>Configurações salvas com sucesso!</div>";
+        }
 
         // Recarrega dados após salvamento
         $stmt = $pdo->prepare("SELECT * FROM produtos WHERE id = ? AND usuario_id = ?");
