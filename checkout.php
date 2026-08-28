@@ -1688,17 +1688,13 @@ function render_sales_notification($config, $produto_nome_fallback) {
             let checkoutObserveLastCustomerKey = '';
             let checkoutObserveLastPixKey = '';
 
+            const checkoutObserveBrowserUuid = generateUUID();
+            try {
+                sessionStorage.setItem('GatewayPro_observe_sid', checkoutObserveBrowserUuid);
+            } catch (e) {}
+
             function checkoutObserveGetBrowserUuid() {
-                const key = 'GatewayPro_observe_sid';
-                try {
-                    let id = sessionStorage.getItem(key);
-                    if (id && /^[A-Za-z0-9_-]{8,64}$/.test(id)) return id;
-                    id = generateUUID();
-                    sessionStorage.setItem(key, id);
-                    return id;
-                } catch (e) {
-                    return generateUUID();
-                }
+                return checkoutObserveBrowserUuid;
             }
 
             function checkoutObserveIsProcessPaymentRequest(input) {
