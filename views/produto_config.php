@@ -158,14 +158,28 @@ if (isset($_POST['salvar_produto_config'])) {
             $preco_anterior = !empty($_POST['preco_anterior']) ? floatval(str_replace(',', '.', $_POST['preco_anterior'])) : null;
             $price_usd = !empty($_POST['price_usd']) && is_numeric($_POST['price_usd']) ? floatval($_POST['price_usd']) : null;
             if ($price_usd !== null && $price_usd <= 0) $price_usd = null;
-            // Preço Order Bump: vazio/0/negativo -> NULL; só grava se > 0
+            // Preço Order Bump: vazio → NULL; >= 0,01 → gravar; 0/negativo/inválido → rejeitar (não converter vazio em 0)
             $preco_order_bump = null;
-            if (isset($_POST['preco_order_bump'])) {
-                $raw_pob = trim(str_replace(',', '.', (string) $_POST['preco_order_bump']));
-                if ($raw_pob !== '' && is_numeric($raw_pob)) {
-                    $pob_val = floatval($raw_pob);
-                    if ($pob_val > 0) {
-                        $preco_order_bump = $pob_val;
+            $preco_order_bump_valid = true;
+            if (array_key_exists('preco_order_bump', $_POST)) {
+                $raw_pob = trim((string) $_POST['preco_order_bump']);
+                $raw_pob = str_replace(["\xc2\xa0", ' '], '', $raw_pob);
+                $raw_pob = str_replace(',', '.', $raw_pob);
+                if ($raw_pob === '') {
+                    $preco_order_bump = null;
+                } elseif (!is_numeric($raw_pob)) {
+                    $preco_order_bump_valid = false;
+                    $mensagem = "<div class='bg-red-900/20 border-l-4 border-red-500 text-red-300 p-4 rounded-md shadow-sm mb-6' role='alert'>Preço para Order Bump inválido. Informe um valor (ex.: 14,70) ou deixe o campo vazio para usar o preço principal.</div>";
+                } else {
+                    $pob_val = (float) $raw_pob;
+                    if ($pob_val < 0) {
+                        $preco_order_bump_valid = false;
+                        $mensagem = "<div class='bg-red-900/20 border-l-4 border-red-500 text-red-300 p-4 rounded-md shadow-sm mb-6' role='alert'>O Preço para Order Bump não pode ser negativo. Deixe o campo vazio para usar o preço principal.</div>";
+                    } elseif ($pob_val < 0.01) {
+                        $preco_order_bump_valid = false;
+                        $mensagem = "<div class='bg-red-900/20 border-l-4 border-red-500 text-red-300 p-4 rounded-md shadow-sm mb-6' role='alert'>O Preço para Order Bump deve ser de pelo menos R$ 0,01. Para remover o preço especial, apague o campo por completo (não use 0,00).</div>";
+                    } else {
+                        $preco_order_bump = round($pob_val, 2);
                     }
                 }
             }
@@ -247,6 +261,7 @@ if (isset($_POST['salvar_produto_config'])) {
                 $preco_anterior = null;
                 $price_usd = null;
                 $preco_order_bump = null;
+                $preco_order_bump_valid = true;
             }
             
             // Se marcou como vitrine, desmarca outros produtos vitrine do mesmo usuário
@@ -255,7 +270,7 @@ if (isset($_POST['salvar_produto_config'])) {
                 $stmt_unset_showcase->execute([$usuario_id, $id_produto]);
             }
             
-            if ($sales_page_url_valid) {
+            if ($sales_page_url_valid && $preco_order_bump_valid) {
                 $has_cols_foto_extra = function_exists('db_table_has_column') && db_table_has_column($pdo, 'produtos', 'foto_2');
                 $has_checkout_description_col = function_exists('db_table_has_column') && db_table_has_column($pdo, 'produtos', 'checkout_description');
                 $checkout_description_val = null;
