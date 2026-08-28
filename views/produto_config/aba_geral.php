@@ -95,7 +95,7 @@
                             ? htmlspecialchars(number_format((float) $pob_raw, 2, ',', '.'))
                             : '';
                     ?>">
-                    <p class="text-xs text-gray-400 mt-1">Usado somente quando este produto for oferecido como Order Bump em outro checkout. Apague o campo por completo e salve para voltar a usar o preço principal. Não use 0,00.</p>
+                    <p class="text-xs text-gray-400 mt-1">Usado somente quando este produto for oferecido como Order Bump em outro checkout. Deixe vazio ou 0,00 para usar o preço principal. 0,00 não torna o Order Bump gratuito.</p>
                 </div>
                 <div class="md:col-span-2">
                     <label for="price_usd" class="block text-gray-300 text-sm font-semibold mb-2">Preço USD (US$) – Checkout internacional</label>
