@@ -966,6 +966,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
         .order-bump-wrapper input:checked + .order-bump-block { background-color: #f0fdf4; border-color: #22c55e; border-style: dashed; }
         .order-bump-wrapper input:checked + .order-bump-block .custom-checkbox { background-color: #22c55e; border-color: #22c55e; }
         .order-bump-wrapper input:checked + .order-bump-block .custom-checkbox .checkmark { opacity: 1; transform: scale(1); }
+        .order-bumps-progressive { opacity: 0; max-height: 0; overflow: hidden; margin: 0; padding: 0; border-width: 0; pointer-events: none; visibility: hidden; transform: translateY(-8px); transition: opacity 250ms ease, max-height 250ms ease, transform 250ms ease, visibility 250ms ease; }
+        .order-bumps-progressive.is-revealed { opacity: 1; max-height: 2000px; pointer-events: auto; visibility: visible; transform: none; }
+        hr.order-bumps-progressive.is-revealed { border-width: 1px 0 0; }
         #sales-notification { visibility: hidden; }
         #sales-notification.show { visibility: visible; transform: translateY(0); opacity: 1; }
         #sales-notification.hide { visibility: hidden; transform: translateY(100%); opacity: 0; }
@@ -1176,8 +1179,8 @@ function render_sales_notification($config, $produto_nome_fallback) {
                         </div>
                     </section>
                     <?php if ($orderbump_active): ?>
-                        <hr class="border-gray-200">
-                        <section data-id="order_bump"><?php echo render_order_bumps_section($order_bumps); ?></section>
+                        <hr class="border-gray-200 order-bumps-progressive">
+                        <section data-id="order_bump" class="order-bumps-progressive"><?php echo render_order_bumps_section($order_bumps); ?></section>
                     <?php endif; ?>
                     <?php if (!$is_free_product): ?>
                     <hr class="border-gray-200">
@@ -1996,6 +1999,66 @@ function render_sales_notification($config, $produto_nome_fallback) {
 
             applyBrazilPhoneMask(document.getElementById('phone'));
             applyCpfCnpjMask(document.getElementById('cpf'));
+
+            // Order bumps progressivos: ocultos até dados básicos válidos (não altera validateForm / totais / pagamento)
+            (function initProgressiveOrderBumps() {
+                if (!orderbumpCheckboxes || orderbumpCheckboxes.length === 0) return;
+
+                const progressiveEls = document.querySelectorAll('.order-bumps-progressive');
+                if (!progressiveEls.length) return;
+
+                let orderBumpsRevealed = false;
+
+                function revealOrderBumps() {
+                    if (orderBumpsRevealed) return;
+                    orderBumpsRevealed = true;
+                    progressiveEls.forEach(function(el) { el.classList.add('is-revealed'); });
+                }
+
+                function basicCustomerDataReady() {
+                    const name = nameInput ? String(nameInput.value || '').trim() : '';
+                    if (!name) return false;
+
+                    const email = emailInput ? String(emailInput.value || '').trim() : '';
+                    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false;
+
+                    const phoneEl = document.getElementById('phone');
+                    if (phoneEl && phoneEl.type !== 'hidden') {
+                        const phoneDigits = checkoutDigitsOnly(phoneEl.value);
+                        if (phoneDigits.length !== 10 && phoneDigits.length !== 11) return false;
+                    }
+
+                    const cpfEl = document.getElementById('cpf');
+                    if (cpfEl && cpfEl.type !== 'hidden') {
+                        const cpfDigits = checkoutDigitsOnly(cpfEl.value);
+                        if (cpfDigits.length !== 11 && cpfDigits.length !== 14) return false;
+                    }
+
+                    return true;
+                }
+
+                function maybeRevealOrderBumps() {
+                    if (orderBumpsRevealed) return;
+                    let anyChecked = false;
+                    orderbumpCheckboxes.forEach(function(cb) {
+                        if (cb.checked) anyChecked = true;
+                    });
+                    if (anyChecked || basicCustomerDataReady()) {
+                        revealOrderBumps();
+                    }
+                }
+
+                ['input', 'change', 'blur'].forEach(function(evt) {
+                    if (nameInput) nameInput.addEventListener(evt, maybeRevealOrderBumps);
+                    if (emailInput) emailInput.addEventListener(evt, maybeRevealOrderBumps);
+                    if (phoneInput) phoneInput.addEventListener(evt, maybeRevealOrderBumps);
+                    if (cpfInput) cpfInput.addEventListener(evt, maybeRevealOrderBumps);
+                });
+
+                window.addEventListener('pageshow', maybeRevealOrderBumps);
+                maybeRevealOrderBumps();
+                setTimeout(maybeRevealOrderBumps, 400);
+            })();
             
             // Função para calcular desconto Pix
             function calculatePixDiscount(amount) {
