@@ -1,4 +1,3 @@
-
 <?php
 require __DIR__ . '/config/config.php';
 include __DIR__ . '/config/load_settings.php';
@@ -967,8 +966,9 @@ function render_sales_notification($config, $produto_nome_fallback) {
         .order-bump-wrapper input:checked + .order-bump-block { background-color: #f0fdf4; border-color: #22c55e; border-style: dashed; }
         .order-bump-wrapper input:checked + .order-bump-block .custom-checkbox { background-color: #22c55e; border-color: #22c55e; }
         .order-bump-wrapper input:checked + .order-bump-block .custom-checkbox .checkmark { opacity: 1; transform: scale(1); }
-        .order-bumps-progressive { opacity: 0; max-height: 0; overflow: hidden; margin: 0; padding: 0; border-width: 0; pointer-events: none; visibility: hidden; transform: translateY(-8px); transition: opacity 250ms ease, max-height 250ms ease, transform 250ms ease, visibility 250ms ease; }
-        .order-bumps-progressive.is-revealed { opacity: 1; max-height: 2000px; pointer-events: auto; visibility: visible; transform: none; }
+        .order-bumps-progressive { opacity: 0; max-height: 0; overflow: hidden; margin: 0; padding: 0; border-width: 0; pointer-events: none; visibility: hidden; transform: translateY(-8px); transition: opacity 250ms ease, max-height 250ms ease, transform 250ms ease, visibility 250ms ease, overflow 0s linear 0s; }
+        .order-bumps-progressive.is-revealed { opacity: 1; max-height: 2000px; overflow: visible; pointer-events: auto; visibility: visible; transform: none; transition: opacity 250ms ease, max-height 250ms ease, transform 250ms ease, visibility 250ms ease, overflow 0s linear 250ms; }
+        section.order-bumps-progressive.is-revealed { padding-top: 14px; }
         hr.order-bumps-progressive.is-revealed { border-width: 1px 0 0; }
         #sales-notification { visibility: hidden; }
         #sales-notification.show { visibility: visible; transform: translateY(0); opacity: 1; }
