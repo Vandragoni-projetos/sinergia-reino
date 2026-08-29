@@ -1,3 +1,4 @@
+
 <?php
 require __DIR__ . '/config/config.php';
 include __DIR__ . '/config/load_settings.php';
