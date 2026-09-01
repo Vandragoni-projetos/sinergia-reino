@@ -392,7 +392,17 @@ function delete_banner($pdo, $usuario_id, $community_id) {
 }
 
 /**
- * Reordenar feed (drag & drop)
+ * Reordenar feed (drag & drop e "mover para posição").
+ *
+ * Identidade canônica do item no feed unificado:
+ *   (usuario_id, item_type, item_id)
+ * A listagem (Meus Produtos, área de membros, ofertas) não filtra por community_id
+ * e já faz dedupe por (item_type, item_id). community_id NULL = linha global do usuário.
+ * Isolamento: só lê/grava linhas de $usuario_id; nunca altera outro usuário.
+ *
+ * NÃO usar rowCount() após UPDATE para decidir INSERT: se sort_order já é o mesmo,
+ * MySQL reporta 0 linhas afetadas mesmo com o registro existente, o que gerava duplicatas
+ * (UNIQUE com community_id NULL não impede múltiplos NULL no MySQL/MariaDB).
  */
 function reorder_feed($pdo, $usuario_id, $community_id) {
     $data = json_decode(file_get_contents('php://input'), true);
@@ -402,36 +412,80 @@ function reorder_feed($pdo, $usuario_id, $community_id) {
         throw new Exception('Lista de itens inválida');
     }
     
-    // Validar estrutura: cada item deve ter { item_type, item_id, sort_order }
+    $normalized = [];
+    $seen = [];
     foreach ($items as $item) {
-        if (empty($item['item_type']) || empty($item['item_id']) || !isset($item['sort_order'])) {
+        if (!is_array($item) || empty($item['item_type']) || !isset($item['item_id']) || !isset($item['sort_order'])) {
             throw new Exception('Estrutura de item inválida');
         }
+        $item_type = (string) $item['item_type'];
+        if ($item_type !== 'product' && $item_type !== 'banner') {
+            throw new Exception('Tipo de item inválido');
+        }
+        $item_id = (int) $item['item_id'];
+        if ($item_id <= 0) {
+            throw new Exception('ID de item inválido');
+        }
+        $sort_order = (int) $item['sort_order'];
+        if ($sort_order < 0) {
+            throw new Exception('Ordem inválida');
+        }
+        $key = $item_type . ':' . $item_id;
+        if (isset($seen[$key])) {
+            continue;
+        }
+        $seen[$key] = true;
+        $normalized[] = [
+            'item_type' => $item_type,
+            'item_id' => $item_id,
+            'sort_order' => $sort_order,
+        ];
+    }
+    if (empty($normalized)) {
+        throw new Exception('Lista de itens inválida');
     }
     
-    // Atualizar sort_order de cada item (sem filtrar por community_id para a ordem persistir sempre)
     $pdo->beginTransaction();
     
     try {
-        $update_sql = "UPDATE products_feed_items 
-                       SET sort_order = ? 
-                       WHERE usuario_id = ? 
-                       AND item_type = ? 
-                       AND item_id = ?";
-        $stmt = $pdo->prepare($update_sql);
-        // Inserir só quando o item ainda não está no feed; usar community_id NULL para não criar cópias (unique = usuario_id, community_id, item_type, item_id)
-        $insert_sql = "INSERT INTO products_feed_items (community_id, usuario_id, item_type, item_id, sort_order) 
-                       VALUES (NULL, ?, ?, ?, ?) 
-                       ON DUPLICATE KEY UPDATE sort_order = VALUES(sort_order)";
-        $stmt_ins = $pdo->prepare($insert_sql);
+        $stmt_exist = $pdo->prepare(
+            "SELECT item_type, item_id
+             FROM products_feed_items
+             WHERE usuario_id = ?
+             GROUP BY item_type, item_id"
+        );
+        $stmt_exist->execute([$usuario_id]);
+        $existing = [];
+        foreach ($stmt_exist->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $existing[$row['item_type'] . ':' . (int) $row['item_id']] = true;
+        }
         
-        foreach ($items as $item) {
-            $sort_order = (int) $item['sort_order'];
-            $item_type = $item['item_type'];
-            $item_id = (int) $item['item_id'];
-            $stmt->execute([$sort_order, $usuario_id, $item_type, $item_id]);
-            if ($stmt->rowCount() === 0) {
-                $stmt_ins->execute([$usuario_id, $item_type, $item_id, $sort_order]);
+        $stmt_upd = $pdo->prepare(
+            "UPDATE products_feed_items
+             SET sort_order = ?
+             WHERE usuario_id = ?
+             AND item_type = ?
+             AND item_id = ?"
+        );
+        $stmt_ins = $pdo->prepare(
+            "INSERT INTO products_feed_items (community_id, usuario_id, item_type, item_id, sort_order)
+             VALUES (?, ?, ?, ?, ?)"
+        );
+        $insert_community_id = ($community_id !== null && $community_id !== '') ? (int) $community_id : null;
+        
+        foreach ($normalized as $item) {
+            $key = $item['item_type'] . ':' . $item['item_id'];
+            if (isset($existing[$key])) {
+                $stmt_upd->execute([$item['sort_order'], $usuario_id, $item['item_type'], $item['item_id']]);
+            } else {
+                $stmt_ins->execute([
+                    $insert_community_id,
+                    $usuario_id,
+                    $item['item_type'],
+                    $item['item_id'],
+                    $item['sort_order'],
+                ]);
+                $existing[$key] = true;
             }
         }
         
@@ -439,7 +493,9 @@ function reorder_feed($pdo, $usuario_id, $community_id) {
         echo json_encode(['success' => true, 'message' => 'Ordem atualizada com sucesso']);
         
     } catch (Exception $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         throw $e;
     }
 }
