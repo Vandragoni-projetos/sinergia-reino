@@ -388,6 +388,9 @@ $produtos = array_filter(array_map(function($item) {
 
     /* SortableJS: feedback visual ao arrastar */
     .sortable-ghost { opacity: 0.4; background: rgba(50, 231, 104, 0.1); }
+    .feed-pos-control input::-webkit-outer-spin-button,
+    .feed-pos-control input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .feed-pos-control input[type=number] { -moz-appearance: textfield; appearance: textfield; }
     .sortable-chosen { box-shadow: 0 0 0 2px rgba(50, 231, 104, 0.5); }
 </style>
 
@@ -613,7 +616,8 @@ $produtos = array_filter(array_map(function($item) {
             </div>
         <?php else: ?>
             <div id="lista-produtos" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-                <?php foreach ($feed_items as $item): ?>
+                <?php foreach ($feed_items as $feed_idx => $item): ?>
+                    <?php $feed_pos_ui = (int) $feed_idx + 1; ?>
                     
                     <?php if ($item['type'] === 'product'): ?>
                         <?php $produto = $item['data']; ?>
@@ -635,6 +639,17 @@ $produtos = array_filter(array_map(function($item) {
                                     <span class="text-xs font-medium">Sem imagem</span>
                                 </div>
                             <?php endif; ?>
+                            <div class="feed-pos-control absolute bottom-2 left-2 z-20 flex items-center gap-0.5 bg-black/65 backdrop-blur-sm rounded-lg pl-1.5 pr-0.5 py-0.5" onmousedown="event.stopPropagation();">
+                                <span class="text-[10px] text-gray-300 font-medium">Pos.</span>
+                                <input type="number" min="1" step="1" inputmode="numeric" data-feed-pos-input
+                                       class="w-10 bg-transparent border-0 p-0 text-center text-xs font-semibold text-white focus:ring-0"
+                                       value="<?php echo $feed_pos_ui; ?>"
+                                       aria-label="Posição no feed"
+                                       title="Posição no feed unificado. Digite o número e pressione Enter.">
+                                <button type="button" data-feed-pos-go class="p-1 rounded text-gray-300 hover:text-white hover:bg-white/10" title="Mover para esta posição">
+                                    <i data-lucide="arrow-right" class="w-3 h-3"></i>
+                                </button>
+                            </div>
                             
                             <!-- Badge Vitrine (ao lado do handle de arraste) -->
                             <?php if (!empty($produto['is_showcase']) && $produto['is_showcase'] == 1): ?>
@@ -729,6 +744,17 @@ $produtos = array_filter(array_map(function($item) {
                             <!-- Capa do Banner (aspect-ratio 2:3) -->
                             <div class="relative overflow-hidden bg-dark-elevated" style="aspect-ratio: 2/3;">
                                 <img src="<?php echo htmlspecialchars($banner_img); ?>" alt="<?php echo htmlspecialchars($banner['titulo'] ?: 'Banner'); ?>" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
+                                <div class="feed-pos-control absolute bottom-2 left-2 z-20 flex items-center gap-0.5 bg-black/65 backdrop-blur-sm rounded-lg pl-1.5 pr-0.5 py-0.5" onmousedown="event.stopPropagation();">
+                                    <span class="text-[10px] text-gray-300 font-medium">Pos.</span>
+                                    <input type="number" min="1" step="1" inputmode="numeric" data-feed-pos-input
+                                           class="w-10 bg-transparent border-0 p-0 text-center text-xs font-semibold text-white focus:ring-0"
+                                           value="<?php echo $feed_pos_ui; ?>"
+                                           aria-label="Posição no feed"
+                                           title="Posição no feed unificado. Digite o número e pressione Enter.">
+                                    <button type="button" data-feed-pos-go class="p-1 rounded text-gray-300 hover:text-white hover:bg-white/10" title="Mover para esta posição">
+                                        <i data-lucide="arrow-right" class="w-3 h-3"></i>
+                                    </button>
+                                </div>
                             </div>
                             
                             <!-- Botões de Ação -->
@@ -827,9 +853,9 @@ $produtos = array_filter(array_map(function($item) {
     async function salvarOrdemProdutos() {
         const lista = document.getElementById('lista-produtos');
         if (!lista) return false;
-        const cards = lista.querySelectorAll('[data-id][data-type]');
+        const cards = getFeedCards();
         if (!cards.length) return false;
-        const payload = Array.from(cards).map((el, idx) => ({
+        const payload = cards.map((el, idx) => ({
             item_type: el.getAttribute('data-type') === 'banner' ? 'banner' : 'product',
             item_id: parseInt(el.getAttribute('data-id'), 10),
             sort_order: idx
@@ -875,6 +901,78 @@ $produtos = array_filter(array_map(function($item) {
         }
     }
 
+    function getFeedCards() {
+        const lista = document.getElementById('lista-produtos');
+        if (!lista) return [];
+        return Array.from(lista.querySelectorAll(':scope > [data-id][data-type]'));
+    }
+
+    function refreshFeedPositionInputs() {
+        getFeedCards().forEach(function(el, idx) {
+            const input = el.querySelector('[data-feed-pos-input]');
+            if (input && document.activeElement !== input) {
+                input.value = String(idx + 1);
+            }
+        });
+    }
+
+    function parseFeedPosition(raw, max) {
+        if (raw === '' || raw === null || typeof raw === 'undefined') return null;
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 1 || n > max) return null;
+        return n;
+    }
+
+    async function moverCardParaPosicao(card, posicao1) {
+        const lista = document.getElementById('lista-produtos');
+        const cards = getFeedCards();
+        const total = cards.length;
+        if (!lista || !card || total === 0) return;
+
+        const destino = parseFeedPosition(posicao1, total);
+        if (destino === null) {
+            alert('Informe uma posição inteira entre 1 e ' + total + '.');
+            refreshFeedPositionInputs();
+            return;
+        }
+
+        const origem = cards.indexOf(card);
+        if (origem < 0) return;
+        const destinoIdx = destino - 1;
+        if (origem === destinoIdx) {
+            refreshFeedPositionInputs();
+            return;
+        }
+
+        cards.splice(origem, 1);
+        cards.splice(destinoIdx, 0, card);
+        cards.forEach(function(el) { lista.appendChild(el); });
+        refreshFeedPositionInputs();
+
+        const ok = await salvarOrdemProdutos();
+        const btn = document.getElementById('salvar-ordem-btn');
+        if (ok) {
+            if (btn) {
+                const label = btn.querySelector('span');
+                if (label) label.textContent = 'Ordem salva!';
+                btn.disabled = true;
+                setTimeout(function() {
+                    if (label) label.textContent = 'Salvar ordem';
+                    btn.disabled = false;
+                }, 1500);
+            }
+        } else {
+            window.location.reload();
+        }
+    }
+
+    function aplicarPosicaoDoControle(controlRoot) {
+        const card = controlRoot && controlRoot.closest('[data-id][data-type]');
+        const input = controlRoot && controlRoot.querySelector('[data-feed-pos-input]');
+        if (!card || !input) return;
+        moverCardParaPosicao(card, input.value);
+    }
+
     // Drag & Drop: SortableJS na lista de produtos + banners
     document.addEventListener('DOMContentLoaded', function() {
         const lista = document.getElementById('lista-produtos');
@@ -884,15 +982,42 @@ $produtos = array_filter(array_map(function($item) {
                 animation: 150,
                 ghostClass: 'sortable-ghost',
                 chosenClass: 'sortable-chosen',
+                filter: '.feed-pos-control, .feed-pos-control *',
+                preventOnFilter: true,
                 onEnd: async function(evt) {
+                    refreshFeedPositionInputs();
                     const ok = await salvarOrdemProdutos();
                     if (ok) {
                         const btn = document.getElementById('salvar-ordem-btn');
-                        if (btn) { btn.textContent = 'Ordem salva!'; btn.disabled = true; setTimeout(function() { btn.textContent = 'Salvar ordem'; btn.disabled = false; }, 1500); }
+                        if (btn) {
+                            const label = btn.querySelector('span');
+                            if (label) label.textContent = 'Ordem salva!';
+                            btn.disabled = true;
+                            setTimeout(function() {
+                                if (label) label.textContent = 'Salvar ordem';
+                                btn.disabled = false;
+                            }, 1500);
+                        }
                     } else {
                         window.location.reload();
                     }
                 }
+            });
+        }
+
+        if (lista) {
+            lista.addEventListener('click', function(e) {
+                const go = e.target.closest('[data-feed-pos-go]');
+                if (!go) return;
+                e.preventDefault();
+                aplicarPosicaoDoControle(go.closest('.feed-pos-control'));
+            });
+            lista.addEventListener('keydown', function(e) {
+                if (e.key !== 'Enter') return;
+                const input = e.target.closest('[data-feed-pos-input]');
+                if (!input) return;
+                e.preventDefault();
+                aplicarPosicaoDoControle(input.closest('.feed-pos-control'));
             });
         }
 
