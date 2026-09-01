@@ -388,6 +388,7 @@ $produtos = array_filter(array_map(function($item) {
 
     /* SortableJS: feedback visual ao arrastar */
     .sortable-ghost { opacity: 0.4; background: rgba(50, 231, 104, 0.1); }
+    .feed-pos-control { pointer-events: auto; }
     .feed-pos-control input::-webkit-outer-spin-button,
     .feed-pos-control input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     .feed-pos-control input[type=number] { -moz-appearance: textfield; appearance: textfield; }
@@ -632,22 +633,22 @@ $produtos = array_filter(array_map(function($item) {
                         <div class="relative h-56 overflow-hidden bg-dark-elevated">
                             <?php if ($produto['foto']): ?>
                                 <?php $prod_foto_src = resolve_product_image_url($produto['foto'], $upload_dir ?? 'uploads/'); ?>
-                                <img src="<?php echo htmlspecialchars($prod_foto_src); ?>" alt="<?php echo htmlspecialchars($produto['nome']); ?>" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
+                                <img src="<?php echo htmlspecialchars($prod_foto_src); ?>" alt="<?php echo htmlspecialchars($produto['nome']); ?>" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 pointer-events-none">
                             <?php else: ?>
                                 <div class="w-full h-full flex flex-col items-center justify-center text-gray-500">
                                     <i data-lucide="image" class="w-12 h-12 mb-2"></i>
                                     <span class="text-xs font-medium">Sem imagem</span>
                                 </div>
                             <?php endif; ?>
-                            <div class="feed-pos-control absolute bottom-2 left-2 z-20 flex items-center gap-0.5 bg-black/65 backdrop-blur-sm rounded-lg pl-1.5 pr-0.5 py-0.5" onmousedown="event.stopPropagation();">
-                                <span class="text-[10px] text-gray-300 font-medium">Pos.</span>
-                                <input type="number" min="1" step="1" inputmode="numeric" data-feed-pos-input
-                                       class="w-10 bg-transparent border-0 p-0 text-center text-xs font-semibold text-white focus:ring-0"
+                            <div class="feed-pos-control absolute bottom-2 left-2 z-30 flex items-center gap-0.5 bg-black/70 backdrop-blur-sm rounded-lg pl-1.5 pr-0.5 py-0.5" onpointerdown="event.stopPropagation();" onmousedown="event.stopPropagation();">
+                                <span class="text-[10px] text-gray-300 font-medium select-none">Pos.</span>
+                                <button type="button" data-feed-pos-label class="min-w-[1.5rem] px-0.5 text-xs font-semibold text-white hover:text-[#32e768] cursor-text" title="Clique para alterar a posição"><?php echo $feed_pos_ui; ?></button>
+                                <input type="text" inputmode="numeric" pattern="[0-9]*" data-feed-pos-input
+                                       class="hidden w-12 bg-black/50 border border-white/30 rounded px-0.5 text-center text-xs font-semibold text-white focus:outline-none focus:ring-1 focus:ring-[#32e768]"
                                        value="<?php echo $feed_pos_ui; ?>"
-                                       aria-label="Posição no feed"
-                                       title="Posição no feed unificado. Digite o número e pressione Enter.">
+                                       aria-label="Posição no feed">
                                 <button type="button" data-feed-pos-go class="p-1 rounded text-gray-300 hover:text-white hover:bg-white/10" title="Mover para esta posição">
-                                    <i data-lucide="arrow-right" class="w-3 h-3"></i>
+                                    <i data-lucide="arrow-right" class="w-3 h-3 pointer-events-none"></i>
                                 </button>
                             </div>
                             
@@ -743,16 +744,16 @@ $produtos = array_filter(array_map(function($item) {
                             
                             <!-- Capa do Banner (aspect-ratio 2:3) -->
                             <div class="relative overflow-hidden bg-dark-elevated" style="aspect-ratio: 2/3;">
-                                <img src="<?php echo htmlspecialchars($banner_img); ?>" alt="<?php echo htmlspecialchars($banner['titulo'] ?: 'Banner'); ?>" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
-                                <div class="feed-pos-control absolute bottom-2 left-2 z-20 flex items-center gap-0.5 bg-black/65 backdrop-blur-sm rounded-lg pl-1.5 pr-0.5 py-0.5" onmousedown="event.stopPropagation();">
-                                    <span class="text-[10px] text-gray-300 font-medium">Pos.</span>
-                                    <input type="number" min="1" step="1" inputmode="numeric" data-feed-pos-input
-                                           class="w-10 bg-transparent border-0 p-0 text-center text-xs font-semibold text-white focus:ring-0"
+                                <img src="<?php echo htmlspecialchars($banner_img); ?>" alt="<?php echo htmlspecialchars($banner['titulo'] ?: 'Banner'); ?>" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 pointer-events-none">
+                                <div class="feed-pos-control absolute bottom-2 left-2 z-30 flex items-center gap-0.5 bg-black/70 backdrop-blur-sm rounded-lg pl-1.5 pr-0.5 py-0.5" onpointerdown="event.stopPropagation();" onmousedown="event.stopPropagation();">
+                                    <span class="text-[10px] text-gray-300 font-medium select-none">Pos.</span>
+                                    <button type="button" data-feed-pos-label class="min-w-[1.5rem] px-0.5 text-xs font-semibold text-white hover:text-[#32e768] cursor-text" title="Clique para alterar a posição"><?php echo $feed_pos_ui; ?></button>
+                                    <input type="text" inputmode="numeric" pattern="[0-9]*" data-feed-pos-input
+                                           class="hidden w-12 bg-black/50 border border-white/30 rounded px-0.5 text-center text-xs font-semibold text-white focus:outline-none focus:ring-1 focus:ring-[#32e768]"
                                            value="<?php echo $feed_pos_ui; ?>"
-                                           aria-label="Posição no feed"
-                                           title="Posição no feed unificado. Digite o número e pressione Enter.">
+                                           aria-label="Posição no feed">
                                     <button type="button" data-feed-pos-go class="p-1 rounded text-gray-300 hover:text-white hover:bg-white/10" title="Mover para esta posição">
-                                        <i data-lucide="arrow-right" class="w-3 h-3"></i>
+                                        <i data-lucide="arrow-right" class="w-3 h-3 pointer-events-none"></i>
                                     </button>
                                 </div>
                             </div>
@@ -909,39 +910,76 @@ $produtos = array_filter(array_map(function($item) {
 
     function refreshFeedPositionInputs() {
         getFeedCards().forEach(function(el, idx) {
+            const n = String(idx + 1);
+            const label = el.querySelector('[data-feed-pos-label]');
             const input = el.querySelector('[data-feed-pos-input]');
+            if (label) label.textContent = n;
             if (input && document.activeElement !== input) {
-                input.value = String(idx + 1);
+                input.value = n;
             }
         });
     }
 
     function parseFeedPosition(raw, max) {
-        if (raw === '' || raw === null || typeof raw === 'undefined') return null;
-        const n = Number(raw);
-        if (!Number.isInteger(n) || n < 1 || n > max) return null;
+        const texto = String(raw == null ? '' : raw).trim();
+        if (texto === '') return null;
+        if (!/^\d+$/.test(texto)) return null;
+        const n = parseInt(texto, 10);
+        if (n < 1 || n > max) return null;
         return n;
+    }
+
+    function closeAllFeedPosEdits() {
+        document.querySelectorAll('.feed-pos-control.is-editing').forEach(function(controle) {
+            cancelFeedPosEdit(controle, true);
+        });
+    }
+
+    function startFeedPosEdit(controle) {
+        if (!controle) return;
+        closeAllFeedPosEdits();
+        const label = controle.querySelector('[data-feed-pos-label]');
+        const input = controle.querySelector('[data-feed-pos-input]');
+        const card = controle.closest('[data-id][data-type]');
+        if (!label || !input || !card) return;
+        const pos = getFeedCards().indexOf(card) + 1;
+        input.value = String(pos > 0 ? pos : 1);
+        controle.classList.add('is-editing');
+        label.classList.add('hidden');
+        input.classList.remove('hidden');
+        input.focus();
+        input.select();
+    }
+
+    function cancelFeedPosEdit(controle, skipRefresh) {
+        if (!controle) return;
+        const label = controle.querySelector('[data-feed-pos-label]');
+        const input = controle.querySelector('[data-feed-pos-input]');
+        controle.classList.remove('is-editing');
+        if (label) label.classList.remove('hidden');
+        if (input) input.classList.add('hidden');
+        if (!skipRefresh) refreshFeedPositionInputs();
     }
 
     async function moverCardParaPosicao(card, posicao1) {
         const lista = document.getElementById('lista-produtos');
         const cards = getFeedCards();
         const total = cards.length;
-        if (!lista || !card || total === 0) return;
+        if (!lista || !card || total === 0) return false;
 
         const destino = parseFeedPosition(posicao1, total);
         if (destino === null) {
             alert('Informe uma posição inteira entre 1 e ' + total + '.');
             refreshFeedPositionInputs();
-            return;
+            return false;
         }
 
         const origem = cards.indexOf(card);
-        if (origem < 0) return;
+        if (origem < 0) return false;
         const destinoIdx = destino - 1;
         if (origem === destinoIdx) {
             refreshFeedPositionInputs();
-            return;
+            return true;
         }
 
         cards.splice(origem, 1);
@@ -961,16 +999,31 @@ $produtos = array_filter(array_map(function($item) {
                     btn.disabled = false;
                 }, 1500);
             }
-        } else {
-            window.location.reload();
+            return true;
         }
+        window.location.reload();
+        return false;
     }
 
-    function aplicarPosicaoDoControle(controlRoot) {
+    async function aplicarPosicaoDoControle(controlRoot) {
         const card = controlRoot && controlRoot.closest('[data-id][data-type]');
         const input = controlRoot && controlRoot.querySelector('[data-feed-pos-input]');
         if (!card || !input) return;
-        moverCardParaPosicao(card, input.value);
+        const cards = getFeedCards();
+        const total = cards.length;
+        const destino = parseFeedPosition(input.value, total);
+        if (destino === null) {
+            alert('Informe uma posição inteira entre 1 e ' + total + '.');
+            const atual = cards.indexOf(card) + 1;
+            input.value = String(atual > 0 ? atual : 1);
+            input.select();
+            return;
+        }
+        const ok = await moverCardParaPosicao(card, destino);
+        if (ok) {
+            cancelFeedPosEdit(controlRoot, true);
+            refreshFeedPositionInputs();
+        }
     }
 
     // Drag & Drop: SortableJS na lista de produtos + banners
@@ -983,7 +1036,7 @@ $produtos = array_filter(array_map(function($item) {
                 ghostClass: 'sortable-ghost',
                 chosenClass: 'sortable-chosen',
                 filter: '.feed-pos-control, .feed-pos-control *',
-                preventOnFilter: true,
+                preventOnFilter: false,
                 onEnd: async function(evt) {
                     refreshFeedPositionInputs();
                     const ok = await salvarOrdemProdutos();
@@ -1006,18 +1059,46 @@ $produtos = array_filter(array_map(function($item) {
         }
 
         if (lista) {
-            lista.addEventListener('click', function(e) {
+            let feedPosGoLock = false;
+            function acionarSetaPosicao(controle) {
+                if (!controle || feedPosGoLock) return;
+                feedPosGoLock = true;
+                setTimeout(function() { feedPosGoLock = false; }, 300);
+                if (!controle.classList.contains('is-editing')) {
+                    startFeedPosEdit(controle);
+                    return;
+                }
+                aplicarPosicaoDoControle(controle);
+            }
+            lista.addEventListener('pointerdown', function(e) {
                 const go = e.target.closest('[data-feed-pos-go]');
                 if (!go) return;
-                e.preventDefault();
-                aplicarPosicaoDoControle(go.closest('.feed-pos-control'));
-            });
+                e.stopPropagation();
+                acionarSetaPosicao(go.closest('.feed-pos-control'));
+            }, true);
+            lista.addEventListener('click', function(e) {
+                const go = e.target.closest('[data-feed-pos-go]');
+                if (go) {
+                    e.preventDefault();
+                    acionarSetaPosicao(go.closest('.feed-pos-control'));
+                    return;
+                }
+                const label = e.target.closest('[data-feed-pos-label]');
+                if (label) {
+                    e.preventDefault();
+                    startFeedPosEdit(label.closest('.feed-pos-control'));
+                }
+            }, true);
             lista.addEventListener('keydown', function(e) {
-                if (e.key !== 'Enter') return;
                 const input = e.target.closest('[data-feed-pos-input]');
                 if (!input) return;
-                e.preventDefault();
-                aplicarPosicaoDoControle(input.closest('.feed-pos-control'));
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    aplicarPosicaoDoControle(input.closest('.feed-pos-control'));
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelFeedPosEdit(input.closest('.feed-pos-control'));
+                }
             });
         }
 
